@@ -1,6 +1,6 @@
 # Vessel 🚢
 
-**Vessel** is a ground-up C#/.NET rewrite of the [Coolify](https://coolify.io) project. It aims to provide a robust, high-performance, and type-safe platform for managing and deploying applications, databases, and services.
+**Vessel** is a ground-up C#/.NET rewrite of the [Coolify](https://Vessel.io) project. It aims to provide a robust, high-performance, and type-safe platform for managing and deploying applications, databases, and services.
 
 > [!WARNING]
 > **Project Status: Early Alpha / Work in Progress**
@@ -13,11 +13,11 @@
 Vessel is designed as a **Modular Monolith** following **Clean Architecture** principles. This approach ensures a simple deployment model initially while maintaining strict internal boundaries that allow for extracting services (Workers, Agents, Gateways) in the future.
 
 ### Project Structure
-- **Coolify.Web**: The entry point, hosting the Blazor Web App, APIs, and SignalR Hubs.
-- **Coolify.Application**: Contains use cases, orchestration logic, and infrastructure interfaces.
-- **Coolify.Domain**: Core business logic, entities, and domain rules (dependency-free).
-- **Coolify.Infrastructure**: Implementation of data persistence, Docker/SSH/Git clients, and background jobs.
-- **Coolify.Shared**: Lightweight DTOs and common contracts.
+- **Vessel.Web**: The entry point, hosting the Blazor Web App, APIs, and SignalR Hubs.
+- **Vessel.Application**: Contains use cases, orchestration logic, and infrastructure interfaces.
+- **Vessel.Domain**: Core business logic, entities, and domain rules (dependency-free).
+- **Vessel.Infrastructure**: Implementation of data persistence, Docker/SSH/Git clients, and background jobs.
+- **Vessel.Shared**: Lightweight DTOs and common contracts.
 
 ---
 

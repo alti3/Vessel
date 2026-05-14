@@ -43,25 +43,25 @@ The first production shape is:
 ```text
 CoolifyDotnet/
 ├─ src/
-│  ├─ Coolify.Web
-│  ├─ Coolify.Application
-│  ├─ Coolify.Domain
-│  ├─ Coolify.Infrastructure
-│  └─ Coolify.Shared
+│  ├─ Vessel.Web
+│  ├─ Vessel.Application
+│  ├─ Vessel.Domain
+│  ├─ Vessel.Infrastructure
+│  └─ Vessel.Shared
 ├─ tests/
-│  ├─ Coolify.UnitTests
-│  ├─ Coolify.IntegrationTests
-│  └─ Coolify.E2ETests
+│  ├─ Vessel.UnitTests
+│  ├─ Vessel.IntegrationTests
+│  └─ Vessel.E2ETests
 └─ deploy/
 ```
 
 Future optional deployables may be added later:
 
 ```text
-Coolify.Worker
-Coolify.Agent
-Coolify.Gateway
-Coolify.Notifications
+Vessel.Worker
+Vessel.Agent
+Vessel.Gateway
+Vessel.Notifications
 ```
 
 Do **not** start with separate services unless explicitly instructed. Start as a modular monolith.
@@ -129,41 +129,41 @@ Do design it so the worker, agent, gateway, and notification components can be e
 Dependency flow:
 
 ```text
-Coolify.Web
+Vessel.Web
     ↓
-Coolify.Application
+Vessel.Application
     ↓
-Coolify.Domain
+Vessel.Domain
 
-Coolify.Infrastructure
+Vessel.Infrastructure
     implements interfaces owned by Application/Domain
 ```
 
 Allowed references:
 
 ```text
-Coolify.Web -> Coolify.Application
-Coolify.Web -> Coolify.Infrastructure
-Coolify.Web -> Coolify.Shared
+Vessel.Web -> Vessel.Application
+Vessel.Web -> Vessel.Infrastructure
+Vessel.Web -> Vessel.Shared
 
-Coolify.Application -> Coolify.Domain
-Coolify.Application -> Coolify.Shared
+Vessel.Application -> Vessel.Domain
+Vessel.Application -> Vessel.Shared
 
-Coolify.Infrastructure -> Coolify.Application
-Coolify.Infrastructure -> Coolify.Domain
-Coolify.Infrastructure -> Coolify.Shared
+Vessel.Infrastructure -> Vessel.Application
+Vessel.Infrastructure -> Vessel.Domain
+Vessel.Infrastructure -> Vessel.Shared
 
-Coolify.Domain -> no project dependencies except approved base abstractions
-Coolify.Shared -> minimal dependencies only
+Vessel.Domain -> no project dependencies except approved base abstractions
+Vessel.Shared -> minimal dependencies only
 ```
 
 Forbidden:
 
 ```text
-Coolify.Domain -> Coolify.Infrastructure
-Coolify.Domain -> Coolify.Web
-Coolify.Application -> Coolify.Web
-Coolify.Infrastructure -> Coolify.Web
+Vessel.Domain -> Vessel.Infrastructure
+Vessel.Domain -> Vessel.Web
+Vessel.Application -> Vessel.Web
+Vessel.Infrastructure -> Vessel.Web
 ```
 
 ## 3.3 Feature-First Organization
@@ -209,16 +209,16 @@ CoolifyDotnet/
 ├─ CoolifyDotnet.slnx
 │
 ├─ src/
-│  ├─ Coolify.Web/
-│  ├─ Coolify.Application/
-│  ├─ Coolify.Domain/
-│  ├─ Coolify.Infrastructure/
-│  └─ Coolify.Shared/
+│  ├─ Vessel.Web/
+│  ├─ Vessel.Application/
+│  ├─ Vessel.Domain/
+│  ├─ Vessel.Infrastructure/
+│  └─ Vessel.Shared/
 │
 ├─ tests/
-│  ├─ Coolify.UnitTests/
-│  ├─ Coolify.IntegrationTests/
-│  └─ Coolify.E2ETests/
+│  ├─ Vessel.UnitTests/
+│  ├─ Vessel.IntegrationTests/
+│  └─ Vessel.E2ETests/
 │
 ├─ deploy/
 │  ├─ docker-compose.yml
@@ -238,7 +238,7 @@ CoolifyDotnet/
 └─ tools/
 ```
 
-## 4.2 Coolify.Web
+## 4.2 Vessel.Web
 
 Purpose:
 
@@ -258,7 +258,7 @@ Static assets
 Suggested layout:
 
 ```text
-src/Coolify.Web/
+src/Vessel.Web/
 ├─ Program.cs
 ├─ appsettings.json
 ├─ appsettings.Development.json
@@ -312,7 +312,7 @@ Rules:
 - Web layer may validate HTTP-level concerns.
 - Web layer must not call Docker, Git, SSH, or Process APIs directly.
 
-## 4.3 Coolify.Application
+## 4.3 Vessel.Application
 
 Purpose:
 
@@ -330,7 +330,7 @@ Interfaces for infrastructure services
 Suggested layout:
 
 ```text
-src/Coolify.Application/
+src/Vessel.Application/
 ├─ Abstractions/
 │  ├─ Persistence/
 │  ├─ Docker/
@@ -372,7 +372,7 @@ public interface ICurrentUser { }
 public interface IClock { }
 ```
 
-## 4.4 Coolify.Domain
+## 4.4 Vessel.Domain
 
 Purpose:
 
@@ -389,7 +389,7 @@ Strongly typed IDs
 Suggested layout:
 
 ```text
-src/Coolify.Domain/
+src/Vessel.Domain/
 ├─ Projects/
 ├─ Servers/
 ├─ Applications/
@@ -414,7 +414,7 @@ Domain rules:
 - No direct time access through `DateTime.UtcNow`; use abstractions in Application.
 - Prefer value objects for IDs, names, ports, domains, image tags, versions, and server addresses.
 
-## 4.5 Coolify.Infrastructure
+## 4.5 Vessel.Infrastructure
 
 Purpose:
 
@@ -438,7 +438,7 @@ External integrations
 Suggested layout:
 
 ```text
-src/Coolify.Infrastructure/
+src/Vessel.Infrastructure/
 ├─ Persistence/
 │  ├─ CoolifyDbContext.cs
 │  ├─ Configurations/
@@ -465,7 +465,7 @@ src/Coolify.Infrastructure/
 └─ Extensions/
 ```
 
-## 4.6 Coolify.Shared
+## 4.6 Vessel.Shared
 
 Purpose:
 
@@ -577,7 +577,7 @@ Blazor components should not:
 Example:
 
 ```text
-src/Coolify.Web/Features/Deployments/
+src/Vessel.Web/Features/Deployments/
 ├─ Pages/
 │  ├─ DeploymentListPage.razor
 │  └─ DeploymentDetailsPage.razor
@@ -875,12 +875,12 @@ Do not represent complex job status as free text.
 
 ## 8.5 Future Worker Extraction
 
-Initially Hangfire can run inside `Coolify.Web`.
+Initially Hangfire can run inside `Vessel.Web`.
 
 Design so later:
 
 ```text
-Coolify.Worker
+Vessel.Worker
 ```
 
 can own job execution.
@@ -888,10 +888,10 @@ can own job execution.
 When split:
 
 ```text
-Coolify.Web
+Vessel.Web
     UI/API/SignalR
 
-Coolify.Worker
+Vessel.Worker
     Hangfire workers
     scheduled jobs
     deployment execution
@@ -900,9 +900,9 @@ Coolify.Worker
 Both reference:
 
 ```text
-Coolify.Application
-Coolify.Infrastructure
-Coolify.Domain
+Vessel.Application
+Vessel.Infrastructure
+Vessel.Domain
 ```
 
 No business logic should need to move.
@@ -1716,7 +1716,7 @@ Slack-compatible webhook
 Only later consider:
 
 ```text
-Coolify.Notifications
+Vessel.Notifications
 ```
 
 Do not start with a separate notifications service.
@@ -1939,14 +1939,14 @@ Program.cs
 Business logic belongs in:
 
 ```text
-Coolify.Application
-Coolify.Domain
+Vessel.Application
+Vessel.Domain
 ```
 
 Infrastructure details belong in:
 
 ```text
-Coolify.Infrastructure
+Vessel.Infrastructure
 ```
 
 ## 25.3 No Direct Process Calls
@@ -1961,7 +1961,7 @@ new Process()
 outside:
 
 ```text
-Coolify.Infrastructure/Processes
+Vessel.Infrastructure/Processes
 ```
 
 Any need to execute a command must go through `IProcessRunner`.
@@ -1998,10 +1998,10 @@ Use Application services/queries.
 Agents must not create:
 
 ```text
-Coolify.Worker
-Coolify.Agent
-Coolify.Gateway
-Coolify.Notifications
+Vessel.Worker
+Vessel.Agent
+Vessel.Gateway
+Vessel.Notifications
 ```
 
 unless explicitly instructed.
