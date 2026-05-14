@@ -450,7 +450,11 @@ src/Vessel.Infrastructure/
 │  ├─ DotNetProcessRunner.cs
 │  ├─ ProcessCommand.cs
 │  ├─ ProcessResult.cs
-│  └─ ProcessOutputLine.cs
+│  ├─ ProcessBinaryResult.cs
+│  ├─ ProcessExitInfo.cs
+│  ├─ ProcessOutputLine.cs
+│  ├─ ProcessStreamPolicy.cs
+│  └─ ProcessTerminationPolicy.cs
 │
 ├─ Docker/
 ├─ Ssh/
@@ -1022,7 +1026,7 @@ certificate renewal
 
 ## 10.1 Critical Rule
 
-Do not call `Process.Start` directly outside the infrastructure process layer.
+Do not call `Process.Start`, `new Process()`, `Process.Run`, `Process.RunAsync`, `Process.RunAndCaptureTextAsync`, `Process.StartAndForget`, or `SafeProcessHandle.Start` directly outside the infrastructure process layer.
 
 All external command execution must go through:
 
@@ -1049,9 +1053,31 @@ caddy
 nginx
 ```
 
+The process layer is responsible for security, cancellation, timeout handling, output capture, streaming, redaction, audit metadata, child-process lifetime, and safe standard-handle behavior.
+
 ## 10.2 .NET 11 Process API
 
 Use the stable .NET 11 Process API improvements where appropriate.
+
+https://devblogs.microsoft.com/dotnet/process-api-improvements-in-dotnet-11/
+
+Before implementation, check the final stable .NET 11 API names and signatures in the SDK actually used by the repository. If an API existed in preview but changed before GA, follow the stable SDK, not preview blog syntax.
+
+`DotNetProcessRunner` must use the .NET 11 Process APIs as follows when the stable API surface supports them:
+
+```text
+Use Process.RunAndCaptureTextAsync for normal text capture.
+Use Process.ReadAllLinesAsync for live stdout/stderr streaming.
+Use Process.RunAsync for commands where output is intentionally ignored.
+Use Process.ReadAllBytesAsync or file-handle redirection for binary output.
+Set ProcessStartInfo.InheritedHandles = [] by default.
+Use StandardInputHandle, StandardOutputHandle, and StandardErrorHandle for null, file, pipe, and advanced redirection scenarios.
+Use File.OpenNullHandle for commands with no stdin or intentionally discarded output.
+Use KillOnParentExit by default where supported.
+Use ProcessExitStatus information to distinguish exit code, cancellation, timeout, and Unix signal termination.
+Use SafeProcessHandle termination APIs where needed for graceful cancel/timeout handling.
+Do not use StartDetached or StartAndForget except through an explicitly reviewed, auditable lifecycle policy.
+```
 
 Expected useful capabilities include:
 
@@ -1060,13 +1086,15 @@ high-level process execution APIs
 deadlock-safe stdout/stderr capture
 async output reading
 line-based output handling
+binary output handling
 standard handle redirection
+null standard handles
 controlled handle inheritance
 KillOnParentExit or equivalent child-process lifetime behavior
+StartDetached and StartAndForget restrictions
 lighter process handle APIs where needed
+process exit status with cancellation/signal details
 ```
-
-Before implementation, check the final stable .NET 11 API names and signatures.
 
 Do not rely blindly on preview blog syntax.
 
@@ -1077,7 +1105,15 @@ Create a stable internal abstraction:
 ```csharp
 public interface IProcessRunner
 {
-    Task<ProcessResult> RunAndCaptureAsync(
+    Task<ProcessResult> RunAndCaptureTextAsync(
+        ProcessCommand command,
+        CancellationToken cancellationToken);
+
+    Task<ProcessBinaryResult> RunAndCaptureBytesAsync(
+        ProcessCommand command,
+        CancellationToken cancellationToken);
+
+    Task<ProcessExitInfo> RunAsync(
         ProcessCommand command,
         CancellationToken cancellationToken);
 
@@ -1086,6 +1122,14 @@ public interface IProcessRunner
         CancellationToken cancellationToken);
 }
 ```
+
+Guidance:
+
+- Use `RunAndCaptureTextAsync` for short or moderate text output that is needed after the process exits.
+- Use `RunAndCaptureBytesAsync` for binary output only when the output is expected to be small enough to hold safely in memory.
+- Use `RunAsync` when output is intentionally ignored.
+- Use `RunStreamingAsync` for deployments, Docker builds, Docker Compose operations, Git operations with progress, SSH commands, terminals, and any command whose output may be large or user-visible in realtime.
+- Prefer file redirection or object storage for large binary artifacts instead of buffering them in memory.
 
 ## 10.4 ProcessCommand
 
@@ -1097,26 +1141,124 @@ public sealed record ProcessCommand
     public string? WorkingDirectory { get; init; }
     public IReadOnlyDictionary<string, string?> Environment { get; init; }
         = new Dictionary<string, string?>();
+
     public TimeSpan? Timeout { get; init; }
+
+    public ProcessStreamPolicy StandardInput { get; init; }
+        = ProcessStreamPolicy.Null;
+
+    public ProcessStreamPolicy StandardOutput { get; init; }
+        = ProcessStreamPolicy.Capture;
+
+    public ProcessStreamPolicy StandardError { get; init; }
+        = ProcessStreamPolicy.Capture;
+
+    public string? StandardInputFile { get; init; }
+    public string? StandardOutputFile { get; init; }
+    public string? StandardErrorFile { get; init; }
+
     public bool RedactSecrets { get; init; } = true;
     public bool KillOnParentExit { get; init; } = true;
+    public bool AllowHandleInheritance { get; init; }
+    public bool StartDetached { get; init; }
+
+    public ProcessTerminationPolicy TerminationPolicy { get; init; }
+        = ProcessTerminationPolicy.GracefulThenKill;
 }
 ```
 
-## 10.5 ProcessResult
+Rules:
+
+- `FileName` must be an executable name or absolute path chosen by trusted code.
+- `Arguments` must be structured arguments. Do not build command strings through untrusted concatenation.
+- `WorkingDirectory` must be validated and must not allow path traversal.
+- `Environment` values must be redacted from logs and audit metadata.
+- `StandardInputFile`, `StandardOutputFile`, and `StandardErrorFile` must only point to safe, owned paths.
+- `AllowHandleInheritance` is `false` by default. Infrastructure must translate this to no inherited handles, such as `InheritedHandles = []`, unless an explicit advanced scenario requires otherwise.
+- `StartDetached` is `false` by default and requires security review.
+
+## 10.5 ProcessStreamPolicy
+
+```csharp
+public enum ProcessStreamPolicy
+{
+    Null,
+    Capture,
+    Stream,
+    Inherit,
+    File
+}
+```
+
+Rules:
+
+- Use `Null` for unused stdin and intentionally discarded output.
+- Use `Capture` only when output is expected to be bounded.
+- Use `Stream` for live logs and long-running operations.
+- Use `File` for large output, binary artifacts, archives, backups, generated config snapshots, and anything that may exceed safe in-memory limits.
+- Use `Inherit` only for explicitly reviewed diagnostics or terminal-like scenarios.
+
+## 10.6 ProcessTerminationPolicy
+
+```csharp
+public enum ProcessTerminationPolicy
+{
+    KillImmediately,
+    GracefulThenKill,
+    DoNotKill
+}
+```
+
+Rules:
+
+- Default to `GracefulThenKill`.
+- On cancellation or timeout, try graceful termination where supported, wait for a short configured grace period, then force kill.
+- Record whether termination was caused by cancellation, timeout, parent exit, explicit kill, or external signal where the platform exposes that detail.
+- `DoNotKill` is forbidden for deployment, Docker, Git, SSH, and terminal commands unless explicitly reviewed.
+
+## 10.7 ProcessExitInfo
+
+```csharp
+public sealed record ProcessExitInfo
+{
+    public required int ProcessId { get; init; }
+    public required int ExitCode { get; init; }
+    public int? TerminatingSignal { get; init; }
+    public bool Canceled { get; init; }
+    public bool TimedOut { get; init; }
+    public required TimeSpan Duration { get; init; }
+}
+```
+
+`ProcessExitInfo` is the application-facing abstraction over .NET process exit details. Infrastructure may map from .NET 11 `ProcessExitStatus` or lower-level process-handle APIs, but Application code should not depend on preview-only API shapes.
+
+## 10.8 ProcessResult
 
 ```csharp
 public sealed record ProcessResult
 {
-    public required int ExitCode { get; init; }
+    public required ProcessExitInfo Exit { get; init; }
     public required string StandardOutput { get; init; }
     public required string StandardError { get; init; }
-    public required TimeSpan Duration { get; init; }
-    public bool TimedOut { get; init; }
 }
 ```
 
-## 10.6 ProcessOutputLine
+Use this for text output only. Standard output and standard error must be captured separately and redacted before persistence or broadcast.
+
+## 10.9 ProcessBinaryResult
+
+```csharp
+public sealed record ProcessBinaryResult
+{
+    public required ProcessExitInfo Exit { get; init; }
+    public required byte[] StandardOutput { get; init; }
+    public required byte[] StandardError { get; init; }
+}
+```
+
+Use this sparingly. Prefer file redirection for large binary data such as archives, compressed backups, certificates, deployment bundles, or exported artifacts.
+
+## 10.10 ProcessOutputLine
 
 ```csharp
 public enum ProcessOutputKind
@@ -1127,42 +1269,80 @@ public enum ProcessOutputKind
 
 public sealed record ProcessOutputLine
 {
+    public required int ProcessId { get; init; }
+    public required long Sequence { get; init; }
     public required ProcessOutputKind Kind { get; init; }
     public required string Text { get; init; }
     public required DateTimeOffset Timestamp { get; init; }
 }
 ```
 
-## 10.7 Process Security
+Rules:
+
+- `Sequence` must be monotonic for a single process execution and must preserve the observed stream order as closely as possible.
+- `Text` must be redacted before it leaves the infrastructure process layer.
+- Deployment-specific metadata, such as deployment ID and step ID, should be attached by the deployment/logging layer rather than the low-level process runner.
+
+## 10.11 StartDetached and StartAndForget Policy
+
+Detached and fire-and-forget processes are dangerous because they can escape Hangfire lifecycle control, deployment cancellation, audit visibility, and cleanup policies.
+
+Forbidden by default:
+
+```text
+Process.StartAndForget
+ProcessStartInfo.StartDetached = true
+DoNotKill termination for unmanaged deployment commands
+```
+
+They may only be used when all of the following are true:
+
+```text
+the use case is explicitly modeled as a supervisor-style lifecycle
+the process owner is recorded
+the PID or platform-specific identity is persisted when useful
+stdout/stderr/stdin are explicitly set to safe handles or null
+cleanup and reconciliation are implemented
+security review is completed
+audit metadata is written
+```
+
+Do not use detached processes for normal deployments, Docker operations, Git operations, SSH commands, proxy reloads, backups, or terminal sessions. Durable work should be owned by Hangfire or a future `Vessel.Worker`, not by detached orphanable processes.
+
+## 10.12 Process Security
 
 Process execution must:
 
 - Avoid shell interpolation unless absolutely required.
 - Pass arguments as structured arguments.
-- Escape/quote safely.
-- Redact secrets from logs.
+- Escape/quote safely only at the final boundary where the operating system requires it.
+- Redact secrets from logs, persisted output, realtime output, audit metadata, and exception messages.
 - Set timeouts.
 - Support cancellation.
 - Capture exit codes.
 - Capture stdout and stderr separately.
-- Avoid deadlocks.
-- Avoid orphaned child processes.
-- Avoid inherited handles unless explicitly needed.
+- Distinguish failure, cancellation, timeout, and signal termination where possible.
+- Avoid deadlocks by using the .NET 11 simultaneous stdout/stderr reading APIs.
+- Avoid orphaned child processes with `KillOnParentExit` where supported.
+- Avoid inherited handles by default.
+- Set standard handles explicitly to capture, stream, file, inherit, or null.
 - Record command metadata for auditing without leaking secrets.
+- Avoid buffering unbounded output in memory.
+- Prefer streaming or file redirection for large output.
 
 Forbidden:
 
 ```csharp
-await processRunner.RunAndCaptureAsync(new ProcessCommand
+await processRunner.RunAndCaptureTextAsync(new ProcessCommand
 {
     FileName = "bash",
     Arguments = ["-c", userProvidedString]
-});
+}, cancellationToken);
 ```
 
-unless the command is intentionally shell-based, validated, and reviewed.
+unless the command is intentionally shell-based, validated, reviewed, and the input is not attacker-controlled.
 
-## 10.8 Shell Scripts
+## 10.13 Shell Scripts
 
 Shell scripts are allowed for operational glue, but:
 
@@ -1171,6 +1351,8 @@ Shell scripts are allowed for operational glue, but:
 - Keep them deterministic.
 - Prefer typed C# orchestration for complex logic.
 - Never build shell commands with untrusted string concatenation.
+- Prefer passing data through structured arguments, environment variables, files with safe paths, or stdin.
+- Capture or stream output through `IProcessRunner`; do not let scripts write secrets to untracked files or inherited handles.
 
 ---
 
@@ -2593,7 +2775,8 @@ Before completing a feature, agents should verify:
 [ ] Feature belongs to correct module
 [ ] No business logic in Web
 [ ] No infrastructure logic in Domain
-[ ] No direct Process.Start outside Infrastructure/Processes
+[ ] No direct Process.Start, new Process, Process.Run, Process.RunAsync, Process.RunAndCaptureTextAsync, Process.StartAndForget, or SafeProcessHandle.Start outside Infrastructure/Processes
+[ ] No detached/fire-and-forget process usage without explicit lifecycle policy and security review
 [ ] No direct Docker/SSH/Git calls outside Infrastructure
 [ ] CancellationToken is supported
 [ ] Authorization is enforced
@@ -2647,6 +2830,7 @@ audit logs
 
 ```text
 IProcessRunner with .NET 11 Process APIs
+process exit status, streaming, binary capture, null/file handles, no inherited handles by default, KillOnParentExit, and graceful termination
 secret redaction
 Docker abstraction
 SSH abstraction
