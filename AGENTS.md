@@ -8,6 +8,8 @@ The target runtime is **.NET 11 after its official stable release**. Do not begi
 
 The architecture is a **modular monolith first**, with clean internal boundaries so that selected runtime processes can be split out later if required.
 
+The primary production distribution is a **host-native, self-contained Vessel executable** managed by the host OS. Containerized deployment is supported as a secondary compatibility mode, not the default control-plane architecture.
+
 ---
 
 # 1. Core Decision
@@ -29,6 +31,7 @@ Npgsql
 PostgreSQL
 Redis
 Docker
+Podman-compatible runtime abstraction later
 SSH
 Git
 S3-compatible object storage
@@ -38,7 +41,25 @@ Serilog
 
 The app is initially one deployable product, not a microservices system.
 
-The first production shape is:
+The default production install shape is:
+
+```text
+Host OS
+├─ vesseld / vessel server
+│  ├─ API
+│  ├─ Blazor Web UI
+│  ├─ SignalR
+│  ├─ Hangfire scheduler/workers
+│  ├─ deployment orchestration
+│  ├─ reverse proxy management
+│  └─ runtime adapters
+├─ Docker / Podman / future OCI runtime
+└─ application containers
+```
+
+Do not make the Vessel control plane depend on running inside Docker. The orchestrator should normally live outside the containers it creates and manages.
+
+The first source tree shape is:
 
 ```text
 CoolifyDotnet/
@@ -65,6 +86,29 @@ Vessel.Notifications
 ```
 
 Do **not** start with separate services unless explicitly instructed. Start as a modular monolith.
+
+## 1.2 Distribution Decision
+
+Vessel should be designed executable-first:
+
+```text
+single self-contained binary
+Linux x64 and Linux arm64 release artifacts
+systemd service by default on Linux
+install/update script for common host installs
+optional Docker Compose deployment for demos, development, and compatibility
+```
+
+This means production design should optimize for:
+
+- Running as a host-native daemon.
+- Managing Docker/Podman as external host runtimes.
+- Integrating cleanly with systemd and journald.
+- Atomic self-update and rollback.
+- Clear filesystem ownership and predictable host paths.
+- Simple debugging from the host without container-in-container assumptions.
+
+The Dockerized control-plane mode is allowed, but it must not become the only supported or architecturally privileged path.
 
 ---
 
@@ -102,6 +146,80 @@ The repository should keep a `global.json`:
 ```
 
 Update the exact SDK version after .NET 11 GA.
+
+## 2.4 Publish Targets
+
+Release engineering should support self-contained publishing for at least:
+
+```text
+linux-x64
+linux-arm64
+```
+
+Native AOT, single-file publishing, and trimming may be used where they are compatible with ASP.NET Core, Blazor Server, EF Core, reflection needs, diagnostics, and operational support. Do not enable aggressive trimming or AOT in a way that breaks runtime behavior, migrations, serialization, configuration binding, SignalR, Hangfire, or provider loading.
+
+## 2.5 Installation and Service Model
+
+The preferred install model is:
+
+```text
+curl -fsSL https://example.com/install.sh | sh
+vessel server
+```
+
+Production Linux installs should create:
+
+```text
+/usr/local/bin/vessel
+/etc/vessel/
+/var/lib/vessel/
+/var/log/vessel/ when not using journald only
+vessel.service
+```
+
+The installer must be deterministic and auditable. It should:
+
+- Detect CPU architecture and OS.
+- Download a versioned artifact.
+- Verify checksum and, when available, signature.
+- Install with restrictive permissions.
+- Create or update the systemd unit.
+- Avoid overwriting user configuration.
+- Support non-interactive execution for automation.
+
+Reference install scripts worth studying:
+
+```text
+Astral uv Bash installer:
+https://releases.astral.sh/installers/uv/latest/uv-installer.sh
+
+Bun Bash installer for Linux and macOS:
+https://bun.sh/install
+
+Bun PowerShell installer for Windows:
+https://bun.sh/install.ps1
+```
+
+## 2.6 Self-Update Model
+
+Vessel should support an explicit self-update command:
+
+```text
+vessel self-update
+```
+
+Self-update must:
+
+- Download a versioned binary.
+- Verify checksum and, when available, signature.
+- Place the new binary beside the current installation.
+- Swap atomically through a symlink or equivalent platform-safe mechanism.
+- Restart the service through the service manager.
+- Run a post-update health check.
+- Roll back if startup or health checks fail.
+- Leave audit metadata for the update attempt.
+
+Do not implement self-update as an unmanaged detached process. It must have a clear lifecycle, safe standard handles, failure reporting, and rollback behavior.
 
 ---
 
@@ -224,6 +342,8 @@ CoolifyDotnet/
 │  ├─ docker-compose.yml
 │  ├─ docker-compose.dev.yml
 │  ├─ docker-compose.prod.yml
+│  ├─ systemd/
+│  ├─ install/
 │  ├─ nginx/
 │  ├─ caddy/
 │  └─ scripts/
@@ -1376,11 +1496,78 @@ Infrastructure implements these using:
 Docker CLI
 Docker Compose CLI
 Docker Engine API
+Podman-compatible APIs or CLI where supported later
+containerd or nerdctl adapters later if justified
 ```
 
-The initial implementation may use CLI-based execution through `IProcessRunner`.
+Prefer stable runtime APIs when practical:
 
-## 11.2 Docker Rules
+```text
+Docker Engine API
+Podman API
+containerd gRPC APIs
+```
+
+Use CLI execution through `IProcessRunner` strategically for:
+
+```text
+docker compose compatibility
+build workflows
+log/progress streaming
+runtime feature gaps
+fallback compatibility
+operator diagnostics
+```
+
+Do not shell out everywhere blindly. The process layer is mandatory for CLI execution, but an API-first runtime adapter design will age better than binding all orchestration to command-line text behavior.
+
+## 11.2 Host-Native Runtime Access
+
+The primary production model is a host-native Vessel daemon controlling a host container runtime.
+
+For Docker on Linux, the local adapter may use:
+
+```text
+/var/run/docker.sock
+```
+
+This socket belongs to the host Docker daemon. Access to it is effectively host-root-equivalent and must be treated as a privileged capability.
+
+Rules:
+
+- The default install should not require mounting `docker.sock` into a Vessel container.
+- Any process with Docker socket access must be considered highly trusted.
+- Docker socket access must be documented as a dangerous capability.
+- Prefer dedicated deployment hosts for untrusted workloads.
+- Support rootless Docker or remote runtime endpoints where practical.
+- Runtime access checks should fail clearly when the daemon is unavailable or permissions are insufficient.
+
+## 11.3 Optional Containerized Control Plane
+
+Containerized Vessel deployment is allowed for:
+
+```text
+development
+quick demos
+compatibility installs
+cloud templates
+operators who explicitly prefer Docker Compose
+```
+
+It is not the primary production architecture.
+
+If a containerized control plane mounts the host Docker socket:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+```
+
+the documentation and deployment templates must clearly state that this grants broad control over the host Docker daemon and can be equivalent to root-level host access.
+
+Containerized mode must not introduce alternate business logic paths. It should run the same application and infrastructure abstractions as the host-native daemon.
+
+## 11.4 Docker Rules
 
 All Docker operations must:
 
@@ -1395,7 +1582,25 @@ All Docker operations must:
 - Avoid unsafe shell interpolation.
 - Be idempotent where possible.
 
-## 11.3 Docker Abstractions
+## 11.5 Runtime Adapter Boundaries
+
+Vessel should avoid becoming a container runtime.
+
+Do not:
+
+- Reimplement Docker, Podman, containerd, namespaces, or cgroups.
+- Manage kernel isolation primitives directly.
+- Couple application use cases to one runtime's CLI syntax.
+
+Do:
+
+- Keep runtime-specific code in Infrastructure.
+- Expose Application-owned runtime abstractions.
+- Model capabilities explicitly when runtimes differ.
+- Keep command construction structured and auditable.
+- Preserve a path to Docker, Podman, remote Docker endpoints, and future OCI adapters.
+
+## 11.6 Docker Abstractions
 
 Example:
 
@@ -2667,6 +2872,8 @@ docs/architecture/deployment-flow.md
 docs/security/secrets.md
 docs/security/terminal.md
 docs/operations/deploying-coolify-dotnet.md
+docs/operations/host-native-install.md
+docs/operations/containerized-install.md
 docs/operations/backups.md
 docs/decisions/
 ```
@@ -2682,6 +2889,7 @@ ADR-0003-hangfire.md
 ADR-0004-process-runner.md
 ADR-0005-postgresql.md
 ADR-0006-signalr.md
+ADR-0007-executable-first-distribution.md
 ```
 
 ---
@@ -2809,6 +3017,8 @@ Serilog
 OpenTelemetry
 health checks
 test projects
+basic host-native publish profile
+systemd unit template
 ```
 
 ## Milestone 2: Domain Core
@@ -2832,7 +3042,7 @@ audit logs
 IProcessRunner with .NET 11 Process APIs
 process exit status, streaming, binary capture, null/file handles, no inherited handles by default, KillOnParentExit, and graceful termination
 secret redaction
-Docker abstraction
+Docker abstraction with API-first adapter design and CLI fallback through IProcessRunner
 SSH abstraction
 Git abstraction
 Redis abstraction
@@ -2868,6 +3078,8 @@ notification delivery
 rate limiting
 security review
 E2E tests
+self-update with checksum verification, atomic swap, health check, and rollback
+installer hardening
 ```
 
 ---
@@ -2887,6 +3099,7 @@ Infrastructure talks to the outside world.
 PostgreSQL is the source of truth.
 Redis coordinates ephemeral state.
 IProcessRunner owns external command execution.
+Vessel runs host-native by default and treats containerized control-plane deployment as optional.
 ```
 
 The most important rule:
@@ -2905,4 +3118,10 @@ The third most important rule:
 
 ```text
 Start as a modular monolith, not microservices.
+```
+
+The fourth most important rule:
+
+```text
+Do not make the orchestrator depend on running inside the container runtime it manages.
 ```
