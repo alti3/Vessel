@@ -123,4 +123,5 @@ Production requirements will depend on install mode. The preferred production pa
 
 License information to be added.
 
-For detailed architectural guidelines and agent instructions, see [AGENTS.md](./AGENTS.md).
+For detailed product and architecture requirements, see [PROJECT_REQUIREMENTS.md](./PROJECT_REQUIREMENTS.md).
+For coding-agent guidance, see [AGENTS.md](./AGENTS.md).
