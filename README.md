@@ -121,7 +121,10 @@ Production requirements will depend on install mode. The preferred production pa
 
 ## License
 
-License information to be added.
+Vessel is licensed under the [MIT License](./LICENSE).
 
 For detailed product and architecture requirements, see [PROJECT_REQUIREMENTS.md](./PROJECT_REQUIREMENTS.md).
 For coding-agent guidance, see [AGENTS.md](./AGENTS.md).
+For the implementation roadmap, see [ROADMAP.md](./ROADMAP.md).
+For contribution expectations, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+For vulnerability reporting, see [SECURITY.md](./SECURITY.md).

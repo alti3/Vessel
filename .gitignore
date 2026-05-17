@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+playwright-report/
+test-results/
+artifacts/
+*.nupkg
+*.snupkg
