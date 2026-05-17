@@ -59,7 +59,7 @@ Goal: Create the .NET solution structure and build policy without starting produ
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [!] | 1.01 | Runtime | Verify stable .NET 11 SDK availability | Installed SDK is stable GA; exact SDK version is recorded | .NET 11 GA | User explicitly approved .NET 11 preview use. Local `dotnet --info` still exposes only SDKs `10.0.204` and `10.0.300`; restore/build/test remain blocked until SDK 11 is visible. |
+| [x] | 1.01 | Runtime | Verify stable .NET 11 SDK availability | Installed SDK is stable GA; exact SDK version is recorded | .NET 11 GA | User explicitly approved .NET 11 preview use. Local `dotnet --info` exposes SDK `11.0.100-preview.4.26230.115`; replace with stable SDK after GA. |
 | [x] | 1.02 | Runtime | Add `global.json` | Pins stable .NET 11 SDK with `rollForward: latestFeature` | 1.01 | Added `global.json` for .NET 11 preview `11.0.100-preview.4.26230.115` with `allowPrerelease: true`; replace with stable SDK after GA. |
 | [x] | 1.03 | Build | Create solution file | Solution includes Web, Application, Domain, Infrastructure, Shared, UnitTests, IntegrationTests, E2ETests | 1.01 | `Vessel.slnx` added with all projects. |
 | [x] | 1.04 | Build | Add `Directory.Build.props` | Nullable enabled, implicit usings configured, warnings policy set, deterministic builds enabled where practical | 1.03 | `Directory.Build.props` added. |
@@ -73,7 +73,7 @@ Goal: Create the .NET solution structure and build policy without starting produ
 | [x] | 1.12 | Tests | Create integration test project | Integration tests can exercise infrastructure with controlled dependencies | 1.03 | `Vessel.IntegrationTests` added. |
 | [x] | 1.13 | Tests | Create E2E test project | Playwright or equivalent E2E structure is ready | 1.03 | `Vessel.E2ETests` added with Playwright package reference. |
 | [x] | 1.14 | Build | Validate project references | Forbidden references fail review or build validation | 1.06-1.10 | `tools/validate-project-references.ps1` added and passed locally. |
-| [!] | 1.15 | Build | Add solution build verification | `dotnet restore`, `dotnet build`, `dotnet test` succeed when SDK exists | 1.03-1.13 | Blocked locally because SDK 11 preview is not visible to `dotnet`; CI is configured to run restore/build/test with .NET 11 preview. |
+| [x] | 1.15 | Build | Add solution build verification | `dotnet restore`, `dotnet build`, `dotnet test` succeed when SDK exists | 1.03-1.13 | `dotnet restore Vessel.slnx`, `dotnet build Vessel.slnx --no-restore`, `dotnet test Vessel.slnx --no-build`, format check, and project reference validation pass locally with .NET 11 preview. |
 | [x] | 1.16 | Repo | Create top-level folders | `src/`, `tests/`, `deploy/`, `docs/`, and `tools/` exist | None | Folders added with tracked placeholders where otherwise empty. |
 | [x] | 1.17 | Repo | Add editor and formatting policy | `.editorconfig` or equivalent enforces C# style, newline, charset, and analyzers | 1.03 | `.editorconfig` added. |
 | [x] | 1.18 | CI | Add initial CI workflow | Restore, build, test, and formatting checks run on supported branches | 1.15 | `.github/workflows/ci.yml` added for project reference validation, restore, format check, build, and test. |
