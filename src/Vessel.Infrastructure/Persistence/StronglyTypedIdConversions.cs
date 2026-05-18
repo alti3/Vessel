@@ -37,6 +37,12 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<SettingId, Guid> SettingId = new(id => id.Value,
         value => new SettingId(value));
 
+    public static readonly ValueConverter<PersonalAccessTokenId, Guid> PersonalAccessTokenId =
+        new(id => id.Value, value => new PersonalAccessTokenId(value));
+
+    public static readonly ValueConverter<TeamInvitationId, Guid> TeamInvitationId =
+        new(id => id.Value, value => new TeamInvitationId(value));
+
     public static PropertyBuilder<UserId> HasUserIdConversion(this PropertyBuilder<UserId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(UserId);
@@ -100,5 +106,17 @@ internal static class StronglyTypedIdConversions
     public static PropertyBuilder<SettingId> HasSettingIdConversion(this PropertyBuilder<SettingId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(SettingId);
+    }
+
+    public static PropertyBuilder<PersonalAccessTokenId> HasPersonalAccessTokenIdConversion(
+        this PropertyBuilder<PersonalAccessTokenId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(PersonalAccessTokenId);
+    }
+
+    public static PropertyBuilder<TeamInvitationId> HasTeamInvitationIdConversion(
+        this PropertyBuilder<TeamInvitationId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(TeamInvitationId);
     }
 }

@@ -24,6 +24,8 @@ public static class WebApplicationExtensions
 
         app.UseMiddleware<SecurityHeadersMiddleware>();
         app.UseRateLimiter();
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         return app;
     }

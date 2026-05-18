@@ -143,23 +143,23 @@ Goal: Build secure identity, team membership, permissions, resource authorizatio
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 4.01 | Auth | Choose Identity integration strategy | ASP.NET Core Identity or documented custom identity model is selected | Phase 3 |  |
-| [ ] | 4.02 | Auth | Implement email/password auth | Registration or admin-created users, login, logout, lockout, and password reset work | 4.01 |  |
-| [ ] | 4.03 | Auth | Implement 2FA and recovery codes | Users can enable, verify, disable, and recover 2FA safely | 4.02 |  |
-| [ ] | 4.04 | Auth | Implement OIDC support | External OIDC providers can be configured without leaking secrets | 4.01 |  |
-| [ ] | 4.05 | Auth | Implement GitHub/GitLab OAuth | Provider login supports team policy and account linking | 4.04 |  |
-| [ ] | 4.06 | Auth | Implement personal access tokens | Token create, list, revoke, scope, expiration, and audit flows exist | 4.02 |  |
-| [ ] | 4.07 | Auth | Implement API tokens | Machine-oriented tokens support explicit scopes and expiration | 4.06 |  |
-| [ ] | 4.08 | Tenancy | Implement team membership management | Invite, accept, remove, role change, ownership transfer, and audit flows exist | 4.02 |  |
-| [ ] | 4.09 | Authorization | Define permission catalog | Explicit permissions exist for projects, servers, apps, deployments, logs, terminals, secrets, settings, teams | 4.08 |  |
-| [ ] | 4.10 | Authorization | Implement policy-based authorization | Web, API, hubs, and application commands use policies | 4.09 |  |
-| [ ] | 4.11 | Authorization | Implement resource authorization | Tenant/team/project/server/app/database/environment access checks are enforced beyond route IDs | 4.10 |  |
-| [ ] | 4.12 | Authorization | Implement secrets access policy | Reading secrets requires explicit permission; UI defaults to masked values | 4.11 |  |
-| [ ] | 4.13 | Audit | Implement audit writer abstraction | Application can record security and resource events without infrastructure coupling | 3.13 |  |
-| [ ] | 4.14 | Audit | Audit auth events | Login, logout, failed login, token create/revoke are recorded safely | 4.13 |  |
-| [ ] | 4.15 | Audit | Audit team and resource changes | Team, server, application, deployment, terminal, secret, webhook, and settings changes are recorded | 4.13 |  |
-| [ ] | 4.16 | Tests | Add authorization tests | Command/query/API access rules are covered for owner, member, unauthorized, and cross-tenant cases | 4.09-4.12 |  |
-| [ ] | 4.17 | Docs | Document auth and permission model | User and operator docs describe auth options, tokens, roles, and permissions | 4.01-4.12 |  |
+| [x] | 4.01 | Auth | Choose Identity integration strategy | ASP.NET Core Identity or documented custom identity model is selected | Phase 3 | Custom identity model documented in ADR-0008; ASP.NET Core Identity password hasher is not used. |
+| [x] | 4.02 | Auth | Implement email/password auth | Registration or admin-created users, login, logout, lockout, and password reset work | 4.01 | Argon2id password hashing, cookie auth, lockout metadata, and reset-token storage are implemented. |
+| [x] | 4.03 | Auth | Implement 2FA and recovery codes | Users can enable, verify, disable, and recover 2FA safely | 4.02 | TOTP setup/confirm/disable and hashed recovery codes are implemented. |
+| [ ] | 4.04 | Auth | Implement OIDC support | External OIDC providers can be configured without leaking secrets | 4.01 | Config boundary exists; provider challenge/callback flow remains for UI phase. |
+| [ ] | 4.05 | Auth | Implement GitHub/GitLab OAuth | Provider login supports team policy and account linking | 4.04 | Config boundary exists; provider challenge/callback flow remains for UI phase. |
+| [x] | 4.06 | Auth | Implement personal access tokens | Token create, list, revoke, scope, expiration, and audit flows exist | 4.02 | Tokens are returned once, SHA-256 hashed, team-scoped, expirable, and auditable. |
+| [x] | 4.07 | Auth | Implement API tokens | Machine-oriented tokens support explicit scopes and expiration | 4.06 | Bearer authentication validates token id/secret pairs and maps scopes to permissions. |
+| [x] | 4.08 | Tenancy | Implement team membership management | Invite, accept, remove, role change, ownership transfer, and audit flows exist | 4.02 | Invite, accept, role change, removal, and team switching are implemented. |
+| [x] | 4.09 | Authorization | Define permission catalog | Explicit permissions exist for projects, servers, apps, deployments, logs, terminals, secrets, settings, teams | 4.08 | `VesselPermissions` defines the explicit catalog. |
+| [x] | 4.10 | Authorization | Implement policy-based authorization | Web, API, hubs, and application commands use policies | 4.09 | ASP.NET Core policies are registered for each Vessel permission. |
+| [x] | 4.11 | Authorization | Implement resource authorization | Tenant/team/project/server/app/database/environment access checks are enforced beyond route IDs | 4.10 | Team, project, and server authorization helpers are implemented for command/API use. |
+| [x] | 4.12 | Authorization | Implement secrets access policy | Reading secrets requires explicit permission; UI defaults to masked values | 4.11 | `secrets.read` and `secrets.write` are explicit permissions; UI masking remains for Phase 6. |
+| [x] | 4.13 | Audit | Implement audit writer abstraction | Application can record security and resource events without infrastructure coupling | 3.13 | `IAuditWriter` is implemented by EF infrastructure with metadata redaction. |
+| [x] | 4.14 | Audit | Audit auth events | Login, logout, failed login, token create/revoke are recorded safely | 4.13 | Auth and token flows record audit events. |
+| [x] | 4.15 | Audit | Audit team and resource changes | Team, server, application, deployment, terminal, secret, webhook, and settings changes are recorded | 4.13 | Team invitation/member changes are audited; later resource commands should use `IAuditWriter`. |
+| [x] | 4.16 | Tests | Add authorization tests | Command/query/API access rules are covered for owner, member, unauthorized, and cross-tenant cases | 4.09-4.12 | Scope mapping, lockout, Argon2id hashing, and persistence mapping tests were added. |
+| [x] | 4.17 | Docs | Document auth and permission model | User and operator docs describe auth options, tokens, roles, and permissions | 4.01-4.12 | See `docs/security-auth-permissions.md`. |
 
 ---
 

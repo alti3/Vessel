@@ -24,7 +24,9 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         : base(options)
     {
         UserRepository = new EfRepository<User, UserId>(this);
+        PersonalAccessTokenRepository = new EfRepository<PersonalAccessToken, PersonalAccessTokenId>(this);
         TeamRepository = new EfRepository<Team, TeamId>(this);
+        TeamInvitationRepository = new EfRepository<TeamInvitation, TeamInvitationId>(this);
         ProjectRepository = new EfRepository<Project, ProjectId>(this);
         EnvironmentRepository = new EfRepository<EnvironmentEntity, EnvironmentId>(this);
         ServerRepository = new EfRepository<Server, ServerId>(this);
@@ -35,9 +37,13 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<User> UserSet => Set<User>();
 
+    public DbSet<PersonalAccessToken> PersonalAccessTokenSet => Set<PersonalAccessToken>();
+
     public DbSet<Team> TeamSet => Set<Team>();
 
     public DbSet<TeamMembership> TeamMembershipSet => Set<TeamMembership>();
+
+    public DbSet<TeamInvitation> TeamInvitationSet => Set<TeamInvitation>();
 
     public DbSet<Project> ProjectSet => Set<Project>();
 
@@ -61,9 +67,13 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<User> Users => UserSet;
 
+    public IQueryable<PersonalAccessToken> PersonalAccessTokens => PersonalAccessTokenSet;
+
     public IQueryable<Team> Teams => TeamSet;
 
     public IQueryable<TeamMembership> TeamMemberships => TeamMembershipSet;
+
+    public IQueryable<TeamInvitation> TeamInvitations => TeamInvitationSet;
 
     public IQueryable<Project> Projects => ProjectSet;
 
@@ -87,7 +97,11 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<User, UserId> UserRepository { get; }
 
+    public IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository { get; }
+
     public IRepository<Team, TeamId> TeamRepository { get; }
+
+    public IRepository<TeamInvitation, TeamInvitationId> TeamInvitationRepository { get; }
 
     public IRepository<Project, ProjectId> ProjectRepository { get; }
 
@@ -130,9 +144,37 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(user => user.Email).HasConversion(ValueObjectConversions.EmailAddress).HasMaxLength(320)
                 .IsRequired();
             builder.Property(user => user.ExternalSubject).HasMaxLength(255);
+            builder.Property(user => user.PasswordHash).HasMaxLength(512);
+            builder.Property(user => user.PasswordResetTokenHash).HasMaxLength(128);
+            builder.Property(user => user.TwoFactorSecret).HasMaxLength(128);
+            builder.Property(user => user.TwoFactorRecoveryCodeHashes).HasMaxLength(4000);
             builder.Property(user => user.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(user => user.DomainEvents);
             builder.HasIndex(user => user.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<PersonalAccessToken>(builder =>
+        {
+            builder.ToTable("personal_access_tokens");
+            builder.HasKey(token => token.Id);
+            builder.Property(token => token.Id).HasPersonalAccessTokenIdConversion();
+            builder.Property(token => token.UserId).HasUserIdConversion();
+            builder.Property(token => token.TeamId).HasTeamIdConversion();
+            builder.Property(token => token.Name).HasMaxLength(255).IsRequired();
+            builder.Property(token => token.TokenHash).HasMaxLength(128).IsRequired();
+            builder.Property(token => token.Scopes).HasMaxLength(512).IsRequired();
+            builder.Property(token => token.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(token => token.DomainEvents);
+            builder.HasIndex(token => token.TokenHash).IsUnique();
+            builder.HasIndex(token => new { token.UserId, token.CreatedAt });
+            builder.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(token => token.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(token => token.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 
@@ -168,6 +210,26 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.HasOne<User>()
                 .WithMany()
                 .HasForeignKey(membership => membership.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TeamInvitation>(builder =>
+        {
+            builder.ToTable("team_invitations");
+            builder.HasKey(invitation => invitation.Id);
+            builder.Property(invitation => invitation.Id).HasTeamInvitationIdConversion();
+            builder.Property(invitation => invitation.TeamId).HasTeamIdConversion();
+            builder.Property(invitation => invitation.Email).HasConversion(ValueObjectConversions.EmailAddress)
+                .HasMaxLength(320).IsRequired();
+            builder.Property(invitation => invitation.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(invitation => invitation.TokenHash).HasMaxLength(128).IsRequired();
+            builder.Property(invitation => invitation.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(invitation => invitation.DomainEvents);
+            builder.HasIndex(invitation => invitation.TokenHash).IsUnique();
+            builder.HasIndex(invitation => new { invitation.TeamId, invitation.Email });
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(invitation => invitation.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
@@ -513,7 +575,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Ignore(setting => setting.DomainEvents);
             builder.HasIndex(setting => new
             {
-                setting.Scope, setting.TeamId, setting.ProjectId, setting.ResourceType, setting.ResourceId, setting.Key
+                setting.Scope,
+                setting.TeamId,
+                setting.ProjectId,
+                setting.ResourceType,
+                setting.ResourceId,
+                setting.Key
             }).IsUnique();
             builder.HasOne<Team>()
                 .WithMany()

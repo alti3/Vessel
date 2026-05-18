@@ -5,6 +5,7 @@
         <ProjectReference Include="..\Vessel.Shared\Vessel.Shared.csproj"/>
     </ItemGroup>
     <ItemGroup>
+        <PackageReference Include="Konscious.Security.Cryptography.Argon2"/>
         <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore.Design">

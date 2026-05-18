@@ -37,6 +37,8 @@ public sealed class VesselDbContextModelTests
 
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("InitialDomainModel", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("Phase4Auth", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -49,6 +51,8 @@ public sealed class VesselDbContextModelTests
         Assert.Contains("CREATE SCHEMA", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("FK_applications_environments_EnvironmentId", script, StringComparison.Ordinal);
         Assert.Contains("IX_team_memberships_UserId", script, StringComparison.Ordinal);
+        Assert.Contains("personal_access_tokens", script, StringComparison.Ordinal);
+        Assert.Contains("team_invitations", script, StringComparison.Ordinal);
     }
 
     private static VesselDbContext CreateContext()
