@@ -86,20 +86,20 @@ Goal: Establish the ASP.NET Core host, configuration model, diagnostics baseline
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 2.01 | Web Host | Create `Program.cs` composition root | Web host starts with clear service registration and endpoint mapping | Phase 1 |  |
-| [ ] | 2.02 | Config | Add appsettings files | Base and development settings exist without secrets | 2.01 |  |
-| [ ] | 2.03 | Config | Establish environment names | Development, Staging, Production, Testing are supported and documented | 2.02 |  |
-| [ ] | 2.04 | Config | Add strongly typed options pattern | Options classes validate at startup for core infrastructure settings | 2.02 |  |
-| [ ] | 2.05 | Logging | Integrate Serilog | Structured logs include environment, service, correlation, and safe exception data | 2.01 |  |
-| [ ] | 2.06 | Observability | Integrate OpenTelemetry baseline | HTTP traces and logs correlation are configured | 2.01 |  |
-| [ ] | 2.07 | Health | Add liveness endpoint | `/live` is lightweight and does not depend on external services | 2.01 |  |
-| [ ] | 2.08 | Health | Add readiness endpoint | `/ready` checks PostgreSQL, Redis, Hangfire storage, and object storage when enabled | Infrastructure config |  |
-| [ ] | 2.09 | Health | Add general health endpoint | `/health` returns safe aggregate status | 2.07, 2.08 |  |
-| [ ] | 2.10 | Errors | Add API error model | Error responses use stable code/message/details shape and do not expose stack traces | 2.01 |  |
-| [ ] | 2.11 | Errors | Add exception handling middleware | Unexpected failures are logged; user-facing responses are safe | 2.10 |  |
-| [ ] | 2.12 | Security | Add secure headers baseline | Production responses include appropriate security headers | 2.01 |  |
-| [ ] | 2.13 | Security | Add rate limiting baseline | Auth, webhooks, public API, and terminal endpoints can be limited | 2.01 |  |
-| [ ] | 2.14 | Docs | Document local development config | README or docs explain required services and non-secret settings | 2.02 |  |
+| [x] | 2.01 | Web Host | Create `Program.cs` composition root | Web host starts with clear service registration and endpoint mapping | Phase 1 | Composition root now delegates to Web and Infrastructure extension methods and maps root, controllers, and health endpoints. |
+| [x] | 2.02 | Config | Add appsettings files | Base and development settings exist without secrets | 2.01 | Added base, Development, Staging, Production, and Testing settings with non-secret defaults. |
+| [x] | 2.03 | Config | Establish environment names | Development, Staging, Production, Testing are supported and documented | 2.02 | Startup rejects unknown environment names; docs list supported names. |
+| [x] | 2.04 | Config | Add strongly typed options pattern | Options classes validate at startup for core infrastructure settings | 2.02 | Host, diagnostics, security headers, rate limits, PostgreSQL, Redis, Hangfire storage, and object storage options validate on start. |
+| [x] | 2.05 | Logging | Integrate Serilog | Structured logs include environment, service, correlation, and safe exception data | 2.01 | Serilog bootstraps and enriches with service/environment/correlation context; exception middleware returns safe details. |
+| [x] | 2.06 | Observability | Integrate OpenTelemetry baseline | HTTP traces and logs correlation are configured | 2.01 | ASP.NET Core and outgoing HTTP tracing configured with service resource metadata and optional OTLP exporter. |
+| [x] | 2.07 | Health | Add liveness endpoint | `/live` is lightweight and does not depend on external services | 2.01 | `/live` uses only the self check. |
+| [x] | 2.08 | Health | Add readiness endpoint | `/ready` checks PostgreSQL, Redis, Hangfire storage, and object storage when enabled | Infrastructure config | Checks are implemented in Infrastructure and return healthy when disabled by config. |
+| [x] | 2.09 | Health | Add general health endpoint | `/health` returns safe aggregate status | 2.07, 2.08 | `/health` returns aggregate status, durations, descriptions, and safe health data without exception details. |
+| [x] | 2.10 | Errors | Add API error model | Error responses use stable code/message/details shape and do not expose stack traces | 2.01 | Added shared `ApiErrorResponse` / `ApiError` contracts. |
+| [x] | 2.11 | Errors | Add exception handling middleware | Unexpected failures are logged; user-facing responses are safe | 2.10 | Middleware logs unexpected exceptions and returns `unexpected_error` with correlation and trace IDs only. |
+| [x] | 2.12 | Security | Add secure headers baseline | Production responses include appropriate security headers | 2.01 | Security headers middleware adds CSP, frame, content-type, referrer, and permissions headers when enabled. |
+| [x] | 2.13 | Security | Add rate limiting baseline | Auth, webhooks, public API, and terminal endpoints can be limited | 2.01 | Named `auth`, `webhooks`, `api`, and `terminal` fixed-window policies are registered. |
+| [x] | 2.14 | Docs | Document local development config | README or docs explain required services and non-secret settings | 2.02 | Added `docs/development/configuration.md` and linked it from README. |
 
 ---
 
