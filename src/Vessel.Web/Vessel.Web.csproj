@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
     <ItemGroup>
-        <ProjectReference Include="..\Vessel.Application\Vessel.Application.csproj" />
-        <ProjectReference Include="..\Vessel.Infrastructure\Vessel.Infrastructure.csproj" />
-        <ProjectReference Include="..\Vessel.Shared\Vessel.Shared.csproj" />
+        <ProjectReference Include="..\Vessel.Application\Vessel.Application.csproj"/>
+        <ProjectReference Include="..\Vessel.Infrastructure\Vessel.Infrastructure.csproj"/>
+        <ProjectReference Include="..\Vessel.Shared\Vessel.Shared.csproj"/>
     </ItemGroup>
     <ItemGroup>
-      <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
-      <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
-      <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
-      <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
-      <PackageReference Include="Serilog.AspNetCore" />
+        <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol"/>
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting"/>
+        <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore"/>
+        <PackageReference Include="OpenTelemetry.Instrumentation.Http"/>
+        <PackageReference Include="Serilog.AspNetCore"/>
     </ItemGroup>
 </Project>

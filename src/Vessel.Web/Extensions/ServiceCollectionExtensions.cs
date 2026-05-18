@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -20,10 +21,8 @@ public static class ServiceCollectionExtensions
         IWebHostEnvironment environment)
     {
         if (!VesselEnvironmentNames.IsKnown(environment.EnvironmentName))
-        {
             throw new InvalidOperationException(
                 $"Unsupported environment '{environment.EnvironmentName}'. Supported values are Development, Staging, Production, and Testing.");
-        }
 
         services.AddControllers();
         services.AddHttpContextAccessor();
@@ -44,25 +43,29 @@ public static class ServiceCollectionExtensions
             .AddOptions<VesselHostOptions>()
             .Bind(configuration.GetSection(VesselHostOptions.SectionName))
             .ValidateOnStart();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<VesselHostOptions>, VesselHostOptionsValidator>());
+        services.TryAddEnumerable(ServiceDescriptor
+            .Singleton<IValidateOptions<VesselHostOptions>, VesselHostOptionsValidator>());
 
         services
             .AddOptions<DiagnosticsOptions>()
             .Bind(configuration.GetSection(DiagnosticsOptions.SectionName))
             .ValidateOnStart();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<DiagnosticsOptions>, DiagnosticsOptionsValidator>());
+        services.TryAddEnumerable(ServiceDescriptor
+            .Singleton<IValidateOptions<DiagnosticsOptions>, DiagnosticsOptionsValidator>());
 
         services
             .AddOptions<SecurityHeadersOptions>()
             .Bind(configuration.GetSection(SecurityHeadersOptions.SectionName))
             .ValidateOnStart();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<SecurityHeadersOptions>, SecurityHeadersOptionsValidator>());
+        services.TryAddEnumerable(ServiceDescriptor
+            .Singleton<IValidateOptions<SecurityHeadersOptions>, SecurityHeadersOptionsValidator>());
 
         services
             .AddOptions<RateLimitOptions>()
             .Bind(configuration.GetSection(RateLimitOptions.SectionName))
             .ValidateOnStart();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RateLimitOptions>, RateLimitOptionsValidator>());
+        services.TryAddEnumerable(ServiceDescriptor
+            .Singleton<IValidateOptions<RateLimitOptions>, RateLimitOptionsValidator>());
 
         return services;
     }
@@ -76,10 +79,7 @@ public static class ServiceCollectionExtensions
             .GetSection(DiagnosticsOptions.SectionName)
             .Get<DiagnosticsOptions>() ?? new DiagnosticsOptions();
 
-        if (!diagnosticsOptions.OpenTelemetryEnabled)
-        {
-            return services;
-        }
+        if (!diagnosticsOptions.OpenTelemetryEnabled) return services;
 
         VesselHostOptions hostOptions = configuration
             .GetSection(VesselHostOptions.SectionName)
@@ -102,21 +102,15 @@ public static class ServiceCollectionExtensions
                 {
                     options.EnrichWithHttpRequest = (activity, request) =>
                     {
-                        if (request.Headers.TryGetValue(CorrelationIdMiddleware.HeaderName, out var correlationId))
-                        {
+                        if (request.Headers.TryGetValue(CorrelationIdMiddleware.HeaderName,
+                                out StringValues correlationId))
                             activity.SetTag("vessel.correlation_id", correlationId.ToString());
-                        }
                     };
                 })
                 .AddHttpClientInstrumentation();
 
             if (!string.IsNullOrWhiteSpace(diagnosticsOptions.OtlpEndpoint))
-            {
-                tracing.AddOtlpExporter(options =>
-                {
-                    options.Endpoint = new Uri(diagnosticsOptions.OtlpEndpoint);
-                });
-            }
+                tracing.AddOtlpExporter(options => { options.Endpoint = new Uri(diagnosticsOptions.OtlpEndpoint); });
         });
 
         return services;
@@ -129,7 +123,7 @@ public static class ServiceCollectionExtensions
             .AddCheck(
                 "self",
                 () => HealthCheckResult.Healthy("Vessel host is running."),
-                tags: ["live", "ready"])
+                ["live", "ready"])
             .AddCheck<DatabaseHealthCheck>(
                 "postgresql",
                 tags: ["ready"])
@@ -170,8 +164,8 @@ public static class ServiceCollectionExtensions
         HttpContext context,
         RateLimitPolicyOptions options)
     {
-        string partitionKey = context.Connection.RemoteIpAddress?.ToString()
-            ?? context.TraceIdentifier;
+        var partitionKey = context.Connection.RemoteIpAddress?.ToString()
+                           ?? context.TraceIdentifier;
 
         return RateLimitPartition.GetFixedWindowLimiter(
             partitionKey,

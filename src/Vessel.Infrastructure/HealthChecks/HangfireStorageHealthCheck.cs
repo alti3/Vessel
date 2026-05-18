@@ -13,20 +13,13 @@ public sealed class HangfireStorageHealthCheck(IOptionsMonitor<HangfireStorageOp
     {
         HangfireStorageOptions hangfireOptions = options.CurrentValue;
 
-        if (!hangfireOptions.Enabled)
-        {
-            return HealthCheckResult.Healthy("Hangfire storage readiness check is disabled.");
-        }
+        if (!hangfireOptions.Enabled) return HealthCheckResult.Healthy("Hangfire storage readiness check is disabled.");
 
         if (!string.Equals(hangfireOptions.StorageProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase))
-        {
             return HealthCheckResult.Unhealthy("Hangfire storage provider is unsupported.");
-        }
 
         if (string.IsNullOrWhiteSpace(hangfireOptions.ConnectionString))
-        {
             return HealthCheckResult.Unhealthy("Hangfire storage connection string is not configured.");
-        }
 
         try
         {
@@ -44,7 +37,8 @@ public sealed class HangfireStorageHealthCheck(IOptionsMonitor<HangfireStorageOp
 
             return HealthCheckResult.Healthy("Hangfire PostgreSQL storage is reachable.");
         }
-        catch (Exception exception) when (exception is NpgsqlException or TimeoutException or OperationCanceledException)
+        catch (Exception exception) when
+            (exception is NpgsqlException or TimeoutException or OperationCanceledException)
         {
             return HealthCheckResult.Unhealthy("Hangfire PostgreSQL storage is not reachable.");
         }

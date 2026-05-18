@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Primitives;
 using Serilog.Context;
 
 namespace Vessel.Web.Middleware;
@@ -9,7 +10,7 @@ public sealed class CorrelationIdMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context)
     {
-        string correlationId = ResolveCorrelationId(context);
+        var correlationId = ResolveCorrelationId(context);
 
         context.Items[HeaderName] = correlationId;
         context.Response.Headers[HeaderName] = correlationId;
@@ -22,21 +23,18 @@ public sealed class CorrelationIdMiddleware(RequestDelegate next)
 
     public static string GetCorrelationId(HttpContext context)
     {
-        return context.Items.TryGetValue(HeaderName, out object? value) && value is string correlationId
+        return context.Items.TryGetValue(HeaderName, out var value) && value is string correlationId
             ? correlationId
             : context.TraceIdentifier;
     }
 
     private static string ResolveCorrelationId(HttpContext context)
     {
-        if (context.Request.Headers.TryGetValue(HeaderName, out var headerValue))
+        if (context.Request.Headers.TryGetValue(HeaderName, out StringValues headerValue))
         {
-            string candidate = headerValue.ToString();
+            var candidate = headerValue.ToString();
 
-            if (candidate.Length is > 0 and <= 128)
-            {
-                return candidate;
-            }
+            if (candidate.Length is > 0 and <= 128) return candidate;
         }
 
         return context.TraceIdentifier;

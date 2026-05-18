@@ -18,14 +18,9 @@ public sealed class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
         List<string> failures = [];
 
         if (enabled && string.IsNullOrWhiteSpace(connectionString))
-        {
             failures.Add($"{optionsName}:ConnectionString is required when {optionsName}:Enabled is true.");
-        }
 
-        if (timeoutSeconds is < 1 or > 300)
-        {
-            failures.Add($"{optionsName}:TimeoutSeconds must be between 1 and 300.");
-        }
+        if (timeoutSeconds is < 1 or > 300) failures.Add($"{optionsName}:TimeoutSeconds must be between 1 and 300.");
 
         return failures.Count == 0
             ? ValidateOptionsResult.Success
@@ -55,20 +50,13 @@ public sealed class HangfireStorageOptionsValidator : IValidateOptions<HangfireS
 
         if (options.Enabled
             && !SupportedStorageProviders.Contains(options.StorageProvider, StringComparer.OrdinalIgnoreCase))
-        {
             failures.Add("Hangfire:StorageProvider must be PostgreSql.");
-        }
 
         if (options.Enabled
             && string.IsNullOrWhiteSpace(options.ConnectionString))
-        {
             failures.Add("Hangfire:ConnectionString is required when Hangfire:Enabled is true.");
-        }
 
-        if (options.TimeoutSeconds is < 1 or > 300)
-        {
-            failures.Add("Hangfire:TimeoutSeconds must be between 1 and 300.");
-        }
+        if (options.TimeoutSeconds is < 1 or > 300) failures.Add("Hangfire:TimeoutSeconds must be between 1 and 300.");
 
         return failures.Count == 0
             ? ValidateOptionsResult.Success
@@ -86,33 +74,23 @@ public sealed class ObjectStorageOptionsValidator : IValidateOptions<ObjectStora
 
         if (options.Enabled
             && !SupportedProviders.Contains(options.Provider, StringComparer.OrdinalIgnoreCase))
-        {
             failures.Add("ObjectStorage:Provider must be S3.");
-        }
 
         Uri? endpoint = null;
 
         if (options.Enabled && !Uri.TryCreate(options.Endpoint, UriKind.Absolute, out endpoint))
-        {
             failures.Add("ObjectStorage:Endpoint must be an absolute URI when ObjectStorage:Enabled is true.");
-        }
 
         if (options.Enabled
             && endpoint is not null
             && endpoint.Scheme is not "http" and not "https")
-        {
             failures.Add("ObjectStorage:Endpoint must use http or https.");
-        }
 
         if (options.Enabled && string.IsNullOrWhiteSpace(options.BucketName))
-        {
             failures.Add("ObjectStorage:BucketName is required when ObjectStorage:Enabled is true.");
-        }
 
         if (options.TimeoutSeconds is < 1 or > 300)
-        {
             failures.Add("ObjectStorage:TimeoutSeconds must be between 1 and 300.");
-        }
 
         return failures.Count == 0
             ? ValidateOptionsResult.Success

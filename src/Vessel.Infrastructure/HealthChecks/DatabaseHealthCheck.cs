@@ -13,15 +13,10 @@ public sealed class DatabaseHealthCheck(IOptionsMonitor<DatabaseOptions> options
     {
         DatabaseOptions databaseOptions = options.CurrentValue;
 
-        if (!databaseOptions.Enabled)
-        {
-            return HealthCheckResult.Healthy("PostgreSQL readiness check is disabled.");
-        }
+        if (!databaseOptions.Enabled) return HealthCheckResult.Healthy("PostgreSQL readiness check is disabled.");
 
         if (string.IsNullOrWhiteSpace(databaseOptions.ConnectionString))
-        {
             return HealthCheckResult.Unhealthy("PostgreSQL connection string is not configured.");
-        }
 
         try
         {
@@ -37,7 +32,8 @@ public sealed class DatabaseHealthCheck(IOptionsMonitor<DatabaseOptions> options
 
             return HealthCheckResult.Healthy("PostgreSQL is reachable.");
         }
-        catch (Exception exception) when (exception is NpgsqlException or TimeoutException or OperationCanceledException)
+        catch (Exception exception) when
+            (exception is NpgsqlException or TimeoutException or OperationCanceledException)
         {
             return HealthCheckResult.Unhealthy("PostgreSQL is not reachable.");
         }
@@ -45,7 +41,7 @@ public sealed class DatabaseHealthCheck(IOptionsMonitor<DatabaseOptions> options
 
     internal static CancellationTokenSource CreateTimeout(int timeoutSeconds, CancellationToken cancellationToken)
     {
-        CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         return timeout;
     }

@@ -20,10 +20,7 @@ public static class WebApplicationExtensions
             };
         });
 
-        if (!app.Environment.IsDevelopment())
-        {
-            app.UseHsts();
-        }
+        if (!app.Environment.IsDevelopment()) app.UseHsts();
 
         app.UseMiddleware<SecurityHeadersMiddleware>();
         app.UseRateLimiter();

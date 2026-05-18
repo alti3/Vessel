@@ -109,29 +109,31 @@ Goal: Build the source-of-truth model for teams, users, projects, servers, appli
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 3.01 | Domain | Define strongly typed ID pattern | IDs are serialization-safe and usable with EF mappings | Phase 1 |  |
-| [ ] | 3.02 | Domain | Implement Team/Tenant aggregate | Team identity, membership boundary, roles, and ownership rules exist | 3.01 |  |
-| [ ] | 3.03 | Domain | Implement User model boundary | User identity integrates with auth without coupling Domain to ASP.NET Identity | 3.01 |  |
-| [ ] | 3.04 | Domain | Implement Project aggregate | Projects belong to teams and own environments/resources | 3.02 |  |
-| [ ] | 3.05 | Domain | Implement Environment model | Production, staging, preview, and custom environment semantics are represented | 3.04 |  |
-| [ ] | 3.06 | Domain | Implement Server aggregate | Server address, connection type, runtime capabilities, and status state exist | 3.02 |  |
-| [ ] | 3.07 | Domain | Implement Application aggregate | Git source, build config, runtime config, deployment settings, domains, and env refs exist | 3.04, 3.05, 3.06 |  |
-| [ ] | 3.08 | Domain | Implement Database resource aggregate | Database type, version, storage, credentials reference, backups, and health state exist | 3.04, 3.06 |  |
-| [ ] | 3.09 | Domain | Implement Deployment aggregate | Deployment status, lifecycle transitions, actor, commit, logs, artifacts, rollback refs exist | 3.07 |  |
-| [ ] | 3.10 | Domain | Implement Deployment state machine | Valid transitions are enforced and covered by unit tests | 3.09 |  |
-| [ ] | 3.11 | Domain | Implement Secret metadata model | Secret values are not stored in Domain entities; references and policy are modeled | 3.02 |  |
-| [ ] | 3.12 | Domain | Implement Notification target model | Channels, delivery policy, and ownership exist without provider coupling | 3.02 |  |
-| [ ] | 3.13 | Domain | Implement Audit log model | Actor, action, target, correlation, timestamp, and redacted metadata are represented | 3.02 |  |
-| [ ] | 3.14 | Domain | Implement Settings model | System, team, project, and resource settings boundaries are clear | 3.02 |  |
-| [ ] | 3.15 | Domain | Implement value objects | Names, ports, domains, image tags, versions, server addresses, repository URLs, and resource limits validate invariants | 3.01 |  |
-| [ ] | 3.16 | Domain | Implement domain events | Important changes emit events without infrastructure references | 3.02-3.14 |  |
-| [ ] | 3.17 | Persistence | Add EF Core DbContext | PostgreSQL-backed context exists in Infrastructure | Phase 1 |  |
-| [ ] | 3.18 | Persistence | Add entity configurations | EF mappings keep Domain free of EF attributes unless approved | 3.17 |  |
-| [ ] | 3.19 | Persistence | Add initial migration | Schema covers core aggregates, indexes, constraints, and concurrency tokens | 3.17, 3.18 |  |
-| [ ] | 3.20 | Persistence | Add repositories or query abstractions | Application depends on interfaces, Infrastructure implements them | 3.17 |  |
-| [ ] | 3.21 | Persistence | Add optimistic concurrency where needed | Mutable configuration, memberships, and deployment records protect concurrent changes | 3.19 |  |
-| [ ] | 3.22 | Tests | Add domain unit tests | Value objects, invariants, state transitions, and permissions are covered | 3.01-3.16 |  |
-| [ ] | 3.23 | Tests | Add persistence integration tests | Mappings, constraints, indexes, and migration application are covered | 3.17-3.21 |  |
+| [x] | 3.01 | Domain | Define strongly typed ID pattern | IDs are serialization-safe and usable with EF mappings | Phase 1 | Strongly typed GUID IDs added and mapped through EF converters. |
+| [x] | 3.02 | Domain | Implement Team/Tenant aggregate | Team identity, membership boundary, roles, and ownership rules exist | 3.01 | Team roles and membership invariants enforce at least one owner. |
+| [x] | 3.03 | Domain | Implement User model boundary | User identity integrates with auth without coupling Domain to ASP.NET Identity | 3.01 | User model tracks identity metadata without ASP.NET Identity references. |
+| [x] | 3.04 | Domain | Implement Project aggregate | Projects belong to teams and own environments/resources | 3.02 | Project has team ownership and EF constraints. |
+| [x] | 3.05 | Domain | Implement Environment model | Production, staging, preview, and custom environment semantics are represented | 3.04 | Environment kind covers production, staging, preview, and custom. |
+| [x] | 3.06 | Domain | Implement Server aggregate | Server address, connection type, runtime capabilities, and status state exist | 3.02 | Server address, runtime, capabilities, and status events added. |
+| [x] | 3.07 | Domain | Implement Application aggregate | Git source, build config, runtime config, deployment settings, domains, and env refs exist | 3.04, 3.05, 3.06 | Application aggregate models Git, build/runtime/deployment config, domains, environment, and server refs. |
+| [x] | 3.08 | Domain | Implement Database resource aggregate | Database type, version, storage, credentials reference, backups, and health state exist | 3.04, 3.06 | Database resource model includes engine, version, storage, credential reference, backups, and health state. |
+| [x] | 3.09 | Domain | Implement Deployment aggregate | Deployment status, lifecycle transitions, actor, commit, logs, artifacts, rollback refs exist | 3.07 | Deployment aggregate includes actor, commit, logs, artifact, rollback metadata, and lifecycle timestamps. |
+| [x] | 3.10 | Domain | Implement Deployment state machine | Valid transitions are enforced and covered by unit tests | 3.09 | Queued/in-progress/succeeded/failed/canceled transitions are enforced and unit-tested. |
+| [x] | 3.11 | Domain | Implement Secret metadata model | Secret values are not stored in Domain entities; references and policy are modeled | 3.02 | Secret metadata stores references and policy only, never secret values. |
+| [x] | 3.12 | Domain | Implement Notification target model | Channels, delivery policy, and ownership exist without provider coupling | 3.02 | Notification targets model channel, team ownership, credential references, and delivery policy. |
+| [x] | 3.13 | Domain | Implement Audit log model | Actor, action, target, correlation, timestamp, and redacted metadata are represented | 3.02 | Audit log model stores actor, action, target, correlation, and redacted JSON metadata. |
+| [x] | 3.14 | Domain | Implement Settings model | System, team, project, and resource settings boundaries are clear | 3.02 | Scoped settings cover system, team, project, and resource boundaries. |
+| [x] | 3.15 | Domain | Implement value objects | Names, ports, domains, image tags, versions, server addresses, repository URLs, and resource limits validate invariants | 3.01 | Value objects added for names, ports, domains, image tags, versions, server addresses, repository URLs, and limits. |
+| [x] | 3.16 | Domain | Implement domain events | Important changes emit events without infrastructure references | 3.02-3.14 | Domain events added for team, project, server, application, and deployment changes. |
+| [x] | 3.17 | Persistence | Add EF Core DbContext | PostgreSQL-backed context exists in Infrastructure | Phase 1 | `VesselDbContext` added in Infrastructure and registered when database config is enabled. |
+| [x] | 3.18 | Persistence | Add entity configurations | EF mappings keep Domain free of EF attributes unless approved | 3.17 | Fluent EF mapping keeps Domain free of EF attributes. |
+| [x] | 3.19 | Persistence | Add initial migration | Schema covers core aggregates, indexes, constraints, and concurrency tokens | 3.17, 3.18 | Initial `InitialDomainModel` migration generated for PostgreSQL schema, indexes, FKs, and concurrency tokens. |
+| [x] | 3.20 | Persistence | Add repositories or query abstractions | Application depends on interfaces, Infrastructure implements them | 3.17 | Application persistence interfaces and Infrastructure EF repository implementation added. |
+| [x] | 3.21 | Persistence | Add optimistic concurrency where needed | Mutable configuration, memberships, and deployment records protect concurrent changes | 3.19 | `ConcurrencyStamp` is configured as an EF concurrency token on mutable records and memberships. |
+| [x] | 3.22 | Tests | Add domain unit tests | Value objects, invariants, state transitions, and permissions are covered | 3.01-3.16 | Unit tests cover value objects, team ownership invariants, and deployment transitions. |
+| [x] | 3.23 | Tests | Add persistence integration tests | Mappings, constraints, indexes, and migration application are covered | 3.17-3.21 | Integration tests verify model mapping, migration discovery, generated schema, constraints, and indexes. |
+
+Phase 3 notes: Coolify upstream default branch commit `49656aa` was inspected for the corresponding Team, User, Project, Environment, Server, Application, ApplicationDeploymentQueue, EnvironmentVariable, SharedEnvironmentVariable, StandalonePostgresql models and relevant migrations. Verification: `dotnet test Vessel.slnx --no-restore` passed locally with the repository's .NET 11 preview SDK warning.
 
 ---
 
