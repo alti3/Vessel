@@ -6,23 +6,33 @@
             <span class="brand-mark">V</span>
             <div>
                 <strong>Vessel</strong>
-                <span>Alpha control plane</span>
+                <span>v0 alpha</span>
             </div>
+        </div>
+        <button class="command-button" type="button" aria-label="Open command center">
+            <Icon Name="search" CssClass="size-4" />
+            <span>Command Center</span>
+            <kbd>/</kbd>
+        </button>
+        <div class="team-switcher">
+            <span>Team</span>
+            <strong>Personal</strong>
         </div>
         <nav class="nav-list" aria-label="Primary">
             <NavItem Href="/" IconName="home" Label="Dashboard" Match="NavLinkMatch.All" />
             <NavItem Href="/projects" IconName="folder" Label="Projects" />
             <NavItem Href="/servers" IconName="server" Label="Servers" />
-            <NavItem Href="/applications" IconName="rocket" Label="Applications" />
-            <NavItem Href="/databases" IconName="database" Label="Databases" />
-            <NavItem Href="/deployments" IconName="terminal" Label="Deployments" />
             <NavItem Href="/sources" IconName="key" Label="Sources" />
             <NavItem Href="/destinations" IconName="server" Label="Destinations" />
-            <NavItem Href="/security/keys" IconName="shield" Label="Keys" />
-            <NavItem Href="/storages" IconName="database" Label="Storage" />
-            <NavItem Href="/shared-variables" IconName="settings" Label="Variables" />
+            <NavItem Href="/storages" IconName="database" Label="S3 Storages" />
+            <NavItem Href="/shared-variables" IconName="settings" Label="Shared Variables" />
             <NavItem Href="/notifications" IconName="bell" Label="Notifications" />
+            <NavItem Href="/security/keys" IconName="shield" Label="Keys & Tokens" />
+            <NavItem Href="/tags" IconName="tag" Label="Tags" />
             <NavItem Href="/terminal" IconName="terminal" Label="Terminal" />
+            <NavItem Href="/deployments" IconName="terminal" Label="Deployments" />
+        </nav>
+        <nav class="nav-list nav-list-secondary" aria-label="Account">
             <NavItem Href="/teams" IconName="users" Label="Teams" />
             <NavItem Href="/profile" IconName="key" Label="Profile" />
             <NavItem Href="/settings" IconName="settings" Label="Settings" />
@@ -45,12 +55,14 @@
             <button class="icon-button mobile-menu" type="button" @onclick="ToggleSidebar" aria-label="Open navigation">
                 <Icon Name="menu" />
             </button>
-            <div class="topbar-search" role="search">
-                <span>/</span>
-                <input placeholder="Search projects, servers, deployments" aria-label="Search" />
-            </div>
+            <a class="mobile-brand" href="/">Vessel</a>
             <div class="topbar-actions">
-                <StatusBadge Text="Preview SDK" Tone="warning" />
+                <button class="command-button command-button-top" type="button" aria-label="Open command center">
+                    <Icon Name="search" CssClass="size-4" />
+                    <span>Search resources</span>
+                    <kbd>/</kbd>
+                </button>
+                <StatusBadge Text="Alpha" Tone="warning" />
             </div>
         </header>
         <main class="page-shell">
