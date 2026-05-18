@@ -66,7 +66,7 @@ public sealed class HangfireStorageOptionsValidator : IValidateOptions<HangfireS
 
 public sealed class ObjectStorageOptionsValidator : IValidateOptions<ObjectStorageOptions>
 {
-    private static readonly string[] SupportedProviders = ["S3"];
+    private static readonly string[] SupportedProviders = ["S3", "Local"];
 
     public ValidateOptionsResult Validate(string? name, ObjectStorageOptions options)
     {
@@ -74,14 +74,16 @@ public sealed class ObjectStorageOptionsValidator : IValidateOptions<ObjectStora
 
         if (options.Enabled
             && !SupportedProviders.Contains(options.Provider, StringComparer.OrdinalIgnoreCase))
-            failures.Add("ObjectStorage:Provider must be S3.");
+            failures.Add("ObjectStorage:Provider must be S3 or Local.");
 
         Uri? endpoint = null;
+        bool isLocal = string.Equals(options.Provider, "Local", StringComparison.OrdinalIgnoreCase);
 
-        if (options.Enabled && !Uri.TryCreate(options.Endpoint, UriKind.Absolute, out endpoint))
+        if (options.Enabled && !isLocal && !Uri.TryCreate(options.Endpoint, UriKind.Absolute, out endpoint))
             failures.Add("ObjectStorage:Endpoint must be an absolute URI when ObjectStorage:Enabled is true.");
 
         if (options.Enabled
+            && !isLocal
             && endpoint is not null
             && endpoint.Scheme is not "http" and not "https")
             failures.Add("ObjectStorage:Endpoint must use http or https.");

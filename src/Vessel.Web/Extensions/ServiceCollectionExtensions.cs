@@ -10,11 +10,13 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Vessel.Application.Auth;
 using Vessel.Application.Authorization;
+using Vessel.Application.Realtime;
 using Vessel.Application.Security;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
 using Vessel.Web.Middleware;
+using Vessel.Web.Realtime;
 using Vessel.Web.Security;
 
 namespace Vessel.Web.Extensions;
@@ -31,6 +33,7 @@ public static class ServiceCollectionExtensions
                 $"Unsupported environment '{environment.EnvironmentName}'. Supported values are Development, Staging, Production, and Testing.");
 
         services.AddControllers();
+        services.AddSignalR();
         services.AddHttpContextAccessor();
 
         services.AddVesselWebOptions(configuration);
@@ -61,6 +64,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
         services.AddScoped<TotpService>();
+        services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
 
         return services;
     }

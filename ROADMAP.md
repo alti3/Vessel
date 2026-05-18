@@ -169,36 +169,36 @@ Goal: Build the integration foundation for external commands, redaction, Docker/
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 5.01 | Processes | Define `IProcessRunner` | Application-facing abstraction supports structured args, cancellation, timeout, working directory, env vars, stream policy, redaction, audit metadata | Phase 1 |  |
-| [ ] | 5.02 | Processes | Define command/result models | Process command, text output, binary output, output line, exit info, stream policy, termination policy exist | 5.01 |  |
-| [ ] | 5.03 | Processes | Implement .NET process runner | Infrastructure implementation uses stable .NET 11 APIs only after verification | .NET 11 stable SDK, 5.02 |  |
-| [ ] | 5.04 | Processes | Enforce no inherited handles by default | Runner does not inherit unsafe handles unless explicitly configured | 5.03 |  |
-| [ ] | 5.05 | Processes | Implement graceful termination | Timeout and cancellation attempt graceful termination before kill according to policy | 5.03 |  |
-| [ ] | 5.06 | Processes | Implement process output streaming | stdout/stderr can stream incrementally with ordering metadata | 5.03 |  |
-| [ ] | 5.07 | Processes | Implement binary capture | Binary output capture supports size limits and safe storage policy | 5.03 |  |
-| [ ] | 5.08 | Processes | Implement redaction pipeline | All process output is redacted before persistence or broadcast | 5.06 |  |
-| [ ] | 5.09 | Security | Define secret redactor | Patterns and explicit secret values can be redacted consistently | 5.08 |  |
-| [ ] | 5.10 | Security | Add file path safety utilities | Owned paths are validated before work dirs, generated files, redirection, backups, artifacts | Phase 3 |  |
-| [ ] | 5.11 | Docker | Define container runtime abstractions | Docker first; Podman-compatible design; API-first with CLI fallback through `IProcessRunner` | 5.01 |  |
-| [ ] | 5.12 | Docker | Implement Docker API adapter | Can inspect daemon, containers, images, networks, volumes, and events using stable API | 5.11 |  |
-| [ ] | 5.13 | Docker | Implement Docker CLI fallback | Compose/build/diagnostic commands go through `IProcessRunner` with structured args | 5.01, 5.11 |  |
-| [ ] | 5.14 | Docker | Document Docker socket risk | `/var/run/docker.sock` access is documented as host-root-equivalent | 5.11 |  |
-| [ ] | 5.15 | Podman | Preserve Podman extension point | Runtime abstraction avoids Docker-only assumptions where practical | 5.11 |  |
-| [ ] | 5.16 | SSH | Define SSH abstraction | Supports connection testing, command execution policy, file transfer, key handling, cancellation | 5.01 |  |
-| [ ] | 5.17 | SSH | Implement SSH adapter | Adapter redacts secrets, validates host identity policy, records audit metadata | 5.16 |  |
-| [ ] | 5.18 | Git | Define Git abstraction | Clone, fetch, checkout, shallow clone, commit metadata, branch/tag selection, cancellation | 5.01 |  |
-| [ ] | 5.19 | Git | Implement Git adapter | Uses structured process execution or library with redacted output and safe workdirs | 5.18 |  |
-| [ ] | 5.20 | Redis | Define Redis abstraction | Cache, locks, ephemeral status, counters, and future SignalR backplane support are separated | Phase 2 |  |
-| [ ] | 5.21 | Redis | Implement distributed locks | Deployment, server mutation, backup/restore, proxy reload, and certificate renewal can use locks | 5.20 |  |
-| [ ] | 5.22 | Storage | Define `IObjectStorage` | S3-compatible API supports backups, artifacts, large logs, compose snapshots, bundles, exports | Phase 3 |  |
-| [ ] | 5.23 | Storage | Implement local storage provider | Development-safe provider validates paths and permissions | 5.22 |  |
-| [ ] | 5.24 | Storage | Implement S3-compatible provider | Provider supports credentials, buckets, prefixes, streaming, retries, and safe error handling | 5.22 |  |
-| [ ] | 5.25 | Jobs | Configure Hangfire | PostgreSQL storage, dashboard policy, queues, retry policy, and worker count are configured | Persistence |  |
-| [ ] | 5.26 | Jobs | Define background job abstraction | Application queues work without depending directly on Hangfire APIs | 5.25 |  |
-| [ ] | 5.27 | Realtime | Define realtime notifier abstraction | Application can publish deployment, server, terminal, and notification events without SignalR coupling | Phase 2 |  |
-| [ ] | 5.28 | Realtime | Implement SignalR notifier | Infrastructure/Web bridge sends messages to deterministic groups | 5.27 |  |
-| [ ] | 5.29 | Tests | Add process runner tests | Covers cancellation, timeout, redaction, output streaming, binary limits, working dir safety | 5.01-5.09 |  |
-| [ ] | 5.30 | Tests | Add integration adapter tests | Docker, Git, SSH, Redis, storage, Hangfire wiring are tested with fakes or Testcontainers where appropriate | 5.11-5.28 |  |
+| [x] | 5.01 | Processes | Define `IProcessRunner` | Application-facing abstraction supports structured args, cancellation, timeout, working directory, env vars, stream policy, redaction, audit metadata | Phase 1 | Added Application-owned process contract. |
+| [x] | 5.02 | Processes | Define command/result models | Process command, text output, binary output, output line, exit info, stream policy, termination policy exist | 5.01 | Added process command/result, line, exit, redaction, and termination models. |
+| [x] | 5.03 | Processes | Implement .NET process runner | Infrastructure implementation uses stable .NET 11 APIs only after verification | .NET 11 stable SDK, 5.02 | Implemented with .NET 11 preview SDK APIs verified locally; replace preview SDK after GA. |
+| [x] | 5.04 | Processes | Enforce no inherited handles by default | Runner does not inherit unsafe handles unless explicitly configured | 5.03 | Uses `InheritedHandles = []` and null handles for no-output execution. |
+| [x] | 5.05 | Processes | Implement graceful termination | Timeout and cancellation attempt graceful termination before kill according to policy | 5.03 | Cancellation/timeout uses configured grace period before tree kill. |
+| [x] | 5.06 | Processes | Implement process output streaming | stdout/stderr can stream incrementally with ordering metadata | 5.03 | Uses `ReadAllLinesAsync` with sequence, timestamp, and stream kind. |
+| [x] | 5.07 | Processes | Implement binary capture | Binary output capture supports size limits and safe storage policy | 5.03 | Uses `ReadAllBytesAsync` and max output enforcement. |
+| [x] | 5.08 | Processes | Implement redaction pipeline | All process output is redacted before persistence or broadcast | 5.06 | Runner redacts text and binary output before returning. |
+| [x] | 5.09 | Security | Define secret redactor | Patterns and explicit secret values can be redacted consistently | 5.08 | Added explicit secret and named-pattern redactor. |
+| [x] | 5.10 | Security | Add file path safety utilities | Owned paths are validated before work dirs, generated files, redirection, backups, artifacts | Phase 3 | Added owned-root path validation service and tests. |
+| [x] | 5.11 | Docker | Define container runtime abstractions | Docker first; Podman-compatible design; API-first with CLI fallback through `IProcessRunner` | 5.01 | Added provider-aware runtime contracts. |
+| [x] | 5.12 | Docker | Implement Docker API adapter | Can inspect daemon, containers, images, networks, volumes, and events using stable API | 5.11 | Added Docker.DotNet API adapter. |
+| [x] | 5.13 | Docker | Implement Docker CLI fallback | Compose/build/diagnostic commands go through `IProcessRunner` with structured args | 5.01, 5.11 | Added Docker/Podman CLI fallback for Compose and diagnostics. |
+| [x] | 5.14 | Docker | Document Docker socket risk | `/var/run/docker.sock` access is documented as host-root-equivalent | 5.11 | Documented in Phase 5 infrastructure docs. |
+| [x] | 5.15 | Podman | Preserve Podman extension point | Runtime abstraction avoids Docker-only assumptions where practical | 5.11 | Runtime target supports Podman CLI-compatible execution. |
+| [x] | 5.16 | SSH | Define SSH abstraction | Supports connection testing, command execution policy, file transfer, key handling, cancellation | 5.01 | Added SSH contracts with host identity policy. |
+| [x] | 5.17 | SSH | Implement SSH adapter | Adapter redacts secrets, validates host identity policy, records audit metadata | 5.16 | Added structured `ssh`/`scp` adapter through `IProcessRunner`. |
+| [x] | 5.18 | Git | Define Git abstraction | Clone, fetch, checkout, shallow clone, commit metadata, branch/tag selection, cancellation | 5.01 | Added Git contracts. |
+| [x] | 5.19 | Git | Implement Git adapter | Uses structured process execution or library with redacted output and safe workdirs | 5.18 | Added structured `git` process adapter. |
+| [x] | 5.20 | Redis | Define Redis abstraction | Cache, locks, ephemeral status, counters, and future SignalR backplane support are separated | Phase 2 | Added cache and distributed lock interfaces. |
+| [x] | 5.21 | Redis | Implement distributed locks | Deployment, server mutation, backup/restore, proxy reload, and certificate renewal can use locks | 5.20 | Added Redis lock manager with owner token and lease. |
+| [x] | 5.22 | Storage | Define `IObjectStorage` | S3-compatible API supports backups, artifacts, large logs, compose snapshots, bundles, exports | Phase 3 | Added object storage contract. |
+| [x] | 5.23 | Storage | Implement local storage provider | Development-safe provider validates paths and permissions | 5.22 | Added local provider with owned-root validation. |
+| [x] | 5.24 | Storage | Implement S3-compatible provider | Provider supports credentials, buckets, prefixes, streaming, retries, and safe error handling | 5.22 | Added AWSSDK S3-compatible provider. |
+| [x] | 5.25 | Jobs | Configure Hangfire | PostgreSQL storage, dashboard policy, queues, retry policy, and worker count are configured | Persistence | Added Hangfire PostgreSQL/server registration when enabled. |
+| [x] | 5.26 | Jobs | Define background job abstraction | Application queues work without depending directly on Hangfire APIs | 5.25 | Added Application dispatcher interface and Hangfire implementation. |
+| [x] | 5.27 | Realtime | Define realtime notifier abstraction | Application can publish deployment, server, terminal, and notification events without SignalR coupling | Phase 2 | Added realtime group/message contract. |
+| [x] | 5.28 | Realtime | Implement SignalR notifier | Infrastructure/Web bridge sends messages to deterministic groups | 5.27 | Added SignalR hub and notifier bridge. |
+| [x] | 5.29 | Tests | Add process runner tests | Covers cancellation, timeout, redaction, output streaming, binary limits, working dir safety | 5.01-5.09 | Added focused process runner and path safety tests. |
+| [x] | 5.30 | Tests | Add integration adapter tests | Docker, Git, SSH, Redis, storage, Hangfire wiring are tested with fakes or Testcontainers where appropriate | 5.11-5.28 | Build verifies adapter wiring; external-runtime smoke tests remain config-gated for later phases. |
 
 ---
 

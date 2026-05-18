@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Vessel.Web.Hubs;
 
 namespace Vessel.Web.Extensions;
 
@@ -17,6 +18,7 @@ public static class EndpointRouteBuilderExtensions
         }));
 
         endpoints.MapControllers();
+        endpoints.MapHub<VesselRealtimeHub>("/hubs/realtime");
 
         endpoints.MapHealthChecks("/live", new HealthCheckOptions
         {
