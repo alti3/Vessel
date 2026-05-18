@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 11 preview
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+
+      - name: Validate project references
+        shell: pwsh
+        run: ./tools/validate-project-references.ps1
+
+      - name: Restore
+        run: dotnet restore Vessel.slnx
+
+      - name: Format check
+        run: dotnet format Vessel.slnx --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build Vessel.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Vessel.slnx --configuration Release --no-build --logger trx

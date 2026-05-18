@@ -1,0 +1,14 @@
+<Solution>
+    <Folder Name="/src/">
+        <Project Path="src/Vessel.Application/Vessel.Application.csproj"/>
+        <Project Path="src/Vessel.Domain/Vessel.Domain.csproj"/>
+        <Project Path="src/Vessel.Infrastructure/Vessel.Infrastructure.csproj"/>
+        <Project Path="src/Vessel.Shared/Vessel.Shared.csproj"/>
+        <Project Path="src/Vessel.Web/Vessel.Web.csproj"/>
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/Vessel.E2ETests/Vessel.E2ETests.csproj"/>
+        <Project Path="tests/Vessel.IntegrationTests/Vessel.IntegrationTests.csproj"/>
+        <Project Path="tests/Vessel.UnitTests/Vessel.UnitTests.csproj"/>
+    </Folder>
+</Solution>

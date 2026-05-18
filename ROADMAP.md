@@ -38,18 +38,18 @@ Goal: Establish the operating model, project identity, architecture commitments,
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 0.01 | Product | Confirm project name, purpose, and rewrite philosophy | README states Vessel is a ground-up C#/.NET rewrite of Coolify, not a line-by-line port | None |  |
-| [ ] | 0.02 | Product | Confirm executable-first control-plane strategy | Docs state host-native daemon is preferred; Dockerized control plane is secondary | None |  |
-| [ ] | 0.03 | Product | Confirm modular monolith strategy | Docs forbid initial microservice split unless explicitly requested | None |  |
-| [ ] | 0.04 | Product | Maintain complete requirements document | `PROJECT_REQUIREMENTS.md` captures runtime, architecture, UI, API, jobs, security, operations, testing, and migration strategy | None |  |
-| [ ] | 0.05 | Governance | Maintain agent engineering rules | `AGENTS.md` captures coding boundaries, process execution rules, persistence rules, and verification expectations | None |  |
-| [ ] | 0.06 | Governance | Define repository roadmap | `ROADMAP.md` exists and is updated when scope changes | None |  |
-| [ ] | 0.07 | Governance | Add license | License file exists and README references it | Product decision |  |
-| [ ] | 0.08 | Governance | Define contribution workflow | CONTRIBUTING or docs explain build, test, coding, issue, and PR expectations | Solution scaffold |  |
-| [ ] | 0.09 | Governance | Define security reporting process | SECURITY document describes supported versions and vulnerability reporting | Product decision |  |
-| [ ] | 0.10 | Governance | Define ADR process | `docs/decisions/` contains ADR template and naming convention | Docs scaffold |  |
-| [ ] | 0.11 | Governance | Create initial ADRs | ADRs exist for modular monolith, Blazor Web App, Hangfire, process runner, PostgreSQL, SignalR, executable-first distribution | ADR process |  |
-| [ ] | 0.12 | Planning | Define release maturity labels | Alpha, beta, release candidate, and stable criteria are documented | Product decision |  |
+| [x] | 0.01 | Product | Confirm project name, purpose, and rewrite philosophy | README states Vessel is a ground-up C#/.NET rewrite of Coolify, not a line-by-line port | None | README and requirements confirm this. |
+| [x] | 0.02 | Product | Confirm executable-first control-plane strategy | Docs state host-native daemon is preferred; Dockerized control plane is secondary | None | README and requirements confirm this. |
+| [x] | 0.03 | Product | Confirm modular monolith strategy | Docs forbid initial microservice split unless explicitly requested | None | README, requirements, and ADR-0001 confirm this. |
+| [x] | 0.04 | Product | Maintain complete requirements document | `PROJECT_REQUIREMENTS.md` captures runtime, architecture, UI, API, jobs, security, operations, testing, and migration strategy | None | Existing requirements document retained. |
+| [x] | 0.05 | Governance | Maintain agent engineering rules | `AGENTS.md` captures coding boundaries, process execution rules, persistence rules, and verification expectations | None | Existing agent rules retained. |
+| [x] | 0.06 | Governance | Define repository roadmap | `ROADMAP.md` exists and is updated when scope changes | None | Roadmap updated with Phase 0/1 status. |
+| [x] | 0.07 | Governance | Add license | License file exists and README references it | Product decision | MIT license added after confirming Coolify uses Apache-2.0 and this is a ground-up rewrite. |
+| [x] | 0.08 | Governance | Define contribution workflow | CONTRIBUTING or docs explain build, test, coding, issue, and PR expectations | Solution scaffold | `CONTRIBUTING.md` added. |
+| [x] | 0.09 | Governance | Define security reporting process | SECURITY document describes supported versions and vulnerability reporting | Product decision | `SECURITY.md` added with early-alpha reporting guidance. |
+| [x] | 0.10 | Governance | Define ADR process | `docs/decisions/` contains ADR template and naming convention | Docs scaffold | ADR README and template added. |
+| [x] | 0.11 | Governance | Create initial ADRs | ADRs exist for modular monolith, Blazor Web App, Hangfire, process runner, PostgreSQL, SignalR, executable-first distribution | ADR process | ADR-0001 through ADR-0007 added. |
+| [x] | 0.12 | Planning | Define release maturity labels | Alpha, beta, release candidate, and stable criteria are documented | Product decision | `docs/release/maturity.md` added. |
 
 ---
 
@@ -59,24 +59,24 @@ Goal: Create the .NET solution structure and build policy without starting produ
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 1.01 | Runtime | Verify stable .NET 11 SDK availability | Installed SDK is stable GA; exact SDK version is recorded | .NET 11 GA |  |
-| [ ] | 1.02 | Runtime | Add `global.json` | Pins stable .NET 11 SDK with `rollForward: latestFeature` | 1.01 |  |
-| [ ] | 1.03 | Build | Create solution file | Solution includes Web, Application, Domain, Infrastructure, Shared, UnitTests, IntegrationTests, E2ETests | 1.01 |  |
-| [ ] | 1.04 | Build | Add `Directory.Build.props` | Nullable enabled, implicit usings configured, warnings policy set, deterministic builds enabled where practical | 1.03 |  |
-| [ ] | 1.05 | Build | Add `Directory.Packages.props` | Central package management configured for all projects | 1.03 |  |
-| [ ] | 1.06 | Build | Create `Vessel.Domain` | Targets `net11.0`; has no forbidden dependencies | 1.03 |  |
-| [ ] | 1.07 | Build | Create `Vessel.Shared` | Targets `net11.0`; remains lightweight | 1.03 |  |
-| [ ] | 1.08 | Build | Create `Vessel.Application` | References Domain and Shared only | 1.06, 1.07 |  |
-| [ ] | 1.09 | Build | Create `Vessel.Infrastructure` | References Application, Domain, and Shared; no Web reference | 1.06, 1.07, 1.08 |  |
-| [ ] | 1.10 | Build | Create `Vessel.Web` | References Application, Infrastructure, Shared; hosts ASP.NET Core | 1.08, 1.09 |  |
-| [ ] | 1.11 | Tests | Create unit test project | Unit tests can reference Domain/Application as appropriate | 1.03 |  |
-| [ ] | 1.12 | Tests | Create integration test project | Integration tests can exercise infrastructure with controlled dependencies | 1.03 |  |
-| [ ] | 1.13 | Tests | Create E2E test project | Playwright or equivalent E2E structure is ready | 1.03 |  |
-| [ ] | 1.14 | Build | Validate project references | Forbidden references fail review or build validation | 1.06-1.10 |  |
-| [ ] | 1.15 | Build | Add solution build verification | `dotnet restore`, `dotnet build`, `dotnet test` succeed when SDK exists | 1.03-1.13 |  |
-| [ ] | 1.16 | Repo | Create top-level folders | `src/`, `tests/`, `deploy/`, `docs/`, and `tools/` exist | None |  |
-| [ ] | 1.17 | Repo | Add editor and formatting policy | `.editorconfig` or equivalent enforces C# style, newline, charset, and analyzers | 1.03 |  |
-| [ ] | 1.18 | CI | Add initial CI workflow | Restore, build, test, and formatting checks run on supported branches | 1.15 |  |
+| [x] | 1.01 | Runtime | Verify stable .NET 11 SDK availability | Installed SDK is stable GA; exact SDK version is recorded | .NET 11 GA | User explicitly approved .NET 11 preview use. Local `dotnet --info` exposes SDK `11.0.100-preview.4.26230.115`; replace with stable SDK after GA. |
+| [x] | 1.02 | Runtime | Add `global.json` | Pins stable .NET 11 SDK with `rollForward: latestFeature` | 1.01 | Added `global.json` for .NET 11 preview `11.0.100-preview.4.26230.115` with `allowPrerelease: true`; replace with stable SDK after GA. |
+| [x] | 1.03 | Build | Create solution file | Solution includes Web, Application, Domain, Infrastructure, Shared, UnitTests, IntegrationTests, E2ETests | 1.01 | `Vessel.slnx` added with all projects. |
+| [x] | 1.04 | Build | Add `Directory.Build.props` | Nullable enabled, implicit usings configured, warnings policy set, deterministic builds enabled where practical | 1.03 | `Directory.Build.props` added. |
+| [x] | 1.05 | Build | Add `Directory.Packages.props` | Central package management configured for all projects | 1.03 | `Directory.Packages.props` added. |
+| [x] | 1.06 | Build | Create `Vessel.Domain` | Targets `net11.0`; has no forbidden dependencies | 1.03 | Project created; target inherited from build props. |
+| [x] | 1.07 | Build | Create `Vessel.Shared` | Targets `net11.0`; remains lightweight | 1.03 | Project created; target inherited from build props. |
+| [x] | 1.08 | Build | Create `Vessel.Application` | References Domain and Shared only | 1.06, 1.07 | Project created with allowed references. |
+| [x] | 1.09 | Build | Create `Vessel.Infrastructure` | References Application, Domain, and Shared; no Web reference | 1.06, 1.07, 1.08 | Project created with allowed references. |
+| [x] | 1.10 | Build | Create `Vessel.Web` | References Application, Infrastructure, Shared; hosts ASP.NET Core | 1.08, 1.09 | ASP.NET Core host project created with allowed references. |
+| [x] | 1.11 | Tests | Create unit test project | Unit tests can reference Domain/Application as appropriate | 1.03 | `Vessel.UnitTests` added. |
+| [x] | 1.12 | Tests | Create integration test project | Integration tests can exercise infrastructure with controlled dependencies | 1.03 | `Vessel.IntegrationTests` added. |
+| [x] | 1.13 | Tests | Create E2E test project | Playwright or equivalent E2E structure is ready | 1.03 | `Vessel.E2ETests` added with Playwright package reference. |
+| [x] | 1.14 | Build | Validate project references | Forbidden references fail review or build validation | 1.06-1.10 | `tools/validate-project-references.ps1` added and passed locally. |
+| [x] | 1.15 | Build | Add solution build verification | `dotnet restore`, `dotnet build`, `dotnet test` succeed when SDK exists | 1.03-1.13 | `dotnet restore Vessel.slnx`, `dotnet build Vessel.slnx --no-restore`, `dotnet test Vessel.slnx --no-build`, format check, and project reference validation pass locally with .NET 11 preview. |
+| [x] | 1.16 | Repo | Create top-level folders | `src/`, `tests/`, `deploy/`, `docs/`, and `tools/` exist | None | Folders added with tracked placeholders where otherwise empty. |
+| [x] | 1.17 | Repo | Add editor and formatting policy | `.editorconfig` or equivalent enforces C# style, newline, charset, and analyzers | 1.03 | `.editorconfig` added. |
+| [x] | 1.18 | CI | Add initial CI workflow | Restore, build, test, and formatting checks run on supported branches | 1.15 | `.github/workflows/ci.yml` added for project reference validation, restore, format check, build, and test. |
 
 ---
 
@@ -572,4 +572,3 @@ Use this checklist for every non-trivial feature, regardless of phase.
 | [ ] | Tests | Golden tests cover generated files when relevant |  |
 | [ ] | Docs | Docs or ADRs are updated for public behavior, operations, or architecture changes |  |
 | [ ] | Verification | Narrowest useful verification command has been run |  |
-

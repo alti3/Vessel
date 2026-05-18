@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <ItemGroup>
+        <ProjectReference Include="..\Vessel.Application\Vessel.Application.csproj"/>
+        <ProjectReference Include="..\Vessel.Domain\Vessel.Domain.csproj"/>
+        <ProjectReference Include="..\Vessel.Shared\Vessel.Shared.csproj"/>
+    </ItemGroup>
+</Project>
