@@ -42,7 +42,7 @@ public static class EndpointRouteBuilderExtensions
     {
         context.Response.ContentType = "application/json";
 
-        Dictionary<string, object?> checks = report.Entries.ToDictionary(
+        var checks = report.Entries.ToDictionary(
             entry => entry.Key,
             entry => (object?)new
             {
@@ -60,6 +60,7 @@ public static class EndpointRouteBuilderExtensions
             checks
         };
 
-        await JsonSerializer.SerializeAsync(context.Response.Body, payload, JsonSerializerOptions, context.RequestAborted);
+        await JsonSerializer.SerializeAsync(context.Response.Body, payload, JsonSerializerOptions,
+            context.RequestAborted);
     }
 }

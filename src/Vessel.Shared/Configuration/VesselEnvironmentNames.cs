@@ -10,8 +10,8 @@ public static class VesselEnvironmentNames
     public static bool IsKnown(string environmentName)
     {
         return string.Equals(environmentName, Development, StringComparison.Ordinal)
-            || string.Equals(environmentName, Staging, StringComparison.Ordinal)
-            || string.Equals(environmentName, Production, StringComparison.Ordinal)
-            || string.Equals(environmentName, Testing, StringComparison.Ordinal);
+               || string.Equals(environmentName, Staging, StringComparison.Ordinal)
+               || string.Equals(environmentName, Production, StringComparison.Ordinal)
+               || string.Equals(environmentName, Testing, StringComparison.Ordinal);
     }
 }

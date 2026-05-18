@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Vessel.Infrastructure.Configuration;
 
 namespace Vessel.IntegrationTests.Configuration;
@@ -9,7 +10,7 @@ public sealed class InfrastructureOptionsValidatorTests
     {
         var validator = new DatabaseOptionsValidator();
 
-        var result = validator.Validate(null, new DatabaseOptions
+        ValidateOptionsResult result = validator.Validate(null, new DatabaseOptions
         {
             Enabled = true
         });
@@ -23,7 +24,7 @@ public sealed class InfrastructureOptionsValidatorTests
     {
         var validator = new RedisOptionsValidator();
 
-        var result = validator.Validate(null, new RedisOptions
+        ValidateOptionsResult result = validator.Validate(null, new RedisOptions
         {
             Enabled = false
         });
@@ -36,7 +37,7 @@ public sealed class InfrastructureOptionsValidatorTests
     {
         var validator = new HangfireStorageOptionsValidator();
 
-        var result = validator.Validate(null, new HangfireStorageOptions
+        ValidateOptionsResult result = validator.Validate(null, new HangfireStorageOptions
         {
             Enabled = true,
             StorageProvider = "Redis",
@@ -52,7 +53,7 @@ public sealed class InfrastructureOptionsValidatorTests
     {
         var validator = new ObjectStorageOptionsValidator();
 
-        var result = validator.Validate(null, new ObjectStorageOptions
+        ValidateOptionsResult result = validator.Validate(null, new ObjectStorageOptions
         {
             Enabled = true,
             Endpoint = "localhost:9000",

@@ -24,8 +24,8 @@ public sealed class ApiExceptionHandlingMiddleware(
         }
         catch (Exception exception) when (!context.Response.HasStarted)
         {
-            string correlationId = CorrelationIdMiddleware.GetCorrelationId(context);
-            string traceId = Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier;
+            var correlationId = CorrelationIdMiddleware.GetCorrelationId(context);
+            var traceId = Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier;
 
             UnhandledRequestFailure(logger, correlationId, traceId, exception);
 

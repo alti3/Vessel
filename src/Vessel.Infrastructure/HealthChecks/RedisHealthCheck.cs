@@ -13,19 +13,14 @@ public sealed class RedisHealthCheck(IOptionsMonitor<RedisOptions> options) : IH
     {
         RedisOptions redisOptions = options.CurrentValue;
 
-        if (!redisOptions.Enabled)
-        {
-            return HealthCheckResult.Healthy("Redis readiness check is disabled.");
-        }
+        if (!redisOptions.Enabled) return HealthCheckResult.Healthy("Redis readiness check is disabled.");
 
         if (string.IsNullOrWhiteSpace(redisOptions.ConnectionString))
-        {
             return HealthCheckResult.Unhealthy("Redis connection string is not configured.");
-        }
 
         try
         {
-            ConfigurationOptions configuration = ConfigurationOptions.Parse(redisOptions.ConnectionString);
+            var configuration = ConfigurationOptions.Parse(redisOptions.ConnectionString);
             configuration.AbortOnConnectFail = false;
             configuration.ConnectTimeout = (int)TimeSpan.FromSeconds(redisOptions.TimeoutSeconds).TotalMilliseconds;
 
@@ -43,7 +38,8 @@ public sealed class RedisHealthCheck(IOptionsMonitor<RedisOptions> options) : IH
 
             return HealthCheckResult.Healthy("Redis is reachable.", data);
         }
-        catch (Exception exception) when (exception is RedisConnectionException or RedisTimeoutException or OperationCanceledException)
+        catch (Exception exception) when (exception is RedisConnectionException or RedisTimeoutException
+                                              or OperationCanceledException)
         {
             return HealthCheckResult.Unhealthy("Redis is not reachable.");
         }

@@ -17,14 +17,10 @@ public sealed class ObjectStorageHealthCheck(
         ObjectStorageOptions objectStorageOptions = options.CurrentValue;
 
         if (!objectStorageOptions.Enabled)
-        {
             return HealthCheckResult.Healthy("Object storage readiness check is disabled.");
-        }
 
         if (!Uri.TryCreate(objectStorageOptions.Endpoint, UriKind.Absolute, out Uri? endpoint))
-        {
             return HealthCheckResult.Unhealthy("Object storage endpoint is not configured.");
-        }
 
         try
         {
