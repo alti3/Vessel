@@ -41,6 +41,8 @@ Vessel exposes:
 
 PostgreSQL, Redis, Hangfire storage, and object storage checks are disabled by default in the base settings until those services are configured.
 
+Phase 5 infrastructure configuration and safety notes are documented in [infrastructure-phase5.md](./infrastructure-phase5.md).
+
 ## Diagnostics
 
 Serilog is the structured logger. Logs include service, environment, correlation ID, and trace context when available.

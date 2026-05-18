@@ -6,6 +6,10 @@
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="Konscious.Security.Cryptography.Argon2"/>
+        <PackageReference Include="AWSSDK.S3"/>
+        <PackageReference Include="Docker.DotNet"/>
+        <PackageReference Include="Hangfire.AspNetCore"/>
+        <PackageReference Include="Hangfire.PostgreSql"/>
         <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
@@ -16,6 +20,7 @@
         <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions"/>
         <PackageReference Include="Npgsql"/>
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL"/>
+        <PackageReference Include="SSH.NET"/>
         <PackageReference Include="StackExchange.Redis"/>
     </ItemGroup>
 </Project>

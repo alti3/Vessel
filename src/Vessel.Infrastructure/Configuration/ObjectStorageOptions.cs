@@ -12,6 +12,8 @@ public sealed class ObjectStorageOptions
 
     public string? BucketName { get; init; }
 
+    public string? LocalRootDirectory { get; init; }
+
     public string? Region { get; init; }
 
     public bool ForcePathStyle { get; init; } = true;

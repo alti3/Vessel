@@ -3,14 +3,32 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Hangfire;
+using Hangfire.PostgreSql;
 using Vessel.Application.Auditing;
+using Vessel.Application.Docker;
+using Vessel.Application.Files;
+using Vessel.Application.Git;
+using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
+using Vessel.Application.Processes;
+using Vessel.Application.Redis;
 using Vessel.Application.Security;
+using Vessel.Application.Ssh;
+using Vessel.Application.Storage;
 using Vessel.Infrastructure.Auditing;
 using Vessel.Infrastructure.Configuration;
+using Vessel.Infrastructure.Docker;
+using Vessel.Infrastructure.Files;
+using Vessel.Infrastructure.Git;
 using Vessel.Infrastructure.HealthChecks;
+using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.Persistence;
+using Vessel.Infrastructure.Processes;
+using Vessel.Infrastructure.Redis;
 using Vessel.Infrastructure.Security;
+using Vessel.Infrastructure.Ssh;
+using Vessel.Infrastructure.Storage;
 
 namespace Vessel.Infrastructure.Extensions;
 
@@ -71,7 +89,63 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.TryAddSingleton<IPasswordHasher, Argon2PasswordHasher>();
         services.TryAddSingleton<ITokenGenerator, SecureTokenGenerator>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<ISecretRedactor, SecretRedactor>();
+        services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
+        services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
+        services.TryAddSingleton<DockerCliContainerRuntimeClient>();
+        services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
+        services.TryAddSingleton<IGitClient, GitProcessClient>();
+        services.TryAddSingleton<ISshClient, SshProcessClient>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
+
+        RedisOptions redisOptions = configuration
+            .GetSection(RedisOptions.SectionName)
+            .Get<RedisOptions>() ?? new RedisOptions();
+        if (redisOptions.Enabled)
+        {
+            services.TryAddSingleton<RedisConnectionProvider>();
+            services.TryAddSingleton<IRedisCache, RedisCache>();
+            services.TryAddSingleton<IDistributedLockManager, RedisDistributedLockManager>();
+        }
+
+        ObjectStorageOptions objectStorageOptions = configuration
+            .GetSection(ObjectStorageOptions.SectionName)
+            .Get<ObjectStorageOptions>() ?? new ObjectStorageOptions();
+        if (objectStorageOptions.Enabled)
+        {
+            if (string.Equals(objectStorageOptions.Provider, "Local", StringComparison.OrdinalIgnoreCase))
+            {
+                services.TryAddSingleton<IObjectStorage>(provider =>
+                {
+                    string root = objectStorageOptions.LocalRootDirectory
+                                  ?? Path.Combine(AppContext.BaseDirectory, "storage", "objects");
+                    return new LocalObjectStorage(root, provider.GetRequiredService<IPathSafetyService>());
+                });
+            }
+            else
+            {
+                services.TryAddSingleton<IObjectStorage, S3ObjectStorage>();
+            }
+        }
+
+        HangfireStorageOptions hangfireOptions = configuration
+            .GetSection(HangfireStorageOptions.SectionName)
+            .Get<HangfireStorageOptions>() ?? new HangfireStorageOptions();
+        if (hangfireOptions.Enabled && !string.IsNullOrWhiteSpace(hangfireOptions.ConnectionString))
+        {
+            services.AddHangfire(config => config
+                .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+                .UseSimpleAssemblyNameTypeSerializer()
+                .UseRecommendedSerializerSettings()
+                .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(hangfireOptions.ConnectionString)));
+            services.AddHangfireServer(options =>
+            {
+                options.Queues = ["critical", "deployments", "default", "maintenance"];
+                options.WorkerCount = Math.Max(1, Environment.ProcessorCount);
+            });
+            services.TryAddSingleton<IBackgroundJobDispatcher, HangfireBackgroundJobDispatcher>();
+        }
 
         return services;
     }
