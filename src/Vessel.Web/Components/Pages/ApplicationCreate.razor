@@ -1,0 +1,12 @@
+@page "/applications/new"
+@attribute [Authorize]
+
+<PageTitle>New application | Vessel</PageTitle>
+<PageHeader Kicker="Applications" Title="Create application" Description="Create a Git, public repository, Docker image, or Docker Compose based application." />
+
+<section class="resource-grid">
+    <ResourceCard Href="/applications/new/git" IconName="rocket" Title="Git repository" Description="Deploy from GitHub, GitLab, Gitea, Bitbucket, or another Git URL." />
+    <ResourceCard Href="/applications/new/docker-image" IconName="server" Title="Docker image" Description="Run an existing image with ports, domains, and environment variables." />
+    <ResourceCard Href="/applications/new/compose" IconName="settings" Title="Docker Compose" Description="Deploy multi-container applications from Compose." />
+    <ResourceCard Href="/databases/new" IconName="database" Title="Database" Description="Create a standalone database resource instead." />
+</section>

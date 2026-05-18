@@ -1,0 +1,15 @@
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2>@Title</h2>
+            <p>@Description</p>
+        </div>
+    </div>
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

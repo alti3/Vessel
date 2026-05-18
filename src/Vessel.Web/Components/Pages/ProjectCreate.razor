@@ -1,0 +1,14 @@
+@page "/projects/new"
+@attribute [Authorize]
+
+<PageTitle>New project | Vessel</PageTitle>
+<PageHeader Kicker="Projects" Title="Create project" Description="Coolify starts most resource creation by choosing a project and environment. Vessel keeps the same operator mental model." />
+
+<SettingsPanel Title="Project details" Description="Name the deployment boundary and prepare default environments.">
+    <form class="form-grid">
+        <FormField Label="Name" Name="name" Placeholder="customer-api" />
+        <FormField Label="Default environment" Name="environment" Placeholder="production" />
+        <label class="form-wide">Description<input name="description" placeholder="What this project owns" /></label>
+        <button class="button button-primary" type="button">Create project</button>
+    </form>
+</SettingsPanel>
