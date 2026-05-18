@@ -10,6 +10,19 @@ Vessel is a ground-up C#/.NET rewrite of Coolify. It is an executable-first, hos
 
 Use this file for agent operating instructions. Use [PROJECT_REQUIREMENTS.md](./PROJECT_REQUIREMENTS.md) for the full product, architecture, deployment, and domain requirements.
 
+## Coolify Reference Rule
+
+Before implementing, changing, or reviewing a feature that corresponds to existing Coolify behavior, inspect the upstream Coolify repository at <https://github.com/coollabsio/coolify>.
+
+Use Coolify as a behavioral and product reference:
+
+- Identify which Coolify features exist, what user and operator workflows they support, and how they are expected to behave.
+- Review the relevant upstream files, routes, jobs, services, models, tests, templates, scripts, and configuration before making architecture-sensitive decisions.
+- Prefer the current upstream default branch unless the user asks to target a specific Coolify version, tag, or commit.
+- Summarize the upstream areas consulted when the implementation depends on Coolify behavior.
+
+Do not translate PHP/Laravel code into C# one-to-one. Preserve important semantics and user-facing behavior, but implement them idiomatically in Vessel's .NET modular monolith architecture with the boundaries in this file.
+
 ## Current State
 
 - The repository is early alpha and may not have the full solution scaffold yet.
@@ -126,12 +139,13 @@ Vessel.Infrastructure -> Vessel.Web
 
 ## Implementation Workflow
 
-1. Read the relevant existing code and the corresponding section of `PROJECT_REQUIREMENTS.md` before changing architecture-sensitive behavior.
-2. Keep edits scoped to the requested feature or bug.
-3. Preserve user changes already present in the worktree.
-4. Add or update tests for behavior changes when the test project exists.
-5. Update docs when public behavior, deployment shape, commands, or architectural rules change.
-6. Run the narrowest useful verification command after changes and report anything that could not be run.
+1. Read the relevant existing Vessel code and the corresponding section of `PROJECT_REQUIREMENTS.md` before changing architecture-sensitive behavior.
+2. For any feature that exists or likely exists in Coolify, inspect <https://github.com/coollabsio/coolify> to understand the feature set, behavior, workflows, edge cases, and generated artifacts before designing the Vessel implementation.
+3. Keep edits scoped to the requested feature or bug.
+4. Preserve user changes already present in the worktree.
+5. Add or update tests for behavior changes when the test project exists.
+6. Update docs when public behavior, deployment shape, commands, or architectural rules change.
+7. Run the narrowest useful verification command after changes and report anything that could not be run.
 
 ## Build and Test Commands
 
@@ -154,6 +168,7 @@ For focused work, prefer the specific project or test filter that covers the cha
 
 ## When Unsure
 
+- Check the upstream Coolify repository to clarify intended product behavior before inventing new semantics.
 - Follow existing repository patterns once they exist.
 - Choose the modular monolith path over a distributed service split.
 - Prefer explicit interfaces in Application and implementations in Infrastructure.

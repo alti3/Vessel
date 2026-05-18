@@ -2301,6 +2301,10 @@ exception messages
 Agents must:
 
 - Read AGENTS.md before editing.
+- For every feature that exists or likely exists in Coolify, inspect the upstream Coolify repository at <https://github.com/coollabsio/coolify> before implementation or review.
+- Use the upstream Coolify codebase to understand product behavior, workflows, feature scope, edge cases, generated artifacts, configuration, jobs, routes, and tests.
+- Prefer the current upstream default branch unless the user explicitly asks to target a specific Coolify version, tag, or commit.
+- Record or summarize the upstream Coolify areas consulted when the resulting Vessel behavior depends on Coolify semantics.
 - Keep changes small and coherent.
 - Prefer feature-first organization.
 - Preserve architecture boundaries.
@@ -2901,6 +2905,24 @@ ADR-0007-executable-first-distribution.md
 This is not a line-by-line syntax port.
 
 Do not mechanically translate PHP classes into C# classes.
+
+The upstream Coolify repository is still a required product and behavior reference:
+
+```text
+https://github.com/coollabsio/coolify
+```
+
+Before implementing a Coolify-equivalent feature, inspect the relevant upstream implementation to understand:
+
+```text
+what feature exists
+which user or operator workflow it supports
+what inputs, outputs, state transitions, and side effects it has
+what generated files, containers, jobs, events, logs, and notifications it creates
+which edge cases and safety behavior Coolify already handles
+```
+
+Use that understanding to design Vessel behavior. Do not copy Laravel-specific structure, PHP idioms, framework magic, or code organization into Vessel.
 
 Instead:
 
