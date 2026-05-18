@@ -157,3 +157,29 @@ public readonly record struct SettingId(Guid Value) : IStronglyTypedId
         return Value.ToString("D");
     }
 }
+
+public readonly record struct PersonalAccessTokenId(Guid Value) : IStronglyTypedId
+{
+    public static PersonalAccessTokenId New()
+    {
+        return new PersonalAccessTokenId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct TeamInvitationId(Guid Value) : IStronglyTypedId
+{
+    public static TeamInvitationId New()
+    {
+        return new TeamInvitationId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Vessel.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Vessel.Infrastructure.Persistence;
 namespace Vessel.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(VesselDbContext))]
-    partial class VesselDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260518115532_Phase4Auth")]
+    partial class Phase4Auth
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

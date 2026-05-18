@@ -23,6 +23,8 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<TeamMembership> TeamMemberships { get; }
 
+    IQueryable<TeamInvitation> TeamInvitations { get; }
+
     IQueryable<Project> Projects { get; }
 
     IQueryable<Environment> Environments { get; }
@@ -43,9 +45,15 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<SettingEntry> Settings { get; }
 
+    IQueryable<PersonalAccessToken> PersonalAccessTokens { get; }
+
     IRepository<User, UserId> UserRepository { get; }
 
     IRepository<Team, TeamId> TeamRepository { get; }
+
+    IRepository<TeamInvitation, TeamInvitationId> TeamInvitationRepository { get; }
+
+    IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository { get; }
 
     IRepository<Project, ProjectId> ProjectRepository { get; }
 

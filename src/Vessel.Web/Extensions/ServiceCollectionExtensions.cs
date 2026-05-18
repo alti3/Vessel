@@ -1,4 +1,6 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -6,10 +8,14 @@ using Microsoft.Extensions.Primitives;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Vessel.Application.Auth;
+using Vessel.Application.Authorization;
+using Vessel.Application.Security;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
 using Vessel.Web.Middleware;
+using Vessel.Web.Security;
 
 namespace Vessel.Web.Extensions;
 
@@ -28,9 +34,85 @@ public static class ServiceCollectionExtensions
         services.AddHttpContextAccessor();
 
         services.AddVesselWebOptions(configuration);
+        services.AddVesselApplicationServices(configuration);
+        services.AddVesselAuthenticationAndAuthorization();
         services.AddVesselRateLimiting(configuration);
         services.AddVesselOpenTelemetry(configuration, environment);
         services.AddVesselHealthChecks();
+
+        return services;
+    }
+
+    private static IServiceCollection AddVesselApplicationServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services
+            .AddOptions<AuthOptions>()
+            .Bind(configuration.GetSection(AuthOptions.SectionName))
+            .Validate(options => options.LockoutThreshold > 0, "Auth lockout threshold must be positive.")
+            .Validate(options => options.LockoutMinutes > 0, "Auth lockout duration must be positive.")
+            .Validate(options => options.PasswordResetTokenMinutes > 0, "Password reset token duration must be positive.")
+            .Validate(options => options.InvitationExpirationDays > 0, "Invitation expiration must be positive.")
+            .ValidateOnStart();
+
+        services.AddScoped<VesselAuthenticationService>();
+        services.AddScoped<VesselTokenService>();
+        services.AddScoped<VesselTeamService>();
+        services.AddScoped<VesselAuthorizationService>();
+        services.AddScoped<TotpService>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddVesselAuthenticationAndAuthorization(this IServiceCollection services)
+    {
+        services
+            .AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = VesselAuthenticationSchemes.Smart;
+                options.DefaultChallengeScheme = VesselAuthenticationSchemes.Smart;
+                options.DefaultSignInScheme = VesselAuthenticationSchemes.Cookie;
+            })
+            .AddPolicyScheme(
+                VesselAuthenticationSchemes.Smart,
+                "Vessel cookie or bearer authentication",
+                options =>
+                {
+                    options.ForwardDefaultSelector = context =>
+                    {
+                        string? authorization = context.Request.Headers.Authorization;
+                        return !string.IsNullOrWhiteSpace(authorization)
+                               && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                            ? VesselAuthenticationSchemes.Bearer
+                            : VesselAuthenticationSchemes.Cookie;
+                    };
+                })
+            .AddCookie(
+                VesselAuthenticationSchemes.Cookie,
+                options =>
+                {
+                    options.Cookie.Name = "__Host-Vessel";
+                    options.Cookie.HttpOnly = true;
+                    options.Cookie.SameSite = SameSiteMode.Strict;
+                    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+                    options.LoginPath = "/api/auth/login";
+                    options.LogoutPath = "/api/auth/logout";
+                })
+            .AddScheme<AuthenticationSchemeOptions, VesselBearerAuthenticationHandler>(
+                VesselAuthenticationSchemes.Bearer,
+                _ => { });
+
+        services.AddAuthorization(options =>
+        {
+            foreach (string permission in VesselPermissions.All)
+            {
+                options.AddPolicy(permission, policy => policy
+                    .RequireAuthenticatedUser()
+                    .AddRequirements(new PermissionRequirement(permission)));
+            }
+        });
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
         return services;
     }
