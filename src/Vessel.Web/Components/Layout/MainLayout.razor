@@ -1,0 +1,65 @@
+@inherits LayoutComponentBase
+
+<div class="app-frame">
+    <aside class="sidebar @(SidebarOpen ? "sidebar-open" : "")">
+        <div class="brand">
+            <span class="brand-mark">V</span>
+            <div>
+                <strong>Vessel</strong>
+                <span>Alpha control plane</span>
+            </div>
+        </div>
+        <nav class="nav-list" aria-label="Primary">
+            <NavItem Href="/" IconName="home" Label="Dashboard" Match="NavLinkMatch.All" />
+            <NavItem Href="/projects" IconName="folder" Label="Projects" />
+            <NavItem Href="/servers" IconName="server" Label="Servers" />
+            <NavItem Href="/applications" IconName="rocket" Label="Applications" />
+            <NavItem Href="/databases" IconName="database" Label="Databases" />
+            <NavItem Href="/deployments" IconName="terminal" Label="Deployments" />
+            <NavItem Href="/notifications" IconName="bell" Label="Notifications" />
+            <NavItem Href="/teams" IconName="users" Label="Teams" />
+            <NavItem Href="/profile" IconName="key" Label="Profile" />
+            <NavItem Href="/settings" IconName="settings" Label="Settings" />
+        </nav>
+        <div class="sidebar-footer">
+            <StatusBadge Text="Host-native" Tone="info" />
+            <form method="post" action="/api/auth/logout">
+                <button class="button button-secondary button-full" type="submit">Logout</button>
+            </form>
+        </div>
+    </aside>
+
+    @if (SidebarOpen)
+    {
+        <button class="mobile-scrim" type="button" aria-label="Close navigation" @onclick="ToggleSidebar"></button>
+    }
+
+    <div class="content-shell">
+        <header class="topbar">
+            <button class="icon-button mobile-menu" type="button" @onclick="ToggleSidebar" aria-label="Open navigation">
+                <Icon Name="menu" />
+            </button>
+            <div class="topbar-search" role="search">
+                <span>/</span>
+                <input placeholder="Search projects, servers, deployments" aria-label="Search" />
+            </div>
+            <div class="topbar-actions">
+                <StatusBadge Text="Preview SDK" Tone="warning" />
+            </div>
+        </header>
+        <main class="page-shell">
+            <ErrorBoundary>
+                @Body
+            </ErrorBoundary>
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool SidebarOpen { get; set; }
+
+    private void ToggleSidebar()
+    {
+        SidebarOpen = !SidebarOpen;
+    }
+}

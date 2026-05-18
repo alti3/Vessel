@@ -47,4 +47,33 @@ public sealed class VesselAuthorizationService
 
         return teamId.HasValue && CanAccessTeam(userId, teamId.Value);
     }
+
+    public bool CanAccessApplication(UserId userId, Vessel.Domain.ApplicationId applicationId)
+    {
+        TeamId? teamId = _unitOfWork.Applications
+            .Where(application => application.Id == applicationId)
+            .Join(
+                _unitOfWork.Environments,
+                application => application.EnvironmentId,
+                environment => environment.Id,
+                (_, environment) => environment.ProjectId)
+            .Join(
+                _unitOfWork.Projects,
+                projectId => projectId,
+                project => project.Id,
+                (_, project) => (TeamId?)project.TeamId)
+            .SingleOrDefault();
+
+        return teamId.HasValue && CanAccessTeam(userId, teamId.Value);
+    }
+
+    public bool CanAccessDeployment(UserId userId, DeploymentId deploymentId)
+    {
+        Vessel.Domain.ApplicationId? applicationId = _unitOfWork.Deployments
+            .Where(deployment => deployment.Id == deploymentId)
+            .Select(deployment => (Vessel.Domain.ApplicationId?)deployment.ApplicationId)
+            .SingleOrDefault();
+
+        return applicationId.HasValue && CanAccessApplication(userId, applicationId.Value);
+    }
 }

@@ -1,0 +1,25 @@
+@page "/register"
+@attribute [AllowAnonymous]
+
+<PageTitle>Register | Vessel</PageTitle>
+
+<div class="auth-shell">
+    <section class="auth-panel">
+        <div class="brand brand-auth">
+            <span class="brand-mark">V</span>
+            <div>
+                <strong>Vessel</strong>
+                <span>First operator setup</span>
+            </div>
+        </div>
+        <h1>Create account</h1>
+        <p>Registration creates the user and personal team used for early-alpha local administration.</p>
+        <form class="form-stack" method="post" action="/auth/register">
+            <label>Name<input name="Name" autocomplete="name" required /></label>
+            <label>Email<input name="Email" type="email" autocomplete="email" required /></label>
+            <label>Password<input name="Password" type="password" autocomplete="new-password" required minlength="12" /></label>
+            <button class="button button-primary button-full" type="submit">Create account</button>
+        </form>
+        <div class="auth-links"><a href="/login">Sign in instead</a></div>
+    </section>
+</div>

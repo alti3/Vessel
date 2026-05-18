@@ -1,0 +1,41 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+
+<PageTitle>Login | Vessel</PageTitle>
+
+<div class="auth-shell">
+    <section class="auth-panel">
+        <div class="brand brand-auth">
+            <span class="brand-mark">V</span>
+            <div>
+                <strong>Vessel</strong>
+                <span>Host-native deployment control</span>
+            </div>
+        </div>
+        <h1>Sign in</h1>
+        <p>Use your Vessel account to manage teams, servers, applications, and deployments.</p>
+        @if (HasError)
+        {
+            <div class="form-alert">The credentials were not accepted, or a second factor is required.</div>
+        }
+        <form class="form-stack" method="post" action="/auth/login">
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            <label>Email<input name="Email" type="email" autocomplete="email" required /></label>
+            <label>Password<input name="Password" type="password" autocomplete="current-password" required /></label>
+            <label>2FA code<input name="TwoFactorCode" inputmode="numeric" autocomplete="one-time-code" /></label>
+            <button class="button button-primary button-full" type="submit">Sign in</button>
+        </form>
+        <div class="auth-links">
+            <a href="/register">Create account</a>
+            <a href="/password-reset">Reset password</a>
+        </div>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+
+    private bool HasError => !string.IsNullOrWhiteSpace(Error);
+}

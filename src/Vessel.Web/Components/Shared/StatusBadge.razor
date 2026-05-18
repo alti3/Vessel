@@ -1,0 +1,15 @@
+<span class="@CssClass">@Text</span>
+
+@code {
+    [Parameter] public string Text { get; set; } = "Unknown";
+    [Parameter] public string Tone { get; set; } = "neutral";
+
+    private string CssClass => Tone switch
+    {
+        "success" => "badge badge-success",
+        "warning" => "badge badge-warning",
+        "danger" => "badge badge-danger",
+        "info" => "badge badge-info",
+        _ => "badge badge-neutral"
+    };
+}

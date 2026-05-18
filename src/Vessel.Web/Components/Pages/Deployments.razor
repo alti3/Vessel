@@ -1,0 +1,53 @@
+@page "/deployments"
+@attribute [Authorize]
+@inject IDeploymentCatalogQuery DeploymentQuery
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Deployments | Vessel</PageTitle>
+<PageHeader Kicker="Operations" Title="Deployments" Description="Deployment records, status, commit metadata, and timestamps. Live logs stream through the deployment log hub." />
+
+@if (Items.Count == 0)
+{
+    <EmptyState Title="No deployments found" Description="Deployment jobs will create records here when Phase 8 deployment execution is connected." />
+}
+else
+{
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th>Status</th><th>Application</th><th>Commit</th><th>Created</th><th>Completed</th></tr></thead>
+            <tbody>
+                @foreach (var item in Items)
+                {
+                    <tr>
+                        <td><StatusBadge Text="@item.Status.ToString()" Tone="@DeploymentTone(item.Status)" /></td>
+                        <td>@item.ApplicationId</td>
+                        <td>@(item.CommitSha ?? "not recorded")</td>
+                        <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                        <td>@(item.CompletedAt?.ToLocalTime().ToString("g") ?? "running")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<DeploymentListItem> Items { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Items = DeploymentQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+    }
+
+    private static string DeploymentTone(DeploymentStatus status)
+    {
+        return status switch
+        {
+            DeploymentStatus.Succeeded => "success",
+            DeploymentStatus.Failed => "danger",
+            DeploymentStatus.CanceledByUser => "warning",
+            DeploymentStatus.InProgress => "info",
+            _ => "neutral"
+        };
+    }
+}

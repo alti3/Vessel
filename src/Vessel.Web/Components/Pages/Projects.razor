@@ -1,0 +1,32 @@
+@page "/projects"
+@attribute [Authorize]
+@inject IProjectCatalogQuery ProjectQuery
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Projects | Vessel</PageTitle>
+<PageHeader Kicker="Resources" Title="Projects" Description="Projects group environments and resources under the active team.">
+    <a class="button button-primary" href="/projects/new"><Icon Name="plus" CssClass="size-4" />New project</a>
+</PageHeader>
+
+@if (Items.Count == 0)
+{
+    <EmptyState Title="No projects found" Description="Create a project before adding applications, databases, or environment-scoped configuration." ActionHref="/projects/new" ActionText="Create project" />
+}
+else
+{
+    <div class="resource-grid">
+        @foreach (var item in Items)
+        {
+            <ResourceCard Href="@($"/projects/{item.Id}")" IconName="folder" Title="@item.Name" Description="@(item.Description ?? "No description recorded.")" Meta="@($"{item.EnvironmentCount} environments")" />
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ProjectListItem> Items { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Items = ProjectQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+    }
+}

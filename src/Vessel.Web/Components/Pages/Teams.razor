@@ -1,0 +1,55 @@
+@page "/teams"
+@attribute [Authorize]
+@inject IServiceProvider Services
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Teams | Vessel</PageTitle>
+<PageHeader Kicker="Tenancy" Title="Teams" Description="Switch team context and keep resources filtered to the selected tenant boundary." />
+
+@if (LoadFailed)
+{
+    <EmptyState Title="Teams are not available" Description="Team data requires the Vessel database to be enabled." />
+}
+else if (TeamItems.Count == 0)
+{
+    <EmptyState Title="No teams found" Description="The current user is not a member of any team." />
+}
+else
+{
+    <div class="resource-grid">
+        @foreach (var team in TeamItems)
+        {
+            <form class="team-card" method="post" action="@($"/api/teams/{team.Id.Value:D}/switch")">
+                <div>
+                    <h2>@team.Name</h2>
+                    <p>@team.Role@(team.IsPersonal ? " personal team" : " team")</p>
+                </div>
+                <button class="button button-secondary" type="submit">Switch</button>
+            </form>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<Vessel.Application.Auth.TeamSummary> TeamItems { get; set; } = [];
+    private bool LoadFailed { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (Services.GetService<Vessel.Application.Persistence.IVesselDbContext>() is null)
+            {
+                LoadFailed = true;
+                return;
+            }
+
+            var teamsService = Services.GetRequiredService<Vessel.Application.Auth.VesselTeamService>();
+            TeamItems = teamsService.ListTeams((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetUserId());
+        }
+        catch (InvalidOperationException)
+        {
+            LoadFailed = true;
+        }
+    }
+}

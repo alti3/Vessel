@@ -1,0 +1,122 @@
+@page "/"
+@attribute [Authorize]
+@inject IDashboardOverviewQuery DashboardQuery
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Dashboard | Vessel</PageTitle>
+
+<PageHeader Kicker="Dashboard" Title="Your self-hosted infrastructure" Description="A safe operational snapshot of the current team, focused on resources that need attention.">
+    <a class="button button-primary" href="/projects/new"><Icon Name="plus" CssClass="size-4" />New project</a>
+</PageHeader>
+
+<section class="metric-grid" aria-label="Infrastructure summary">
+    <MetricCard Label="Projects" Value="@Overview.ProjectCount.ToString()" IconName="folder" />
+    <MetricCard Label="Servers" Value="@Overview.ServerCount.ToString()" IconName="server" />
+    <MetricCard Label="Applications" Value="@Overview.ApplicationCount.ToString()" IconName="rocket" />
+    <MetricCard Label="Active deploys" Value="@Overview.ActiveDeploymentCount.ToString()" IconName="terminal" Tone="info" />
+</section>
+
+<section class="dashboard-grid">
+    <div class="panel panel-wide">
+        <div class="panel-header">
+            <div>
+                <h2>Resource Map</h2>
+                <p>Coolify-style entry points for the work operators perform most often.</p>
+            </div>
+        </div>
+        <div class="resource-grid">
+            <ResourceCard Href="/projects" IconName="folder" Title="Projects" Description="Group environments and resources by product or customer boundary." Meta="@($"{Overview.ProjectCount} total")" />
+            <ResourceCard Href="/servers" IconName="server" Title="Servers" Description="Register hosts and monitor runtime readiness before deployments." Meta="@($"{Overview.ServerCount} total")" />
+            <ResourceCard Href="/applications" IconName="rocket" Title="Applications" Description="Connect repositories, build packs, domains, and deployment policy." Meta="@($"{Overview.ApplicationCount} total")" />
+            <ResourceCard Href="/databases" IconName="database" Title="Databases" Description="Track managed database resources, credentials references, and backups." Meta="@($"{Overview.DatabaseCount} total")" />
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2>System Signals</h2>
+                <p>Items that deserve attention first.</p>
+            </div>
+        </div>
+        <div class="signal-list">
+            <div class="signal-row">
+                <span>Failed deployments</span>
+                <StatusBadge Text="@Overview.FailedDeploymentCount.ToString()" Tone="@(Overview.FailedDeploymentCount > 0 ? "danger" : "success")" />
+            </div>
+            <div class="signal-row">
+                <span>Notification targets</span>
+                <StatusBadge Text="@Overview.NotificationTargetCount.ToString()" Tone="neutral" />
+            </div>
+            <div class="signal-row">
+                <span>Secret values</span>
+                <StatusBadge Text="Masked by default" Tone="info" />
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2>Recent Deployments</h2>
+            <p>Deployment history is the first drill-down surface for production changes.</p>
+        </div>
+        <a class="button button-secondary" href="/deployments">View all</a>
+    </div>
+    @if (Overview.RecentDeployments.Count == 0)
+    {
+        <EmptyState Title="No deployments yet" Description="Deployments will appear here after applications are connected and deployment jobs run." />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Commit</th>
+                        <th>Created</th>
+                        <th>Completed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var deployment in Overview.RecentDeployments)
+                    {
+                        <tr>
+                            <td><StatusBadge Text="@deployment.Status.ToString()" Tone="@DeploymentTone(deployment.Status)" /></td>
+                            <td>@(deployment.CommitSha ?? "not recorded")</td>
+                            <td>@deployment.CreatedAt.ToLocalTime().ToString("g")</td>
+                            <td>@(deployment.CompletedAt?.ToLocalTime().ToString("g") ?? "running")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private DashboardOverview Overview { get; set; } = new(0, 0, 0, 0, 0, 0, 0, []);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Overview = DashboardQuery.GetOverview(state.User.GetTeamId());
+        }
+    }
+
+    private static string DeploymentTone(DeploymentStatus status)
+    {
+        return status switch
+        {
+            DeploymentStatus.Succeeded => "success",
+            DeploymentStatus.Failed => "danger",
+            DeploymentStatus.CanceledByUser => "warning",
+            DeploymentStatus.InProgress => "info",
+            _ => "neutral"
+        };
+    }
+}

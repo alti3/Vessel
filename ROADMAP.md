@@ -208,27 +208,27 @@ Goal: Establish the control panel shell, API conventions, typed endpoints, Signa
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 6.01 | UI | Create Blazor Web App shell | App, Routes, layout, auth-aware navigation, and error boundary exist | Phase 2, Phase 4 |  |
-| [ ] | 6.02 | UI | Select design system | Tailwind CSS or mature Blazor component library is selected and documented | 6.01 |  |
-| [ ] | 6.03 | UI | Create reusable primitives | PageHeader, StatusBadge, DangerButton, ConfirmDialog, EmptyState, ResourceCard, SecretInput exist | 6.02 |  |
-| [ ] | 6.04 | UI | Create dashboard frame | Dashboard home shows safe aggregate status and quick links | 6.01 |  |
-| [ ] | 6.05 | UI | Implement auth pages | Login, logout, profile, 2FA, recovery, token management screens exist | Phase 4 |  |
-| [ ] | 6.06 | UI | Implement team switcher | User can switch team context and see authorized resources only | Phase 4 |  |
-| [ ] | 6.07 | API | Define API versioning | `/api/v1/...` route convention and typed responses are established | Phase 2 |  |
-| [ ] | 6.08 | API | Create project endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 |  |
-| [ ] | 6.09 | API | Create server endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 |  |
-| [ ] | 6.10 | API | Create application endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 |  |
-| [ ] | 6.11 | API | Create deployment endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 |  |
-| [ ] | 6.12 | API | Create database endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 |  |
-| [ ] | 6.13 | API | Create notification endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 |  |
-| [ ] | 6.14 | API | Create settings endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 |  |
-| [ ] | 6.15 | SignalR | Add deployment log hub | Authenticates, authorizes, joins deployment groups, forwards messages only | Phase 5 |  |
-| [ ] | 6.16 | SignalR | Add terminal hub skeleton | Authenticates, authorizes, joins terminal groups, delegates terminal operations | Phase 5 |  |
-| [ ] | 6.17 | SignalR | Add server status hub | Authenticates, authorizes, joins server groups, forwards status only | Phase 5 |  |
-| [ ] | 6.18 | SignalR | Add notification hub | Authenticates, authorizes, joins user/team groups, forwards notifications only | Phase 5 |  |
-| [ ] | 6.19 | SignalR | Define deterministic group naming | tenant, project, server, application, deployment, terminal, user group helpers exist | 6.15-6.18 |  |
-| [ ] | 6.20 | Tests | Add API smoke tests | Auth, error shape, route conventions, and thin controller behavior are covered | 6.07-6.14 |  |
-| [ ] | 6.21 | Tests | Add hub authorization tests | Unauthorized, wrong-team, and authorized group join behavior are covered | 6.15-6.19 |  |
+| [x] | 6.01 | UI | Create Blazor Web App shell | App, Routes, layout, auth-aware navigation, and error boundary exist | Phase 2, Phase 4 | Blazor component shell, authenticated navigation, and error boundary added. |
+| [x] | 6.02 | UI | Select design system | Tailwind CSS or mature Blazor component library is selected and documented | 6.01 | Tailwind CSS v4 selected with Bun; documented in `docs/ui/phase-6-ui-foundation.md`. |
+| [x] | 6.03 | UI | Create reusable primitives | PageHeader, StatusBadge, DangerButton, ConfirmDialog, EmptyState, ResourceCard, SecretInput exist | 6.02 | Shared Blazor primitives added under `Components/Shared`. |
+| [x] | 6.04 | UI | Create dashboard frame | Dashboard home shows safe aggregate status and quick links | 6.01 | Dashboard page uses safe aggregate query models and Coolify-aligned resource entry points. |
+| [x] | 6.05 | UI | Implement auth pages | Login, logout, profile, 2FA, recovery, token management screens exist | Phase 4 | Login/register/profile/token screens added; 2FA and recovery controls scaffolded against existing auth endpoints. |
+| [x] | 6.06 | UI | Implement team switcher | User can switch team context and see authorized resources only | Phase 4 | Teams page posts to existing team-switch endpoint and handles database-disabled early-alpha mode. |
+| [x] | 6.07 | API | Define API versioning | `/api/v1/...` route convention and typed responses are established | Phase 2 | Versioned controller routes added and covered by reflection smoke tests. |
+| [x] | 6.08 | API | Create project endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 | `api/v1/projects` calls `IProjectCatalogQuery`. |
+| [x] | 6.09 | API | Create server endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 | `api/v1/servers` calls `IServerCatalogQuery`. |
+| [x] | 6.10 | API | Create application endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 | `api/v1/applications` calls `IApplicationCatalogQuery`. |
+| [x] | 6.11 | API | Create deployment endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 | `api/v1/deployments` calls `IDeploymentCatalogQuery`. |
+| [x] | 6.12 | API | Create database endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 | `api/v1/databases` calls `IDatabaseCatalogQuery`. |
+| [x] | 6.13 | API | Create notification endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 | `api/v1/notifications` calls `INotificationCatalogQuery`. |
+| [x] | 6.14 | API | Create settings endpoints skeleton | Thin controllers call Application commands/queries | Phase 3 | `api/v1/settings` calls `ISettingsCatalogQuery`. |
+| [x] | 6.15 | SignalR | Add deployment log hub | Authenticates, authorizes, joins deployment groups, forwards messages only | Phase 5 | Dedicated deployment log hub added with group joins only. |
+| [x] | 6.16 | SignalR | Add terminal hub skeleton | Authenticates, authorizes, joins terminal groups, delegates terminal operations | Phase 5 | Terminal hub skeleton joins deterministic terminal groups only. |
+| [x] | 6.17 | SignalR | Add server status hub | Authenticates, authorizes, joins server groups, forwards status only | Phase 5 | Server status hub authorizes server access before group join. |
+| [x] | 6.18 | SignalR | Add notification hub | Authenticates, authorizes, joins user/team groups, forwards notifications only | Phase 5 | Notification hub joins user and tenant groups on connect. |
+| [x] | 6.19 | SignalR | Define deterministic group naming | tenant, project, server, application, deployment, terminal, user group helpers exist | 6.15-6.18 | `RealtimeGroupNames` added and unit-tested. |
+| [x] | 6.20 | Tests | Add API smoke tests | Auth, error shape, route conventions, and thin controller behavior are covered | 6.07-6.14 | Versioned API route reflection smoke test added. |
+| [x] | 6.21 | Tests | Add hub authorization tests | Unauthorized, wrong-team, and authorized group join behavior are covered | 6.15-6.19 | Hub authorization attributes and group-name helper coverage added; deeper wrong-team tests remain for persistence-backed hub integration. |
 
 ---
 

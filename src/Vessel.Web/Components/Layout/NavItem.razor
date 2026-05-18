@@ -1,0 +1,11 @@
+<NavLink class="nav-item" href="@Href" Match="@Match" title="@Label">
+    <Icon Name="@IconName" CssClass="size-5" />
+    <span>@Label</span>
+</NavLink>
+
+@code {
+    [Parameter] public string Href { get; set; } = "/";
+    [Parameter] public string IconName { get; set; } = "home";
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public NavLinkMatch Match { get; set; } = NavLinkMatch.Prefix;
+}

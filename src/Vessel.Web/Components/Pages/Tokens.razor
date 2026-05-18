@@ -1,0 +1,15 @@
+@page "/tokens"
+@attribute [Authorize]
+
+<PageTitle>Tokens | Vessel</PageTitle>
+<PageHeader Kicker="Account" Title="Personal access tokens" Description="Tokens are shown once when created and stored hashed at rest." />
+
+<section class="panel">
+    <div class="panel-header"><div><h2>Create token</h2><p>Choose only the scopes required by the automation workflow.</p></div></div>
+    <form class="form-grid">
+        <label>Name<input name="name" placeholder="deploy-bot" /></label>
+        <label>Expiration<input name="expiresAt" type="date" /></label>
+        <label class="form-wide">Scopes<input name="scopes" placeholder="projects.read deployments.start deployments.readLogs" /></label>
+        <button class="button button-primary" type="button">Create token</button>
+    </form>
+</section>
