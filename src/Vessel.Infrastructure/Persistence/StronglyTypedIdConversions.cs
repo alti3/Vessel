@@ -25,6 +25,15 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<DeploymentId, Guid> DeploymentId = new(id => id.Value,
         value => new DeploymentId(value));
 
+    public static readonly ValueConverter<WebhookEventId, Guid> WebhookEventId = new(id => id.Value,
+        value => new WebhookEventId(value));
+
+    public static readonly ValueConverter<ApplicationWebhookConfigurationId, Guid> ApplicationWebhookConfigurationId =
+        new(id => id.Value, value => new ApplicationWebhookConfigurationId(value));
+
+    public static readonly ValueConverter<ApplicationPreviewId, Guid> ApplicationPreviewId =
+        new(id => id.Value, value => new ApplicationPreviewId(value));
+
     public static readonly ValueConverter<SecretReferenceId, Guid> SecretReferenceId =
         new(id => id.Value, value => new SecretReferenceId(value));
 
@@ -96,6 +105,24 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<DeploymentId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(DeploymentId);
+    }
+
+    public static PropertyBuilder<WebhookEventId> HasWebhookEventIdConversion(
+        this PropertyBuilder<WebhookEventId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(WebhookEventId);
+    }
+
+    public static PropertyBuilder<ApplicationWebhookConfigurationId> HasApplicationWebhookConfigurationIdConversion(
+        this PropertyBuilder<ApplicationWebhookConfigurationId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(ApplicationWebhookConfigurationId);
+    }
+
+    public static PropertyBuilder<ApplicationPreviewId> HasApplicationPreviewIdConversion(
+        this PropertyBuilder<ApplicationPreviewId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(ApplicationPreviewId);
     }
 
     public static PropertyBuilder<SecretReferenceId> HasSecretReferenceIdConversion(

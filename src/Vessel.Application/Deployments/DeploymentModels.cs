@@ -3,7 +3,12 @@ using Vessel.Domain.Deployments;
 
 namespace Vessel.Application.Deployments;
 
-public sealed record StartDeploymentRequest(Guid ApplicationId, bool ForceRebuild = false);
+public sealed record StartDeploymentRequest(
+    Guid ApplicationId,
+    bool ForceRebuild = false,
+    string? CommitSha = null,
+    Guid? PreviewId = null,
+    Guid? WebhookEventId = null);
 
 public sealed record StartDeploymentResult(
     Guid DeploymentId,
@@ -20,6 +25,8 @@ public sealed record DeploymentDetails(
     string? CommitBranch,
     string? CommitSha,
     string? CommitMessage,
+    bool IsPreview,
+    bool IsWebhookTriggered,
     string? ArtifactReference,
     string? ConfigurationSnapshotReference,
     DateTimeOffset CreatedAt,

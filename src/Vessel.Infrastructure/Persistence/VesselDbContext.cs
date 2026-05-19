@@ -14,6 +14,7 @@ using Vessel.Domain.Servers;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
+using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
 using AppId = Vessel.Domain.ApplicationId;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
@@ -40,6 +41,9 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         EnvironmentVariableRepository = new EfRepository<EnvironmentVariable, EnvironmentVariableId>(this);
         RegistryCredentialRepository = new EfRepository<RegistryCredential, RegistryCredentialId>(this);
         ServerStatusSnapshotRepository = new EfRepository<ServerStatusSnapshot, ServerStatusSnapshotId>(this);
+        WebhookEventRepository = new EfRepository<WebhookEvent, WebhookEventId>(this);
+        ApplicationWebhookConfigurationRepository = new EfRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>(this);
+        ApplicationPreviewRepository = new EfRepository<ApplicationPreview, ApplicationPreviewId>(this);
     }
 
     public DbSet<User> UserSet => Set<User>();
@@ -80,6 +84,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<SettingEntry> SettingSet => Set<SettingEntry>();
 
+    public DbSet<WebhookEvent> WebhookEventSet => Set<WebhookEvent>();
+
+    public DbSet<ApplicationWebhookConfiguration> ApplicationWebhookConfigurationSet => Set<ApplicationWebhookConfiguration>();
+
+    public DbSet<ApplicationPreview> ApplicationPreviewSet => Set<ApplicationPreview>();
+
     public IQueryable<User> Users => UserSet;
 
     public IQueryable<PersonalAccessToken> PersonalAccessTokens => PersonalAccessTokenSet;
@@ -118,6 +128,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<SettingEntry> Settings => SettingSet;
 
+    public IQueryable<WebhookEvent> WebhookEvents => WebhookEventSet;
+
+    public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations => ApplicationWebhookConfigurationSet;
+
+    public IQueryable<ApplicationPreview> ApplicationPreviews => ApplicationPreviewSet;
+
     public IRepository<User, UserId> UserRepository { get; }
 
     public IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository { get; }
@@ -148,6 +164,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; }
 
+    public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
+
+    public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId> ApplicationWebhookConfigurationRepository { get; }
+
+    public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("vessel");
@@ -165,6 +187,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ConfigureNotifications(modelBuilder);
         ConfigureAuditLogs(modelBuilder);
         ConfigureSettings(modelBuilder);
+        ConfigureWebhooks(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
@@ -476,6 +499,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(deployment => deployment.CommitBranch).HasMaxLength(255);
             builder.Property(deployment => deployment.CommitMessage).HasMaxLength(512);
             builder.Property(deployment => deployment.RepositoryUrl).HasMaxLength(2048);
+            builder.Property(deployment => deployment.PreviewId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new ApplicationPreviewId(value.Value) : null);
+            builder.Property(deployment => deployment.WebhookEventId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new WebhookEventId(value.Value) : null);
             builder.Property(deployment => deployment.ArtifactReference).HasMaxLength(512);
             builder.Property(deployment => deployment.ConfigurationSnapshotReference).HasMaxLength(512);
             builder.Property(deployment => deployment.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
@@ -498,6 +527,14 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.HasOne<User>()
                 .WithMany()
                 .HasForeignKey(deployment => deployment.ActorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            builder.HasOne<ApplicationPreview>()
+                .WithMany()
+                .HasForeignKey(deployment => deployment.PreviewId)
+                .OnDelete(DeleteBehavior.SetNull);
+            builder.HasOne<WebhookEvent>()
+                .WithMany()
+                .HasForeignKey(deployment => deployment.WebhookEventId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -749,6 +786,86 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.HasOne<Project>()
                 .WithMany()
                 .HasForeignKey(setting => setting.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureWebhooks(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WebhookEvent>(builder =>
+        {
+            builder.ToTable("webhook_events");
+            builder.HasKey(webhook => webhook.Id);
+            builder.Property(webhook => webhook.Id).HasWebhookEventIdConversion();
+            builder.Property(webhook => webhook.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(webhook => webhook.EventType).HasMaxLength(120).IsRequired();
+            builder.Property(webhook => webhook.ProviderEventId).HasMaxLength(255);
+            builder.Property(webhook => webhook.DedupeKey).HasMaxLength(512).IsRequired();
+            builder.Property(webhook => webhook.PayloadReference).HasMaxLength(512).IsRequired();
+            builder.Property(webhook => webhook.PayloadJson).IsRequired();
+            builder.Property(webhook => webhook.SignatureStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(webhook => webhook.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(webhook => webhook.FailureReason).HasMaxLength(512);
+            builder.Property(webhook => webhook.ApplicationId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new AppId(value.Value) : null);
+            builder.Property(webhook => webhook.DeploymentId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new DeploymentId(value.Value) : null);
+            builder.Property(webhook => webhook.PreviewId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new ApplicationPreviewId(value.Value) : null);
+            builder.Property(webhook => webhook.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(webhook => webhook.DomainEvents);
+            builder.HasIndex(webhook => webhook.DedupeKey).IsUnique();
+            builder.HasIndex(webhook => new { webhook.Provider, webhook.EventType, webhook.CreatedAt });
+            builder.HasOne<AppEntity>()
+                .WithMany()
+                .HasForeignKey(webhook => webhook.ApplicationId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ApplicationWebhookConfiguration>(builder =>
+        {
+            builder.ToTable("application_webhook_configurations");
+            builder.HasKey(configuration => configuration.Id);
+            builder.Property(configuration => configuration.Id).HasApplicationWebhookConfigurationIdConversion();
+            builder.Property(configuration => configuration.ApplicationId).HasApplicationIdConversion();
+            builder.Property(configuration => configuration.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(configuration => configuration.SecretReferenceId).HasSecretReferenceIdConversion();
+            builder.Property(configuration => configuration.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(configuration => configuration.DomainEvents);
+            builder.HasIndex(configuration => new { configuration.ApplicationId, configuration.Provider }).IsUnique();
+            builder.HasOne<AppEntity>()
+                .WithMany()
+                .HasForeignKey(configuration => configuration.ApplicationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(configuration => configuration.SecretReferenceId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ApplicationPreview>(builder =>
+        {
+            builder.ToTable("application_previews");
+            builder.HasKey(preview => preview.Id);
+            builder.Property(preview => preview.Id).HasApplicationPreviewIdConversion();
+            builder.Property(preview => preview.ApplicationId).HasApplicationIdConversion();
+            builder.Property(preview => preview.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(preview => preview.SourceBranch).HasMaxLength(255).IsRequired();
+            builder.Property(preview => preview.TargetBranch).HasMaxLength(255).IsRequired();
+            builder.Property(preview => preview.CommitSha).HasMaxLength(80).IsRequired();
+            builder.Property(preview => preview.PullRequestUrl).HasMaxLength(2048);
+            builder.Property(preview => preview.Title).HasMaxLength(255);
+            builder.Property(preview => preview.PreviewUrl).HasMaxLength(2048);
+            builder.Property(preview => preview.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(preview => preview.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(preview => preview.DomainEvents);
+            builder.HasIndex(preview => new { preview.ApplicationId, preview.Provider, preview.PullRequestNumber }).IsUnique();
+            builder.HasOne<AppEntity>()
+                .WithMany()
+                .HasForeignKey(preview => preview.ApplicationId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

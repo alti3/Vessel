@@ -31,6 +31,7 @@ public sealed class StartDeploymentService(
         activity?.SetTag("vessel.application_id", request.ApplicationId);
         activity?.SetTag("vessel.team_id", teamId.Value);
         activity?.SetTag("vessel.force_rebuild", request.ForceRebuild);
+        activity?.SetTag("vessel.webhook_event_id", request.WebhookEventId);
 
         var applicationId = new Vessel.Domain.ApplicationId(request.ApplicationId);
         if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.DeploymentsStart))
@@ -58,12 +59,14 @@ public sealed class StartDeploymentService(
             application.Id,
             application.ServerId,
             actorUserId,
-            application.GitSource.CommitSha,
+            NormalizeCommit(request.CommitSha) ?? application.GitSource.CommitSha,
+            request.PreviewId.HasValue ? new ApplicationPreviewId(request.PreviewId.Value) : null,
+            request.WebhookEventId.HasValue ? new WebhookEventId(request.WebhookEventId.Value) : null,
             now);
         deployment.RecordSource(
             application.GitSource.RepositoryUrl.Value,
             application.GitSource.Branch,
-            application.GitSource.CommitSha ?? "pending",
+            NormalizeCommit(request.CommitSha) ?? application.GitSource.CommitSha ?? "pending",
             null,
             now);
         deployment.AddLogLine("system", request.ForceRebuild ? "Deployment queued with force rebuild." : "Deployment queued.", now);
@@ -79,7 +82,10 @@ public sealed class StartDeploymentService(
             {
                 ["applicationId"] = application.Id.Value,
                 ["serverId"] = application.ServerId.Value,
-                ["forceRebuild"] = request.ForceRebuild
+                ["forceRebuild"] = request.ForceRebuild,
+                ["commitSha"] = NormalizeCommit(request.CommitSha),
+                ["previewId"] = request.PreviewId,
+                ["webhookEventId"] = request.WebhookEventId
             }, cancellationToken);
 
         await realtime.PublishAsync(
@@ -96,6 +102,14 @@ public sealed class StartDeploymentService(
             });
 
         return new StartDeploymentResult(deployment.Id.Value, application.Id.Value, deployment.Status, "Deployment accepted.");
+    }
+
+    private static string? NormalizeCommit(string? commitSha)
+    {
+        if (string.IsNullOrWhiteSpace(commitSha)) return null;
+        string trimmed = commitSha.Trim();
+        if (trimmed.Length > 80) throw new DomainException("Commit reference is too long.");
+        return trimmed;
     }
 
     public async Task CancelAsync(

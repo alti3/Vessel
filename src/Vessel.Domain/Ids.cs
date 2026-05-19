@@ -106,6 +106,45 @@ public readonly record struct DeploymentId(Guid Value) : IStronglyTypedId
     }
 }
 
+public readonly record struct WebhookEventId(Guid Value) : IStronglyTypedId
+{
+    public static WebhookEventId New()
+    {
+        return new WebhookEventId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct ApplicationWebhookConfigurationId(Guid Value) : IStronglyTypedId
+{
+    public static ApplicationWebhookConfigurationId New()
+    {
+        return new ApplicationWebhookConfigurationId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct ApplicationPreviewId(Guid Value) : IStronglyTypedId
+{
+    public static ApplicationPreviewId New()
+    {
+        return new ApplicationPreviewId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct SecretReferenceId(Guid Value) : IStronglyTypedId
 {
     public static SecretReferenceId New()

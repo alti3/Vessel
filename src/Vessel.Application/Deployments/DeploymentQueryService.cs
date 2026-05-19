@@ -28,6 +28,8 @@ public sealed class DeploymentQueryService(
             deployment.CommitBranch,
             deployment.CommitSha,
             deployment.CommitMessage,
+            deployment.IsPreview,
+            deployment.IsWebhookTriggered,
             deployment.ArtifactReference,
             deployment.ConfigurationSnapshotReference,
             deployment.CreatedAt,

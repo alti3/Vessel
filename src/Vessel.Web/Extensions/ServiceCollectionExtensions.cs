@@ -20,6 +20,7 @@ using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
+using Vessel.Application.Webhooks;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
@@ -82,6 +83,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<StartDeploymentService>();
         services.AddScoped<DeploymentQueryService>();
         services.AddScoped<IDeploymentRunner, DeploymentRunner>();
+        services.AddScoped<WebhookReceiptService>();
+        services.AddScoped<WebhookProcessingService>();
+        services.AddScoped<ApplicationWebhookConfigurationService>();
         services.AddScoped<TotpService>();
         services.TryAddScoped<ISecretVault, UnavailableSecretVault>();
         services.TryAddSingleton<IDistributedLockManager, InMemoryDistributedLockManager>();

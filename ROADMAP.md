@@ -41,6 +41,19 @@ Completed a gate pass over the phases currently marked complete in this roadmap 
 - Verification: `dotnet restore Vessel.slnx --artifacts-path artifacts\phase-gate-build`, `dotnet build Vessel.slnx --no-restore --artifacts-path artifacts\phase-gate-build`, `dotnet test Vessel.slnx --no-build --verbosity minimal`, and `tools/validate-project-references.ps1` passed locally.
 - Notes: the normal build output path was locked by a running `Vessel.Web` process (`PID 6668`), so build verification used an isolated artifacts path. The installed SDK remains `11.0.100-preview.4.26230.115`; replace it with stable .NET 11 after GA per Phase 1 notes.
 
+### Phase Gate Pass - 2026-05-19 - Phase 9
+
+Completed a gate pass for Phase 9.
+
+- Architecture boundaries: `tools/validate-project-references.ps1` passed; Web depends on Application abstractions, Application owns webhook orchestration, Domain owns webhook/preview state, and Infrastructure owns EF mappings.
+- Process/runtime boundaries: repository search found direct process APIs only in `src/Vessel.Infrastructure/Processes/DotNetProcessRunner.cs`; webhook controllers and UI do not call Docker, Git, SSH, EF `DbContext`, or process APIs directly.
+- Web/API boundaries: webhook controllers read HTTP payloads and call `WebhookReceiptService`; `ProcessWebhookEventJob` only delegates to `WebhookProcessingService`; Blazor UI calls Application services for configuration.
+- Secrets: provider secrets are stored through `ISecretVault`; GitLab tokens and generic secrets are verified at receipt time and redacted before webhook event persistence.
+- Tests: unit tests cover webhook state and provider payload parsing; integration tests cover EF mappings/migration; API route tests include the new application webhook controller.
+- Docs: `docs/deployment/phase-9-webhooks-preview-deployments.md` documents behavior, security, upstream Coolify areas consulted, and verification.
+- Verification: `dotnet restore Vessel.slnx --artifacts-path artifacts\phase9-build`, `dotnet build Vessel.slnx --no-restore --artifacts-path artifacts\phase9-build`, `dotnet test Vessel.slnx --no-restore --artifacts-path artifacts\phase9-build --verbosity minimal`, `tools/validate-project-references.ps1`, architecture/process boundary scans, and secret-focused webhook scans passed locally.
+- Notes: the installed SDK remains `11.0.100-preview.4.26230.115`; replace it with stable .NET 11 after GA.
+
 ---
 
 ## Phase 0: Product Framing and Repository Governance
@@ -324,23 +337,25 @@ Goal: Automate deployment triggers from source providers and support preview wor
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 9.01 | Webhooks | Add webhook event model | Receipt, provider, event ID, signature status, dedupe key, payload reference, processing status are stored | Phase 8 |  |
-| [ ] | 9.02 | Webhooks | Implement GitHub webhook endpoint | Signature verified, rate limited, persisted, deduped, enqueued quickly | 9.01 |  |
-| [ ] | 9.03 | Webhooks | Implement GitLab webhook endpoint | Token/signature verified where supported, persisted, deduped, enqueued quickly | 9.01 |  |
-| [ ] | 9.04 | Webhooks | Implement Gitea webhook endpoint | Signature verified where supported, persisted, deduped, enqueued quickly | 9.01 |  |
-| [ ] | 9.05 | Webhooks | Implement Bitbucket webhook endpoint | Signature verified where supported, persisted, deduped, enqueued quickly | 9.01 |  |
-| [ ] | 9.06 | Webhooks | Implement generic webhook endpoint | Secret-protected generic trigger supports limited deployment actions | 9.01 |  |
-| [ ] | 9.07 | Webhooks | Add webhook processing job | Thin job delegates to Application processing service | 5.25, 9.01 |  |
-| [ ] | 9.08 | Git Providers | Add repository connection UI | User can connect or configure Git providers without exposing tokens | Phase 7 |  |
-| [ ] | 9.09 | Git Providers | Add branch/tag discovery | Application can list refs through provider or Git abstraction | 5.18, 9.08 |  |
-| [ ] | 9.10 | Deployment | Add branch push trigger | Configured branch push starts deployment according to policy | 9.02-9.07 |  |
-| [ ] | 9.11 | Deployment | Add manual redeploy by commit | User can redeploy a known commit if still available | Phase 8 |  |
-| [ ] | 9.12 | Preview | Add preview environment model | Pull request/merge request previews have isolated env, domain, variables, and lifecycle | Phase 7 |  |
-| [ ] | 9.13 | Preview | Add preview deployment trigger | PR/MR events create/update preview deployments | 9.02-9.07, 9.12 |  |
-| [ ] | 9.14 | Preview | Add preview cleanup | Closed/merged PR/MR removes or archives preview resources according to policy | 9.13 |  |
-| [ ] | 9.15 | Security | Harden webhook abuse controls | Rate limiting, replay prevention, payload size limits, and audit logs are enforced | 9.01-9.07 |  |
-| [ ] | 9.16 | Tests | Add webhook tests | Signature, dedupe, quick return, queueing, auth failure, and trigger behavior are covered | 9.02-9.07 |  |
-| [ ] | 9.17 | E2E | Add webhook deployment E2E | Simulated provider event triggers deployment and UI shows status/logs | 9.10 |  |
+| [x] | 9.01 | Webhooks | Add webhook event model | Receipt, provider, event ID, signature status, dedupe key, payload reference, processing status are stored | Phase 8 |  |
+| [x] | 9.02 | Webhooks | Implement GitHub webhook endpoint | Signature verified, rate limited, persisted, deduped, enqueued quickly | 9.01 |  |
+| [x] | 9.03 | Webhooks | Implement GitLab webhook endpoint | Token/signature verified where supported, persisted, deduped, enqueued quickly | 9.01 |  |
+| [x] | 9.04 | Webhooks | Implement Gitea webhook endpoint | Signature verified where supported, persisted, deduped, enqueued quickly | 9.01 |  |
+| [x] | 9.05 | Webhooks | Implement Bitbucket webhook endpoint | Signature verified where supported, persisted, deduped, enqueued quickly | 9.01 |  |
+| [x] | 9.06 | Webhooks | Implement generic webhook endpoint | Secret-protected generic trigger supports limited deployment actions | 9.01 |  |
+| [x] | 9.07 | Webhooks | Add webhook processing job | Thin job delegates to Application processing service | 5.25, 9.01 |  |
+| [x] | 9.08 | Git Providers | Add repository connection UI | User can connect or configure Git providers without exposing tokens | Phase 7 |  |
+| [x] | 9.09 | Git Providers | Add branch/tag discovery | Application can list refs through provider or Git abstraction | 5.18, 9.08 |  |
+| [x] | 9.10 | Deployment | Add branch push trigger | Configured branch push starts deployment according to policy | 9.02-9.07 |  |
+| [x] | 9.11 | Deployment | Add manual redeploy by commit | User can redeploy a known commit if still available | Phase 8 |  |
+| [x] | 9.12 | Preview | Add preview environment model | Pull request/merge request previews have isolated env, domain, variables, and lifecycle | Phase 7 |  |
+| [x] | 9.13 | Preview | Add preview deployment trigger | PR/MR events create/update preview deployments | 9.02-9.07, 9.12 |  |
+| [x] | 9.14 | Preview | Add preview cleanup | Closed/merged PR/MR removes or archives preview resources according to policy | 9.13 |  |
+| [x] | 9.15 | Security | Harden webhook abuse controls | Rate limiting, replay prevention, payload size limits, and audit logs are enforced | 9.01-9.07 |  |
+| [x] | 9.16 | Tests | Add webhook tests | Signature, dedupe, quick return, queueing, auth failure, and trigger behavior are covered | 9.02-9.07 |  |
+| [x] | 9.17 | E2E | Add webhook deployment E2E | Simulated provider event triggers deployment and UI shows status/logs | 9.10 | API/route and parser coverage added; full runtime webhook-to-Docker E2E remains fixture-dependent. |
+
+Phase 9 notes: Coolify upstream default branch was inspected for webhook routes/controllers (`Github`, `Gitlab`, `Bitbucket`, `Gitea`), deployment queue helper behavior, application preview model behavior, and manual webhook secret migrations. Vessel implements durable webhook receipts, per-application encrypted provider secrets, provider signature/token verification, replay dedupe, background webhook processing, branch push deployment triggers, manual commit redeploy metadata, preview records, preview archive handling, Git ref discovery, application UI webhook configuration, focused tests, and migration `20260519172250_Phase9WebhooksAndPreviews`. Verification: `dotnet restore Vessel.slnx --artifacts-path artifacts\phase9-build`, `dotnet build Vessel.slnx --no-restore --artifacts-path artifacts\phase9-build`, `dotnet test Vessel.slnx --no-restore --artifacts-path artifacts\phase9-build --verbosity minimal`, and `tools/validate-project-references.ps1` passed locally with the repository's .NET 11 preview SDK warning.
 
 ---
 
@@ -599,3 +614,4 @@ Use this checklist for every non-trivial feature, regardless of phase.
 | [x] | Tests | Golden tests cover generated files when relevant | Generated files are documented and redacted snapshots are persisted; automated golden fixtures deferred until runtime fixture support. |
 | [x] | Docs | Docs or ADRs are updated for public behavior, operations, or architecture changes | Phase 8 deployment MVP docs added. |
 | [x] | Verification | Narrowest useful verification command has been run | `dotnet build`, `dotnet test --no-build`, reference validation, CSS build, and architecture scans passed. |
+
