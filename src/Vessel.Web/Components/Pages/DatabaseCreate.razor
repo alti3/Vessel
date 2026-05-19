@@ -1,12 +1,89 @@
 @page "/databases/new"
+@page "/databases/new/{EngineSlug}"
 @attribute [Authorize]
+@inject ResourceManagementService Resources
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
 
 <PageTitle>New database | Vessel</PageTitle>
-<PageHeader Kicker="Databases" Title="Create database" Description="Coolify exposes common standalone database engines as first-class resources." />
+<PageHeader Kicker="Databases" Title="Create database" Description="Create a managed database resource record with encrypted credential storage." />
 
-<section class="resource-grid">
-    <ResourceCard Href="/databases/new/postgresql" IconName="database" Title="PostgreSQL" Description="Robust relational database for production applications." />
-    <ResourceCard Href="/databases/new/mysql" IconName="database" Title="MySQL" Description="Popular relational database engine." />
-    <ResourceCard Href="/databases/new/redis" IconName="database" Title="Redis" Description="In-memory cache and queue backend." />
-    <ResourceCard Href="/databases/new/mongodb" IconName="database" Title="MongoDB" Description="Document-oriented NoSQL database." />
-</section>
+<SettingsPanel Title="Database resource" Description="Provisioning containers and backup execution are handled by later deployment phases.">
+    <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-database">
+        <div class="form-grid">
+            <label>Name<InputText @bind-Value="Model.Name" name="name" placeholder="postgres-main" /></label>
+            <label>Engine<select @bind="Model.Engine" name="engine"><option value="@DatabaseEngine.PostgreSql">PostgreSQL</option><option value="@DatabaseEngine.MySql">MySQL</option><option value="@DatabaseEngine.MariaDb">MariaDB</option><option value="@DatabaseEngine.Redis">Redis</option><option value="@DatabaseEngine.MongoDb">MongoDB</option></select></label>
+            <label>Version<InputText @bind-Value="Model.Version" name="version" /></label>
+            <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects){<option value="@project.Id">@project.Name</option>}</select></label>
+            <label>Environment<select @bind="Model.EnvironmentId" name="environment">@foreach (var environment in Environments){<option value="@environment.Id">@environment.Name</option>}</select></label>
+            <label>Server<select @bind="Model.ServerId" name="server">@foreach (var server in Servers){<option value="@server.Id">@server.Name</option>}</select></label>
+            <label>Volume<InputText @bind-Value="Model.VolumeName" name="volume" /></label>
+            <label>Mount path<InputText @bind-Value="Model.MountPath" name="mountPath" /></label>
+            <label class="form-wide">Credentials<SecretInput Name="credentials" @bind-Value="Model.Credentials" Placeholder="generated or pasted password" /></label>
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="form-alert form-wide">@Error</div>
+            }
+            <button class="button button-primary" type="submit">Create database</button>
+        </div>
+    </EditForm>
+</SettingsPanel>
+
+@code {
+    [Parameter] public string? EngineSlug { get; set; }
+    private DatabaseForm Model { get; } = new();
+    private IReadOnlyList<ProjectSummary> Projects { get; set; } = [];
+    private IReadOnlyList<EnvironmentSummary> Environments { get; set; } = [];
+    private IReadOnlyList<ServerSummary> Servers { get; set; } = [];
+    private string? Error { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Model.Engine = EngineSlug switch
+        {
+            "mysql" => DatabaseEngine.MySql,
+            "redis" => DatabaseEngine.Redis,
+            "mongodb" => DatabaseEngine.MongoDb,
+            _ => DatabaseEngine.PostgreSql
+        };
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Projects = Resources.ListProjects(user.GetUserId(), user.GetTeamId()).Where(project => !project.IsArchived).ToArray();
+        Servers = Resources.ListServers(user.GetUserId(), user.GetTeamId());
+        if (Projects.Count > 0)
+        {
+            Model.ProjectId = Projects[0].Id;
+            Environments = Resources.ListEnvironments(user.GetUserId(), user.GetTeamId(), new Vessel.Domain.ProjectId(Model.ProjectId));
+            Model.EnvironmentId = Environments.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        Model.ServerId = Servers.FirstOrDefault()?.Id ?? Guid.Empty;
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            DatabaseSummary database = await Resources.CreateDatabaseAsync(user.GetUserId(), user.GetTeamId(),
+                new CreateDatabaseRequest(Model.ProjectId, Model.EnvironmentId, Model.ServerId, Model.Name, null,
+                    Model.Engine, Model.Version, Model.VolumeName, Model.MountPath, Model.Credentials));
+            Navigation.NavigateTo($"/databases/{database.Id}");
+        }
+        catch (Exception exception)
+        {
+            Error = exception.Message;
+        }
+    }
+
+    private sealed class DatabaseForm
+    {
+        public Guid ProjectId { get; set; }
+        public Guid EnvironmentId { get; set; }
+        public Guid ServerId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public DatabaseEngine Engine { get; set; } = DatabaseEngine.PostgreSql;
+        public string Version { get; set; } = "latest";
+        public string VolumeName { get; set; } = "data";
+        public string MountPath { get; set; } = "/data";
+        public string Credentials { get; set; } = string.Empty;
+    }
+}

@@ -80,4 +80,22 @@ public sealed class Application : Entity<ApplicationId>
         _domains.Add(new ApplicationDomain(Id, domainName, now));
         Touch(now);
     }
+
+    public void UpdateSettings(
+        ResourceName name,
+        Description? description,
+        GitSource gitSource,
+        BuildConfiguration buildConfiguration,
+        RuntimeConfiguration runtimeConfiguration,
+        DeploymentSettings deploymentSettings,
+        DateTimeOffset now)
+    {
+        Name = name;
+        Description = description;
+        GitSource = gitSource;
+        BuildConfiguration = buildConfiguration;
+        RuntimeConfiguration = runtimeConfiguration;
+        DeploymentSettings = deploymentSettings;
+        Touch(now);
+    }
 }

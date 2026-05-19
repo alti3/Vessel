@@ -119,6 +119,58 @@ public readonly record struct SecretReferenceId(Guid Value) : IStronglyTypedId
     }
 }
 
+public readonly record struct SecretValueId(Guid Value) : IStronglyTypedId
+{
+    public static SecretValueId New()
+    {
+        return new SecretValueId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct EnvironmentVariableId(Guid Value) : IStronglyTypedId
+{
+    public static EnvironmentVariableId New()
+    {
+        return new EnvironmentVariableId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct RegistryCredentialId(Guid Value) : IStronglyTypedId
+{
+    public static RegistryCredentialId New()
+    {
+        return new RegistryCredentialId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct ServerStatusSnapshotId(Guid Value) : IStronglyTypedId
+{
+    public static ServerStatusSnapshotId New()
+    {
+        return new ServerStatusSnapshotId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct NotificationTargetId(Guid Value) : IStronglyTypedId
 {
     public static NotificationTargetId New()

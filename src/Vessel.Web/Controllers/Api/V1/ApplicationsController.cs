@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vessel.Application.Authorization;
-using Vessel.Application.Dashboard;
+using Vessel.Application.Resources;
 using Vessel.Web.Security;
 
 namespace Vessel.Web.Controllers.Api.V1;
@@ -11,16 +11,23 @@ namespace Vessel.Web.Controllers.Api.V1;
 [Route("api/v1/applications")]
 public sealed class ApplicationsController : ControllerBase
 {
-    private readonly IApplicationCatalogQuery _applications;
+    private readonly ResourceManagementService _resources;
 
-    public ApplicationsController(IApplicationCatalogQuery applications)
+    public ApplicationsController(ResourceManagementService resources)
     {
-        _applications = applications;
+        _resources = resources;
     }
 
     [HttpGet]
-    public ActionResult<IReadOnlyList<ApplicationListItem>> List()
+    public ActionResult<IReadOnlyList<ApplicationSummary>> List()
     {
-        return Ok(_applications.List(User.GetTeamId()));
+        return Ok(_resources.ListApplications(User.GetUserId(), User.GetTeamId()));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
+    public async Task<ActionResult<ApplicationSummary>> Create(CreateApplicationRequest request, CancellationToken cancellationToken)
+    {
+        return Ok(await _resources.CreateApplicationAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken));
     }
 }

@@ -28,6 +28,18 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<SecretReferenceId, Guid> SecretReferenceId =
         new(id => id.Value, value => new SecretReferenceId(value));
 
+    public static readonly ValueConverter<SecretValueId, Guid> SecretValueId =
+        new(id => id.Value, value => new SecretValueId(value));
+
+    public static readonly ValueConverter<EnvironmentVariableId, Guid> EnvironmentVariableId =
+        new(id => id.Value, value => new EnvironmentVariableId(value));
+
+    public static readonly ValueConverter<RegistryCredentialId, Guid> RegistryCredentialId =
+        new(id => id.Value, value => new RegistryCredentialId(value));
+
+    public static readonly ValueConverter<ServerStatusSnapshotId, Guid> ServerStatusSnapshotId =
+        new(id => id.Value, value => new ServerStatusSnapshotId(value));
+
     public static readonly ValueConverter<NotificationTargetId, Guid> NotificationTargetId =
         new(id => id.Value, value => new NotificationTargetId(value));
 
@@ -90,6 +102,30 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<SecretReferenceId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(SecretReferenceId);
+    }
+
+    public static PropertyBuilder<SecretValueId> HasSecretValueIdConversion(
+        this PropertyBuilder<SecretValueId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(SecretValueId);
+    }
+
+    public static PropertyBuilder<EnvironmentVariableId> HasEnvironmentVariableIdConversion(
+        this PropertyBuilder<EnvironmentVariableId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(EnvironmentVariableId);
+    }
+
+    public static PropertyBuilder<RegistryCredentialId> HasRegistryCredentialIdConversion(
+        this PropertyBuilder<RegistryCredentialId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(RegistryCredentialId);
+    }
+
+    public static PropertyBuilder<ServerStatusSnapshotId> HasServerStatusSnapshotIdConversion(
+        this PropertyBuilder<ServerStatusSnapshotId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(ServerStatusSnapshotId);
     }
 
     public static PropertyBuilder<NotificationTargetId> HasNotificationTargetIdConversion(

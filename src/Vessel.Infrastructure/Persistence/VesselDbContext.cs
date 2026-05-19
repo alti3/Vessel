@@ -5,8 +5,10 @@ using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
+using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
+using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Settings;
@@ -33,6 +35,11 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ApplicationRepository = new EfRepository<AppEntity, AppId>(this);
         DatabaseResourceRepository = new EfRepository<DatabaseResource, DatabaseResourceId>(this);
         DeploymentRepository = new EfRepository<Deployment, DeploymentId>(this);
+        SecretReferenceRepository = new EfRepository<SecretReference, SecretReferenceId>(this);
+        SecretValueRepository = new EfRepository<SecretValue, SecretValueId>(this);
+        EnvironmentVariableRepository = new EfRepository<EnvironmentVariable, EnvironmentVariableId>(this);
+        RegistryCredentialRepository = new EfRepository<RegistryCredential, RegistryCredentialId>(this);
+        ServerStatusSnapshotRepository = new EfRepository<ServerStatusSnapshot, ServerStatusSnapshotId>(this);
     }
 
     public DbSet<User> UserSet => Set<User>();
@@ -58,6 +65,14 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public DbSet<Deployment> DeploymentSet => Set<Deployment>();
 
     public DbSet<SecretReference> SecretReferenceSet => Set<SecretReference>();
+
+    public DbSet<SecretValue> SecretValueSet => Set<SecretValue>();
+
+    public DbSet<EnvironmentVariable> EnvironmentVariableSet => Set<EnvironmentVariable>();
+
+    public DbSet<RegistryCredential> RegistryCredentialSet => Set<RegistryCredential>();
+
+    public DbSet<ServerStatusSnapshot> ServerStatusSnapshotSet => Set<ServerStatusSnapshot>();
 
     public DbSet<NotificationTarget> NotificationTargetSet => Set<NotificationTarget>();
 
@@ -89,6 +104,14 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<SecretReference> SecretReferences => SecretReferenceSet;
 
+    public IQueryable<SecretValue> SecretValues => SecretValueSet;
+
+    public IQueryable<EnvironmentVariable> EnvironmentVariables => EnvironmentVariableSet;
+
+    public IQueryable<RegistryCredential> RegistryCredentials => RegistryCredentialSet;
+
+    public IQueryable<ServerStatusSnapshot> ServerStatusSnapshots => ServerStatusSnapshotSet;
+
     public IQueryable<NotificationTarget> NotificationTargets => NotificationTargetSet;
 
     public IQueryable<AuditLog> AuditLogs => AuditLogSet;
@@ -115,6 +138,16 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
+    public IRepository<SecretReference, SecretReferenceId> SecretReferenceRepository { get; }
+
+    public IRepository<SecretValue, SecretValueId> SecretValueRepository { get; }
+
+    public IRepository<EnvironmentVariable, EnvironmentVariableId> EnvironmentVariableRepository { get; }
+
+    public IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository { get; }
+
+    public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("vessel");
@@ -127,6 +160,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ConfigureDatabases(modelBuilder);
         ConfigureDeployments(modelBuilder);
         ConfigureSecrets(modelBuilder);
+        ConfigureEnvironmentVariables(modelBuilder);
+        ConfigureRegistryCredentials(modelBuilder);
         ConfigureNotifications(modelBuilder);
         ConfigureAuditLogs(modelBuilder);
         ConfigureSettings(modelBuilder);
@@ -246,6 +281,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasMaxLength(120).IsRequired();
             builder.Property(project => project.Description).HasConversion(ValueObjectConversions.NullableDescription)
                 .HasMaxLength(1000);
+            builder.Property(project => project.IsArchived).IsRequired();
             builder.Property(project => project.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(project => project.DomainEvents);
             builder.HasIndex(project => new { project.TeamId, project.Name }).IsUnique();
@@ -294,12 +330,30 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(server => server.Runtime).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(server => server.Capabilities).HasConversion<int>().IsRequired();
             builder.Property(server => server.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(server => server.Labels).HasMaxLength(1000).IsRequired();
             builder.Property(server => server.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(server => server.DomainEvents);
             builder.HasIndex(server => new { server.TeamId, server.Name }).IsUnique();
             builder.HasOne<Team>()
                 .WithMany()
                 .HasForeignKey(server => server.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ServerStatusSnapshot>(builder =>
+        {
+            builder.ToTable("server_status_snapshots");
+            builder.HasKey(snapshot => snapshot.Id);
+            builder.Property(snapshot => snapshot.Id).HasServerStatusSnapshotIdConversion();
+            builder.Property(snapshot => snapshot.ServerId).HasServerIdConversion();
+            builder.Property(snapshot => snapshot.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(snapshot => snapshot.CpuLoadPercent).HasPrecision(7, 2);
+            builder.Property(snapshot => snapshot.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(snapshot => snapshot.DomainEvents);
+            builder.HasIndex(snapshot => new { snapshot.ServerId, snapshot.CreatedAt });
+            builder.HasOne<Server>()
+                .WithMany()
+                .HasForeignKey(snapshot => snapshot.ServerId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
@@ -489,6 +543,108 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(secret => secret.TeamId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SecretValue>(builder =>
+        {
+            builder.ToTable("secret_values");
+            builder.HasKey(secret => secret.Id);
+            builder.Property(secret => secret.Id).HasSecretValueIdConversion();
+            builder.Property(secret => secret.SecretReferenceId).HasSecretReferenceIdConversion();
+            builder.Property(secret => secret.CipherText).HasMaxLength(12000).IsRequired();
+            builder.Property(secret => secret.Nonce).HasMaxLength(128).IsRequired();
+            builder.Property(secret => secret.Tag).HasMaxLength(128).IsRequired();
+            builder.Property(secret => secret.KeyVersion).HasMaxLength(80).IsRequired();
+            builder.Property(secret => secret.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(secret => secret.DomainEvents);
+            builder.HasIndex(secret => secret.SecretReferenceId).IsUnique();
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(secret => secret.SecretReferenceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureEnvironmentVariables(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<EnvironmentVariable>(builder =>
+        {
+            builder.ToTable("environment_variables");
+            builder.HasKey(variable => variable.Id);
+            builder.Property(variable => variable.Id).HasEnvironmentVariableIdConversion();
+            builder.Property(variable => variable.TeamId).HasTeamIdConversion();
+            builder.Property(variable => variable.ProjectId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new ProjectId(value.Value) : null);
+            builder.Property(variable => variable.EnvironmentId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new EnvironmentId(value.Value) : null);
+            builder.Property(variable => variable.ServerId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new ServerId(value.Value) : null);
+            builder.Property(variable => variable.ApplicationId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new AppId(value.Value) : null);
+            builder.Property(variable => variable.DatabaseResourceId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new DatabaseResourceId(value.Value) : null);
+            builder.Property(variable => variable.TargetType).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(variable => variable.Key).HasConversion(ValueObjectConversions.EnvironmentVariableKey)
+                .HasMaxLength(160).IsRequired();
+            builder.Property(variable => variable.ValueKind).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(variable => variable.PlainValue).HasMaxLength(8000);
+            builder.Property(variable => variable.SecretReferenceId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new SecretReferenceId(value.Value) : null);
+            builder.Property(variable => variable.Comment).HasMaxLength(1000);
+            builder.Property(variable => variable.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(variable => variable.DomainEvents);
+            builder.HasIndex(variable => new
+            {
+                variable.TeamId,
+                variable.TargetType,
+                variable.ProjectId,
+                variable.EnvironmentId,
+                variable.ServerId,
+                variable.ApplicationId,
+                variable.DatabaseResourceId,
+                variable.Key
+            }).IsUnique();
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(variable => variable.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(variable => variable.SecretReferenceId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureRegistryCredentials(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<RegistryCredential>(builder =>
+        {
+            builder.ToTable("registry_credentials");
+            builder.HasKey(credential => credential.Id);
+            builder.Property(credential => credential.Id).HasRegistryCredentialIdConversion();
+            builder.Property(credential => credential.TeamId).HasTeamIdConversion();
+            builder.Property(credential => credential.Name).HasConversion(ValueObjectConversions.ResourceName)
+                .HasMaxLength(120).IsRequired();
+            builder.Property(credential => credential.Registry).HasMaxLength(255).IsRequired();
+            builder.Property(credential => credential.Username).HasMaxLength(255).IsRequired();
+            builder.Property(credential => credential.PasswordReferenceId).HasSecretReferenceIdConversion();
+            builder.Property(credential => credential.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(credential => credential.DomainEvents);
+            builder.HasIndex(credential => new { credential.TeamId, credential.Registry, credential.Username }).IsUnique();
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(credential => credential.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(credential => credential.PasswordReferenceId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 

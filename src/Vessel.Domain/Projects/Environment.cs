@@ -42,4 +42,12 @@ public sealed class Environment : Entity<EnvironmentId>
     {
         return new Environment(EnvironmentId.New(), projectId, name, kind, null, now);
     }
+
+    public void Update(Slug name, EnvironmentKind kind, Description? description, DateTimeOffset now)
+    {
+        Name = name;
+        Kind = kind;
+        Description = description;
+        Touch(now);
+    }
 }

@@ -2,8 +2,10 @@ using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
+using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
+using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Settings;
@@ -28,6 +30,10 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IQueryable<DatabaseResource> DatabaseResources => Enumerable.Empty<DatabaseResource>().AsQueryable();
     public IQueryable<Deployment> Deployments => Enumerable.Empty<Deployment>().AsQueryable();
     public IQueryable<SecretReference> SecretReferences => Enumerable.Empty<SecretReference>().AsQueryable();
+    public IQueryable<SecretValue> SecretValues => Enumerable.Empty<SecretValue>().AsQueryable();
+    public IQueryable<EnvironmentVariable> EnvironmentVariables => Enumerable.Empty<EnvironmentVariable>().AsQueryable();
+    public IQueryable<RegistryCredential> RegistryCredentials => Enumerable.Empty<RegistryCredential>().AsQueryable();
+    public IQueryable<ServerStatusSnapshot> ServerStatusSnapshots => Enumerable.Empty<ServerStatusSnapshot>().AsQueryable();
     public IQueryable<NotificationTarget> NotificationTargets => Enumerable.Empty<NotificationTarget>().AsQueryable();
     public IQueryable<AuditLog> AuditLogs => Enumerable.Empty<AuditLog>().AsQueryable();
     public IQueryable<SettingEntry> Settings => Enumerable.Empty<SettingEntry>().AsQueryable();
@@ -43,6 +49,11 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IRepository<AppEntity, AppId> ApplicationRepository { get; } = new UnavailableRepository<AppEntity, AppId>();
     public IRepository<DatabaseResource, DatabaseResourceId> DatabaseResourceRepository { get; } = new UnavailableRepository<DatabaseResource, DatabaseResourceId>();
     public IRepository<Deployment, DeploymentId> DeploymentRepository { get; } = new UnavailableRepository<Deployment, DeploymentId>();
+    public IRepository<SecretReference, SecretReferenceId> SecretReferenceRepository { get; } = new UnavailableRepository<SecretReference, SecretReferenceId>();
+    public IRepository<SecretValue, SecretValueId> SecretValueRepository { get; } = new UnavailableRepository<SecretValue, SecretValueId>();
+    public IRepository<EnvironmentVariable, EnvironmentVariableId> EnvironmentVariableRepository { get; } = new UnavailableRepository<EnvironmentVariable, EnvironmentVariableId>();
+    public IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository { get; } = new UnavailableRepository<RegistryCredential, RegistryCredentialId>();
+    public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; } = new UnavailableRepository<ServerStatusSnapshot, ServerStatusSnapshotId>();
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

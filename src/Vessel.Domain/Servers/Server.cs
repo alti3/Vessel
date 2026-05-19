@@ -49,6 +49,8 @@ public sealed class Server : Entity<ServerId>
 
     public DateTimeOffset? LastUnreachableAt { get; private set; }
 
+    public string Labels { get; private set; } = string.Empty;
+
     public static Server Create(
         TeamId teamId,
         ResourceName name,
@@ -67,6 +69,24 @@ public sealed class Server : Entity<ServerId>
     public void UpdateCapabilities(ServerCapability capabilities, DateTimeOffset now)
     {
         Capabilities = capabilities;
+        Touch(now);
+    }
+
+    public void UpdateSettings(
+        ResourceName name,
+        Description? description,
+        ServerAddress address,
+        ServerConnectionType connectionType,
+        ContainerRuntimeKind runtime,
+        string? labels,
+        DateTimeOffset now)
+    {
+        Name = name;
+        Description = description;
+        Address = address;
+        ConnectionType = connectionType;
+        Runtime = runtime;
+        Labels = DomainValidation.Optional(labels, nameof(Labels), 1000) ?? string.Empty;
         Touch(now);
     }
 

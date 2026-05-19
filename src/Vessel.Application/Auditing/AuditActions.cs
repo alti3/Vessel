@@ -16,4 +16,19 @@ public static class AuditActions
     public const string TeamInvitationAccepted = "team.invitation_accepted";
     public const string TeamMemberRemoved = "team.member_removed";
     public const string TeamMemberRoleChanged = "team.member_role_changed";
+    public const string ProjectCreated = "project.created";
+    public const string ProjectUpdated = "project.updated";
+    public const string ProjectArchived = "project.archived";
+    public const string EnvironmentCreated = "environment.created";
+    public const string EnvironmentUpdated = "environment.updated";
+    public const string EnvironmentDeleted = "environment.deleted";
+    public const string ServerCreated = "server.created";
+    public const string ServerConnectivityChecked = "server.connectivity_checked";
+    public const string ApplicationCreated = "application.created";
+    public const string DatabaseCreated = "database.created";
+    public const string EnvironmentVariableCreated = "environment_variable.created";
+    public const string SecretStored = "secret.stored";
+    public const string SecretRevealed = "secret.revealed";
+    public const string SecretRotated = "secret.rotated";
+    public const string RegistryCredentialCreated = "registry_credential.created";
 }

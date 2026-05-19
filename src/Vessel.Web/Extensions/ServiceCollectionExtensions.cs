@@ -73,7 +73,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<VesselTokenService>();
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
+        services.AddScoped<Vessel.Application.Resources.ResourceManagementService>();
         services.AddScoped<TotpService>();
+        services.TryAddScoped<ISecretVault, UnavailableSecretVault>();
         services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
         services.AddScoped<IDashboardOverviewQuery, EmptyDashboardOverviewQuery>();
         services.AddScoped<IProjectCatalogQuery, EmptyProjectCatalogQuery>();

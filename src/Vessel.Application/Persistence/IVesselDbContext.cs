@@ -2,8 +2,10 @@ using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
+using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
+using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Settings;
@@ -39,6 +41,14 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<SecretReference> SecretReferences { get; }
 
+    IQueryable<SecretValue> SecretValues { get; }
+
+    IQueryable<EnvironmentVariable> EnvironmentVariables { get; }
+
+    IQueryable<RegistryCredential> RegistryCredentials { get; }
+
+    IQueryable<ServerStatusSnapshot> ServerStatusSnapshots { get; }
+
     IQueryable<NotificationTarget> NotificationTargets { get; }
 
     IQueryable<AuditLog> AuditLogs { get; }
@@ -66,4 +76,14 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<DatabaseResource, DatabaseResourceId> DatabaseResourceRepository { get; }
 
     IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
+
+    IRepository<SecretReference, SecretReferenceId> SecretReferenceRepository { get; }
+
+    IRepository<SecretValue, SecretValueId> SecretValueRepository { get; }
+
+    IRepository<EnvironmentVariable, EnvironmentVariableId> EnvironmentVariableRepository { get; }
+
+    IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository { get; }
+
+    IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; }
 }

@@ -1,6 +1,6 @@
 @page "/projects"
 @attribute [Authorize]
-@inject IProjectCatalogQuery ProjectQuery
+@inject ResourceManagementService Resources
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Projects | Vessel</PageTitle>
@@ -23,10 +23,11 @@ else
 }
 
 @code {
-    private IReadOnlyList<ProjectListItem> Items { get; set; } = [];
+    private IReadOnlyList<ProjectSummary> Items { get; set; } = [];
 
     protected override async Task OnInitializedAsync()
     {
-        Items = ProjectQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Items = Resources.ListProjects(user.GetUserId(), user.GetTeamId());
     }
 }
