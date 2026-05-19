@@ -116,6 +116,7 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ValidateCommand(command, ProcessOutputMode.Lines);
+        DateTimeOffset startedAt = timeProvider.GetUtcNow();
         using CancellationTokenSource timeout = CreateTimeoutToken(command, cancellationToken);
         var startInfo = CreateStartInfo(command, redirectOutput: true, redirectError: true);
         using Process process = Process.Start(startInfo)
@@ -134,6 +135,18 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             }
 
             await process.WaitForExitAsync(timeout.Token);
+            if (process.ExitCode != 0)
+            {
+                DateTimeOffset exitedAt = timeProvider.GetUtcNow();
+                throw new ProcessExecutionException(new ProcessResult(
+                    command,
+                    new ProcessExitInfo(process.ExitCode, Canceled: false, TimedOut: false, TerminatingSignal: null),
+                    process.Id,
+                    startedAt,
+                    exitedAt,
+                    string.Empty,
+                    $"Process exited with code {process.ExitCode}."));
+            }
         }
         finally
         {

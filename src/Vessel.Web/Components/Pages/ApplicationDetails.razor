@@ -1,16 +1,27 @@
 @page "/applications/{Id:guid}"
 @attribute [Authorize]
+@inject StartDeploymentService DeploymentStarter
+@inject DeploymentQueryService DeploymentDetails
+@inject IDeploymentCatalogQuery DeploymentCatalog
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Application | Vessel</PageTitle>
 <PageHeader Kicker="Application" Title="Application overview" Description="@($"Application {Id} deployment, domains, environment, and logs.")">
-    <button class="button button-primary" type="button"><Icon Name="rocket" CssClass="size-4" />Deploy</button>
+    <button class="button button-primary" type="button" disabled="@IsStarting" @onclick="StartDeploymentAsync">
+        <Icon Name="rocket" CssClass="size-4" />@(IsStarting ? "Starting" : "Deploy")
+    </button>
 </PageHeader>
+
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="notice notice-info">@Message</div>
+}
 
 <section class="dashboard-grid">
     <SettingsPanel Title="Deployment" Description="Status, latest commit, rollback target, and deployment settings.">
         <div class="signal-list">
-            <div class="signal-row"><span>Status</span><StatusBadge Text="Unknown" Tone="neutral" /></div>
-            <div class="signal-row"><span>Latest commit</span><span>not recorded</span></div>
+            <div class="signal-row"><span>Status</span><StatusBadge Text="@LatestStatus" Tone="@DeploymentTone(Latest?.Status)" /></div>
+            <div class="signal-row"><span>Latest commit</span><span>@(Latest?.CommitSha ?? "not recorded")</span></div>
             <div class="signal-row"><span>Auto deploy</span><StatusBadge Text="Off" Tone="warning" /></div>
         </div>
     </SettingsPanel>
@@ -23,6 +34,80 @@
     </SettingsPanel>
 </section>
 
+@if (Latest is not null)
+{
+    <section class="section-stack">
+        <PageHeader Kicker="Latest deployment" Title="Logs" Description="Persisted deployment output. Live streaming is available to clients joined to the deployment SignalR group." />
+        <div class="log-panel">
+            @foreach (var line in Latest.Logs)
+            {
+                <div class="log-line log-@line.Stream"><span>@line.Sequence.ToString("0000")</span><code>@line.Message</code></div>
+            }
+        </div>
+    </section>
+}
+
 @code {
     [Parameter] public Guid Id { get; set; }
+
+    private Vessel.Application.Deployments.DeploymentDetails? Latest { get; set; }
+    private bool IsStarting { get; set; }
+    private string? Message { get; set; }
+    private System.Security.Claims.ClaimsPrincipal? User { get; set; }
+
+    private string LatestStatus => Latest?.Status.ToString() ?? "Unknown";
+
+    protected override async Task OnInitializedAsync()
+    {
+        User = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        LoadLatest();
+    }
+
+    private async Task StartDeploymentAsync()
+    {
+        if (User is null) return;
+        IsStarting = true;
+        Message = null;
+        try
+        {
+            StartDeploymentResult result = await DeploymentStarter.StartAsync(
+                User.GetUserId(),
+                User.GetTeamId(),
+                new StartDeploymentRequest(Id));
+            Message = result.Message;
+            Latest = DeploymentDetails.Get(User.GetUserId(), User.GetTeamId(), new DeploymentId(result.DeploymentId));
+        }
+        catch (Exception ex)
+        {
+            Message = ex.Message;
+        }
+        finally
+        {
+            IsStarting = false;
+        }
+    }
+
+    private void LoadLatest()
+    {
+        if (User is null) return;
+        DeploymentListItem? latest = DeploymentCatalog.List(User.GetTeamId())
+            .Where(item => item.ApplicationId == Id)
+            .OrderByDescending(item => item.CreatedAt)
+            .FirstOrDefault();
+        if (latest is not null)
+            Latest = DeploymentDetails.Get(User.GetUserId(), User.GetTeamId(), new DeploymentId(latest.Id));
+    }
+
+    private static string DeploymentTone(DeploymentStatus? status)
+    {
+        return status switch
+        {
+            DeploymentStatus.Succeeded => "success",
+            DeploymentStatus.Failed => "danger",
+            DeploymentStatus.CanceledByUser => "warning",
+            DeploymentStatus.CancelRequested => "warning",
+            DeploymentStatus.InProgress => "info",
+            _ => "neutral"
+        };
+    }
 }

@@ -90,6 +90,19 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
             .ToArray();
     }
 
+    public Task EnsureNetworkAsync(
+        ContainerRuntimeTarget target,
+        string name,
+        IReadOnlyDictionary<string, string> labels,
+        CancellationToken cancellationToken = default) =>
+        cliFallback.EnsureNetworkAsync(target, name, labels, cancellationToken);
+
+    public IAsyncEnumerable<ProcessOutputLine> BuildImageAsync(
+        ContainerRuntimeTarget target,
+        DockerBuildCommand command,
+        CancellationToken cancellationToken = default) =>
+        cliFallback.BuildImageAsync(target, command, cancellationToken);
+
     public async IAsyncEnumerable<ContainerEvent> StreamEventsAsync(
         ContainerRuntimeTarget target,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)

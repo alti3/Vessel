@@ -100,6 +100,56 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
             .ToArray();
     }
 
+    public async Task EnsureNetworkAsync(
+        ContainerRuntimeTarget target,
+        string name,
+        IReadOnlyDictionary<string, string> labels,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult inspect = await RunDockerAsync(target, ["network", "inspect", name], cancellationToken);
+        if (inspect.Succeeded) return;
+
+        var args = new List<string> { "network", "create" };
+        foreach ((string key, string value) in labels)
+            args.AddRange(["--label", $"{key}={value}"]);
+        args.Add(name);
+
+        ProcessResult create = await RunDockerAsync(target, args, cancellationToken);
+        ThrowIfFailed(create);
+    }
+
+    public async IAsyncEnumerable<ProcessOutputLine> BuildImageAsync(
+        ContainerRuntimeTarget target,
+        DockerBuildCommand command,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var args = new List<string>
+        {
+            "build",
+            "--pull",
+            "--file",
+            command.DockerfilePath,
+            "--tag",
+            command.ImageName
+        };
+        foreach ((string key, string value) in command.Labels)
+            args.AddRange(["--label", $"{key}={value}"]);
+        foreach ((string key, string value) in command.BuildArguments)
+            args.AddRange(["--build-arg", $"{key}={value}"]);
+        args.Add(".");
+
+        await foreach (ProcessOutputLine line in processRunner.StreamLinesAsync(new ProcessCommand(
+                           target.CliExecutable ?? (target.Provider == ContainerRuntimeProvider.Podman ? "podman" : "docker"),
+                           args,
+                           WorkingDirectory: command.WorkingDirectory,
+                           Timeout: command.Timeout ?? TimeSpan.FromMinutes(30),
+                           OutputMode: ProcessOutputMode.Lines,
+                           Redaction: new ProcessRedactionProfile(command.BuildArguments.Values.ToArray(), [])), cancellationToken))
+        {
+            yield return line;
+        }
+    }
+
     public async IAsyncEnumerable<ContainerEvent> StreamEventsAsync(
         ContainerRuntimeTarget target,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)

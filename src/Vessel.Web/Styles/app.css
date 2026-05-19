@@ -252,6 +252,45 @@
     @apply border-danger bg-danger text-white hover:bg-danger/90;
   }
 
+  .notice {
+    @apply rounded-sm border px-3 py-2 text-sm;
+  }
+
+  .notice-info {
+    @apply border-border bg-muted text-foreground;
+  }
+
+  .section-stack {
+    @apply mt-6 space-y-4;
+  }
+
+  .log-panel {
+    @apply rounded-sm border border-border bg-black p-4 font-mono text-xs text-neutral-100;
+    max-height: 32rem;
+    overflow: auto;
+  }
+
+  .log-line {
+    @apply grid gap-3 py-1;
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+  }
+
+  .log-line span {
+    @apply text-neutral-500;
+  }
+
+  .log-line code {
+    @apply whitespace-pre-wrap break-words;
+  }
+
+  .log-stderr code {
+    color: #fca5a5;
+  }
+
+  .log-system code {
+    color: #93c5fd;
+  }
+
   .button-quiet {
     @apply border-transparent bg-transparent text-black hover:bg-neutral-200 dark:text-white dark:hover:bg-coolgray-300;
   }

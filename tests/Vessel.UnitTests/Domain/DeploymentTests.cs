@@ -48,4 +48,24 @@ public sealed class DeploymentTests
 
         Assert.Throws<DomainException>(() => deployment.Start(now.AddSeconds(2)));
     }
+
+    [Fact]
+    public void Deployment_RecordsSourceSnapshotAndCancellationRequest()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        var deployment = Deployment.Queue(AppId.New(), ServerId.New(), UserId.New(), null, now);
+
+        deployment.Start(now.AddSeconds(1));
+        deployment.RecordSource("https://example.com/repo.git", "main", "abc123", "Initial commit", now.AddSeconds(2));
+        deployment.RecordConfigurationSnapshot("snapshots/docker-compose.redacted.yml", now.AddSeconds(3));
+        deployment.RequestCancellation(now.AddSeconds(4));
+        deployment.CancelByUser(now.AddSeconds(5));
+
+        Assert.Equal(DeploymentStatus.CanceledByUser, deployment.Status);
+        Assert.Equal("main", deployment.CommitBranch);
+        Assert.Equal("abc123", deployment.CommitSha);
+        Assert.Equal("snapshots/docker-compose.redacted.yml", deployment.ConfigurationSnapshotReference);
+        Assert.NotNull(deployment.CancellationRequestedAt);
+        Assert.NotNull(deployment.FinishedAt);
+    }
 }

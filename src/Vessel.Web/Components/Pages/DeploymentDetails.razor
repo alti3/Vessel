@@ -1,0 +1,95 @@
+@page "/deployments/{Id:guid}"
+@attribute [Authorize]
+@inject DeploymentQueryService DeploymentQuery
+@inject StartDeploymentService DeploymentStarter
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Deployment | Vessel</PageTitle>
+<PageHeader Kicker="Deployment" Title="@Id.ToString("D")" Description="Timeline, status, commit metadata, generated config references, and persisted logs.">
+    @if (Details is not null && Details.Status is DeploymentStatus.Queued or DeploymentStatus.InProgress or DeploymentStatus.CancelRequested)
+    {
+        <button class="button button-danger" type="button" @onclick="CancelAsync">Cancel</button>
+    }
+</PageHeader>
+
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="notice notice-info">@Message</div>
+}
+
+@if (Details is null)
+{
+    <EmptyState Title="Deployment not found" Description="The deployment is unavailable or outside the active team." />
+}
+else
+{
+    <section class="dashboard-grid">
+        <SettingsPanel Title="Status" Description="Current deployment state and timestamps.">
+            <div class="signal-list">
+                <div class="signal-row"><span>Status</span><StatusBadge Text="@Details.Status.ToString()" Tone="@DeploymentTone(Details.Status)" /></div>
+                <div class="signal-row"><span>Created</span><span>@Details.CreatedAt.ToLocalTime().ToString("g")</span></div>
+                <div class="signal-row"><span>Started</span><span>@(Details.StartedAt?.ToLocalTime().ToString("g") ?? "pending")</span></div>
+                <div class="signal-row"><span>Finished</span><span>@(Details.FinishedAt?.ToLocalTime().ToString("g") ?? "running")</span></div>
+            </div>
+        </SettingsPanel>
+        <SettingsPanel Title="Source" Description="Repository, branch, commit, and generated artifact references.">
+            <div class="signal-list">
+                <div class="signal-row"><span>Repository</span><span>@(Details.RepositoryUrl ?? "not recorded")</span></div>
+                <div class="signal-row"><span>Branch</span><span>@(Details.CommitBranch ?? "not recorded")</span></div>
+                <div class="signal-row"><span>Commit</span><span>@(Details.CommitSha ?? "pending")</span></div>
+                <div class="signal-row"><span>Snapshot</span><span>@(Details.ConfigurationSnapshotReference ?? "not created")</span></div>
+            </div>
+        </SettingsPanel>
+    </section>
+
+    <section class="section-stack">
+        <PageHeader Kicker="Output" Title="Logs" Description="Redacted deployment logs persisted in order." />
+        <div class="log-panel">
+            @foreach (var line in Details.Logs)
+            {
+                <div class="log-line log-@line.Stream"><span>@line.Sequence.ToString("0000")</span><code>@line.Message</code></div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private Vessel.Application.Deployments.DeploymentDetails? Details { get; set; }
+    private System.Security.Claims.ClaimsPrincipal? User { get; set; }
+    private string? Message { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        User = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Load();
+    }
+
+    private async Task CancelAsync()
+    {
+        if (User is null) return;
+        await DeploymentStarter.CancelAsync(User.GetUserId(), User.GetTeamId(), new DeploymentId(Id));
+        Message = "Cancellation requested.";
+        Load();
+    }
+
+    private void Load()
+    {
+        if (User is null) return;
+        Details = DeploymentQuery.Get(User.GetUserId(), User.GetTeamId(), new DeploymentId(Id));
+    }
+
+    private static string DeploymentTone(DeploymentStatus status)
+    {
+        return status switch
+        {
+            DeploymentStatus.Succeeded => "success",
+            DeploymentStatus.Failed => "danger",
+            DeploymentStatus.CanceledByUser => "warning",
+            DeploymentStatus.CancelRequested => "warning",
+            DeploymentStatus.InProgress => "info",
+            _ => "neutral"
+        };
+    }
+}

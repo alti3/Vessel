@@ -30,6 +30,17 @@ public interface IContainerRuntimeClient
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default);
 
+    Task EnsureNetworkAsync(
+        ContainerRuntimeTarget target,
+        string name,
+        IReadOnlyDictionary<string, string> labels,
+        CancellationToken cancellationToken = default);
+
+    IAsyncEnumerable<ProcessOutputLine> BuildImageAsync(
+        ContainerRuntimeTarget target,
+        DockerBuildCommand command,
+        CancellationToken cancellationToken = default);
+
     IAsyncEnumerable<ContainerEvent> StreamEventsAsync(
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default);

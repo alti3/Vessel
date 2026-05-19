@@ -473,7 +473,11 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new DeploymentId(value.Value) : null);
             builder.Property(deployment => deployment.CommitSha).HasMaxLength(80);
+            builder.Property(deployment => deployment.CommitBranch).HasMaxLength(255);
+            builder.Property(deployment => deployment.CommitMessage).HasMaxLength(512);
+            builder.Property(deployment => deployment.RepositoryUrl).HasMaxLength(2048);
             builder.Property(deployment => deployment.ArtifactReference).HasMaxLength(512);
+            builder.Property(deployment => deployment.ConfigurationSnapshotReference).HasMaxLength(512);
             builder.Property(deployment => deployment.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(deployment => deployment.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(deployment => deployment.DomainEvents);

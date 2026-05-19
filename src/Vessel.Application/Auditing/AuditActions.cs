@@ -25,6 +25,9 @@ public static class AuditActions
     public const string ServerCreated = "server.created";
     public const string ServerConnectivityChecked = "server.connectivity_checked";
     public const string ApplicationCreated = "application.created";
+    public const string DeploymentStarted = "deployment.started";
+    public const string DeploymentCanceled = "deployment.canceled";
+    public const string DeploymentFinished = "deployment.finished";
     public const string DatabaseCreated = "database.created";
     public const string EnvironmentVariableCreated = "environment_variable.created";
     public const string SecretStored = "secret.stored";

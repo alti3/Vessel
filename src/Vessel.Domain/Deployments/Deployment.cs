@@ -36,7 +36,15 @@ public sealed class Deployment : Entity<DeploymentId>
 
     public string? CommitSha { get; private set; }
 
+    public string? CommitBranch { get; private set; }
+
+    public string? CommitMessage { get; private set; }
+
+    public string? RepositoryUrl { get; private set; }
+
     public string? ArtifactReference { get; private set; }
+
+    public string? ConfigurationSnapshotReference { get; private set; }
 
     public DeploymentId? RollbackDeploymentId { get; private set; }
 
@@ -47,6 +55,8 @@ public sealed class Deployment : Entity<DeploymentId>
     public DateTimeOffset? StartedAt { get; private set; }
 
     public DateTimeOffset? FinishedAt { get; private set; }
+
+    public DateTimeOffset? CancellationRequestedAt { get; private set; }
 
     public IReadOnlyCollection<DeploymentLogLine> LogLines => _logLines.AsReadOnly();
 
@@ -63,6 +73,28 @@ public sealed class Deployment : Entity<DeploymentId>
     public void Start(DateTimeOffset now)
     {
         TransitionTo(DeploymentStatus.InProgress, now);
+    }
+
+    public void RecordSource(string repositoryUrl, string branch, string commitSha, string? commitMessage, DateTimeOffset now)
+    {
+        RepositoryUrl = DomainValidation.Required(repositoryUrl, nameof(repositoryUrl), 2048);
+        CommitBranch = DomainValidation.Required(branch, nameof(branch), 255);
+        CommitSha = DomainValidation.Required(commitSha, nameof(commitSha), 80);
+        CommitMessage = DomainValidation.Optional(commitMessage, nameof(commitMessage), 512);
+        Touch(now);
+    }
+
+    public void RecordConfigurationSnapshot(string snapshotReference, DateTimeOffset now)
+    {
+        ConfigurationSnapshotReference = DomainValidation.Required(snapshotReference, nameof(snapshotReference), 512);
+        Touch(now);
+    }
+
+    public void RequestCancellation(DateTimeOffset now)
+    {
+        if (IsTerminal(Status)) return;
+        CancellationRequestedAt = now;
+        TransitionTo(Status == DeploymentStatus.Queued ? DeploymentStatus.CanceledByUser : DeploymentStatus.CancelRequested, now);
     }
 
     public void MarkSucceeded(string? artifactReference, DateTimeOffset now)
@@ -106,7 +138,8 @@ public sealed class Deployment : Entity<DeploymentId>
         {
             DeploymentStatus.Queued => nextStatus is DeploymentStatus.InProgress or DeploymentStatus.CanceledByUser,
             DeploymentStatus.InProgress => nextStatus is DeploymentStatus.Succeeded or DeploymentStatus.Failed
-                or DeploymentStatus.CanceledByUser,
+                or DeploymentStatus.CanceledByUser or DeploymentStatus.CancelRequested,
+            DeploymentStatus.CancelRequested => nextStatus is DeploymentStatus.CanceledByUser or DeploymentStatus.Failed,
             _ => false
         };
     }

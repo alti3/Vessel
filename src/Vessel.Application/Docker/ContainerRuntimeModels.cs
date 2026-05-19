@@ -40,3 +40,11 @@ public sealed record ComposeCommand(
     IReadOnlyList<string> Arguments,
     string? EnvironmentFile = null,
     TimeSpan? Timeout = null);
+
+public sealed record DockerBuildCommand(
+    string WorkingDirectory,
+    string DockerfilePath,
+    string ImageName,
+    IReadOnlyDictionary<string, string> Labels,
+    IReadOnlyDictionary<string, string> BuildArguments,
+    TimeSpan? Timeout = null);

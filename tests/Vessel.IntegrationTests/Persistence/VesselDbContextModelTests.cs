@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
@@ -47,6 +48,8 @@ public sealed class VesselDbContextModelTests
             migration => migration.EndsWith("InitialDomainModel", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("Phase4Auth", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("Phase8DeploymentMvp", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -65,6 +68,20 @@ public sealed class VesselDbContextModelTests
         Assert.Contains("secret_values", script, StringComparison.Ordinal);
         Assert.Contains("registry_credentials", script, StringComparison.Ordinal);
         Assert.Contains("server_status_snapshots", script, StringComparison.Ordinal);
+        Assert.Contains("ConfigurationSnapshotReference", script, StringComparison.Ordinal);
+        Assert.Contains("CancellationRequestedAt", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Model_MapsDeploymentMvpMetadata()
+    {
+        using VesselDbContext context = CreateContext();
+
+        var deployment = context.Model.FindEntityType(typeof(Deployment));
+
+        Assert.Equal(2048, deployment?.FindProperty(nameof(Deployment.RepositoryUrl))?.GetMaxLength());
+        Assert.Equal(255, deployment?.FindProperty(nameof(Deployment.CommitBranch))?.GetMaxLength());
+        Assert.Equal(512, deployment?.FindProperty(nameof(Deployment.ConfigurationSnapshotReference))?.GetMaxLength());
     }
 
     private static VesselDbContext CreateContext()
