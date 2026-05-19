@@ -30,6 +30,17 @@ Each phase should satisfy these gates before being considered complete:
 - Public behavior, operations, deployment shape, or architecture decisions are documented.
 - Narrowest useful verification command has been run and recorded in notes.
 
+### Phase Gate Pass - 2026-05-19
+
+Completed a gate pass over the phases currently marked complete in this roadmap (Phases 0-6).
+
+- Architecture boundaries: `tools/validate-project-references.ps1` passed; project references still match the allowed Web/Application/Infrastructure/Domain/Shared graph.
+- Process execution: repository search found direct `Process.*` usage only in `src/Vessel.Infrastructure/Processes/DotNetProcessRunner.cs`, the approved infrastructure process layer.
+- Web/UI/Hub boundaries: repository search did not find direct Docker/Git/SSH/process execution in Blazor components, controllers, SignalR hubs, or Domain; the Web layer references `IVesselDbContext` only for composition-root fallback wiring.
+- Secrets: existing redaction tests and auth/token tests passed; `SecretInput` continues to mask UI values by default.
+- Verification: `dotnet restore Vessel.slnx --artifacts-path artifacts\phase-gate-build`, `dotnet build Vessel.slnx --no-restore --artifacts-path artifacts\phase-gate-build`, `dotnet test Vessel.slnx --no-build --verbosity minimal`, and `tools/validate-project-references.ps1` passed locally.
+- Notes: the normal build output path was locked by a running `Vessel.Web` process (`PID 6668`), so build verification used an isolated artifacts path. The installed SDK remains `11.0.100-preview.4.26230.115`; replace it with stable .NET 11 after GA per Phase 1 notes.
+
 ---
 
 ## Phase 0: Product Framing and Repository Governance
