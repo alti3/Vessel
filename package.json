@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "css:build": "bunx @tailwindcss/cli -i ./src/Vessel.Web/Styles/app.css -o ./src/Vessel.Web/wwwroot/css/app.css --minify",
+    "css:watch": "bunx @tailwindcss/cli -i ./src/Vessel.Web/Styles/app.css -o ./src/Vessel.Web/wwwroot/css/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.17",
+    "tailwindcss": "^4.1.17"
+  }
+}

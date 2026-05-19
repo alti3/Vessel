@@ -1,0 +1,17 @@
+@page "/servers/new"
+@attribute [Authorize]
+
+<PageTitle>Add server | Vessel</PageTitle>
+<PageHeader Kicker="Servers" Title="Add server" Description="Register a host runtime. Access to Docker socket or remote SSH is host-root-equivalent and must be treated carefully." />
+
+<SettingsPanel Title="Connection" Description="Coolify asks for server address, user, port, and credentials before validating runtime readiness.">
+    <form class="form-grid">
+        <FormField Label="Name" Name="name" Placeholder="prod-01" />
+        <FormField Label="Host" Name="host" Placeholder="10.0.0.10 or server.example.com" />
+        <FormField Label="SSH user" Name="user" Placeholder="root" />
+        <FormField Label="SSH port" Name="port" Type="number" Placeholder="22" />
+        <label>Runtime preference<select name="runtime"><option>Docker</option><option>Podman-compatible</option></select></label>
+        <label>Connection type<select name="connectionType"><option>SSH</option><option>Local socket</option></select></label>
+        <button class="button button-primary" type="button">Validate server</button>
+    </form>
+</SettingsPanel>

@@ -1,0 +1,30 @@
+@page "/notifications"
+@attribute [Authorize]
+@inject INotificationCatalogQuery NotificationQuery
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Notifications | Vessel</PageTitle>
+<PageHeader Kicker="Events" Title="Notifications" Description="In-app and external notification targets for operational events." />
+
+@if (Items.Count == 0)
+{
+    <EmptyState Title="No notification targets" Description="Notification channels will appear here as providers are implemented." />
+}
+else
+{
+    <div class="resource-grid">
+        @foreach (var item in Items)
+        {
+            <ResourceCard Href="@($"/notifications/{item.Id}")" IconName="bell" Title="@item.Name" Description="@item.Channel.ToString()" />
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<NotificationTargetListItem> Items { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Items = NotificationQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+    }
+}

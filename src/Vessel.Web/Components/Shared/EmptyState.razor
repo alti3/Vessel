@@ -1,0 +1,20 @@
+<section class="empty-state">
+    <div class="empty-icon">
+        <Icon Name="plus" />
+    </div>
+    <div>
+        <h2>@Title</h2>
+        <p>@Description</p>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(ActionHref) && !string.IsNullOrWhiteSpace(ActionText))
+    {
+        <a class="button button-primary" href="@ActionHref">@ActionText</a>
+    }
+</section>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Nothing here yet";
+    [Parameter] public string Description { get; set; } = "Create the first item to get started.";
+    [Parameter] public string? ActionHref { get; set; }
+    [Parameter] public string? ActionText { get; set; }
+}

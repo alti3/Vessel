@@ -9,7 +9,10 @@ using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Vessel.Application.Auth;
+using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Dashboard;
+using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
 using Vessel.Application.Security;
 using Vessel.Infrastructure.HealthChecks;
@@ -33,8 +36,12 @@ public static class ServiceCollectionExtensions
                 $"Unsupported environment '{environment.EnvironmentName}'. Supported values are Development, Staging, Production, and Testing.");
 
         services.AddControllers();
+        services
+            .AddRazorComponents()
+            .AddInteractiveServerComponents();
         services.AddSignalR();
         services.AddHttpContextAccessor();
+        services.AddCascadingAuthenticationState();
 
         services.AddVesselWebOptions(configuration);
         services.AddVesselApplicationServices(configuration);
@@ -59,12 +66,23 @@ public static class ServiceCollectionExtensions
             .Validate(options => options.InvitationExpirationDays > 0, "Invitation expiration must be positive.")
             .ValidateOnStart();
 
+        services.TryAddScoped<IVesselDbContext, UnavailableVesselDbContext>();
+        services.TryAddScoped<IUnitOfWork>(provider => provider.GetRequiredService<IVesselDbContext>());
+        services.TryAddScoped<IAuditWriter, NoopAuditWriter>();
         services.AddScoped<VesselAuthenticationService>();
         services.AddScoped<VesselTokenService>();
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
         services.AddScoped<TotpService>();
         services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
+        services.AddScoped<IDashboardOverviewQuery, EmptyDashboardOverviewQuery>();
+        services.AddScoped<IProjectCatalogQuery, EmptyProjectCatalogQuery>();
+        services.AddScoped<IServerCatalogQuery, EmptyServerCatalogQuery>();
+        services.AddScoped<IApplicationCatalogQuery, EmptyApplicationCatalogQuery>();
+        services.AddScoped<IDeploymentCatalogQuery, EmptyDeploymentCatalogQuery>();
+        services.AddScoped<IDatabaseCatalogQuery, EmptyDatabaseCatalogQuery>();
+        services.AddScoped<INotificationCatalogQuery, EmptyNotificationCatalogQuery>();
+        services.AddScoped<ISettingsCatalogQuery, EmptySettingsCatalogQuery>();
 
         return services;
     }

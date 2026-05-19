@@ -1,0 +1,12 @@
+@page "/databases/new"
+@attribute [Authorize]
+
+<PageTitle>New database | Vessel</PageTitle>
+<PageHeader Kicker="Databases" Title="Create database" Description="Coolify exposes common standalone database engines as first-class resources." />
+
+<section class="resource-grid">
+    <ResourceCard Href="/databases/new/postgresql" IconName="database" Title="PostgreSQL" Description="Robust relational database for production applications." />
+    <ResourceCard Href="/databases/new/mysql" IconName="database" Title="MySQL" Description="Popular relational database engine." />
+    <ResourceCard Href="/databases/new/redis" IconName="database" Title="Redis" Description="In-memory cache and queue backend." />
+    <ResourceCard Href="/databases/new/mongodb" IconName="database" Title="MongoDB" Description="Document-oriented NoSQL database." />
+</section>

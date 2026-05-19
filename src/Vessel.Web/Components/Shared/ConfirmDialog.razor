@@ -1,0 +1,27 @@
+@if (Open)
+{
+    <div class="dialog-backdrop" role="presentation" @onclick="Cancel">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="@TitleId" @onclick:stopPropagation>
+            <h2 id="@TitleId">@Title</h2>
+            <p>@Message</p>
+            <div class="dialog-actions">
+                <button class="button button-secondary" type="button" @onclick="Cancel">Cancel</button>
+                <DangerButton @onclick="Confirm">Confirm</DangerButton>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private readonly string TitleId = $"dialog-{Guid.NewGuid():N}";
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Title { get; set; } = "Confirm action";
+    [Parameter] public string Message { get; set; } = "This action cannot be undone.";
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    private Task Cancel() => OnCancel.InvokeAsync();
+
+    private Task Confirm() => OnConfirm.InvokeAsync();
+}

@@ -1,0 +1,28 @@
+@page "/applications/{Id:guid}"
+@attribute [Authorize]
+
+<PageTitle>Application | Vessel</PageTitle>
+<PageHeader Kicker="Application" Title="Application overview" Description="@($"Application {Id} deployment, domains, environment, and logs.")">
+    <button class="button button-primary" type="button"><Icon Name="rocket" CssClass="size-4" />Deploy</button>
+</PageHeader>
+
+<section class="dashboard-grid">
+    <SettingsPanel Title="Deployment" Description="Status, latest commit, rollback target, and deployment settings.">
+        <div class="signal-list">
+            <div class="signal-row"><span>Status</span><StatusBadge Text="Unknown" Tone="neutral" /></div>
+            <div class="signal-row"><span>Latest commit</span><span>not recorded</span></div>
+            <div class="signal-row"><span>Auto deploy</span><StatusBadge Text="Off" Tone="warning" /></div>
+        </div>
+    </SettingsPanel>
+    <SettingsPanel Title="Configuration" Description="Build pack, runtime, domains, ports, and secret references.">
+        <form class="form-stack">
+            <FormField Label="Primary domain" Name="domain" Placeholder="https://app.example.com" />
+            <label>Environment variable<SecretInput Name="env-secret" Placeholder="DATABASE_URL" /></label>
+            <button class="button button-secondary" type="button">Save configuration</button>
+        </form>
+    </SettingsPanel>
+</section>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+}

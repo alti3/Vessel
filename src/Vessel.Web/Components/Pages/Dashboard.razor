@@ -1,0 +1,137 @@
+@page "/"
+@attribute [Authorize]
+@inject IDashboardOverviewQuery DashboardQuery
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Dashboard | Vessel</PageTitle>
+
+<PageHeader Kicker="Dashboard" Title="Dashboard" Description="Your self-hosted infrastructure.">
+    <a class="button button-primary" href="/projects/new"><Icon Name="plus" CssClass="size-4" />Add</a>
+</PageHeader>
+
+<section>
+    <div class="section-title-row">
+        <h3>Projects</h3>
+        <a class="button button-quiet" href="/projects/new" aria-label="Add project"><Icon Name="plus" CssClass="size-4" /></a>
+    </div>
+    <div class="resource-grid">
+        <ResourceCard Href="/projects" IconName="folder" Title="Projects" Description="Group environments and resources by product or customer boundary." Meta="@($"{Overview.ProjectCount} total")" />
+        <ResourceCard Href="/applications" IconName="rocket" Title="Applications" Description="Deploy Git repositories, Dockerfiles, Docker images, and service workloads inside projects." Meta="@($"{Overview.ApplicationCount} total")" />
+        <ResourceCard Href="/databases" IconName="database" Title="Databases" Description="Manage persistent data resources, backups, credentials, and health inside projects." Meta="@($"{Overview.DatabaseCount} total")" />
+    </div>
+</section>
+
+<section>
+    <div class="section-title-row">
+        <h3>Servers</h3>
+        <a class="button button-quiet" href="/servers/new" aria-label="Add server"><Icon Name="plus" CssClass="size-4" /></a>
+    </div>
+    <div class="resource-grid">
+        <ResourceCard Href="/servers" IconName="server" Title="Servers" Description="Register hosts, validate runtime access, and monitor readiness before deployments." Meta="@($"{Overview.ServerCount} total")" />
+        <ResourceCard Href="/destinations" IconName="server" Title="Destinations" Description="Route workloads to Docker networks, remote hosts, and future Podman-compatible targets." Meta="Configure" />
+    </div>
+</section>
+
+<section class="dashboard-grid">
+    <div class="panel panel-wide">
+        <div class="panel-header">
+            <div>
+                <h2>System Signals</h2>
+                <p>Items that deserve attention first.</p>
+            </div>
+        </div>
+        <div class="signal-list">
+            <div class="signal-row">
+                <span>Active deploys</span>
+                <StatusBadge Text="@Overview.ActiveDeploymentCount.ToString()" Tone="info" />
+            </div>
+            <div class="signal-row">
+                <span>Failed deployments</span>
+                <StatusBadge Text="@Overview.FailedDeploymentCount.ToString()" Tone="@(Overview.FailedDeploymentCount > 0 ? "danger" : "success")" />
+            </div>
+            <div class="signal-row">
+                <span>Notification targets</span>
+                <StatusBadge Text="@Overview.NotificationTargetCount.ToString()" Tone="neutral" />
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2>Operations</h2>
+                <p>Fast paths for common Coolify-style workflows.</p>
+            </div>
+        </div>
+        <div class="signal-list">
+            <a class="signal-row signal-link" href="/sources"><span>Sources</span><Icon Name="key" CssClass="size-4" /></a>
+            <a class="signal-row signal-link" href="/security/keys"><span>Keys & Tokens</span><Icon Name="shield" CssClass="size-4" /></a>
+            <a class="signal-row signal-link" href="/terminal"><span>Terminal</span><Icon Name="terminal" CssClass="size-4" /></a>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2>Recent Deployments</h2>
+            <p>Deployment history is the first drill-down surface for production changes.</p>
+        </div>
+        <a class="button button-secondary" href="/deployments">View all</a>
+    </div>
+    @if (Overview.RecentDeployments.Count == 0)
+    {
+        <EmptyState Title="No deployments yet" Description="Deployments will appear here after applications are connected and deployment jobs run." />
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Commit</th>
+                        <th>Created</th>
+                        <th>Completed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var deployment in Overview.RecentDeployments)
+                    {
+                        <tr>
+                            <td><StatusBadge Text="@deployment.Status.ToString()" Tone="@DeploymentTone(deployment.Status)" /></td>
+                            <td>@(deployment.CommitSha ?? "not recorded")</td>
+                            <td>@deployment.CreatedAt.ToLocalTime().ToString("g")</td>
+                            <td>@(deployment.CompletedAt?.ToLocalTime().ToString("g") ?? "running")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private DashboardOverview Overview { get; set; } = new(0, 0, 0, 0, 0, 0, 0, []);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Overview = DashboardQuery.GetOverview(state.User.GetTeamId());
+        }
+    }
+
+    private static string DeploymentTone(DeploymentStatus status)
+    {
+        return status switch
+        {
+            DeploymentStatus.Succeeded => "success",
+            DeploymentStatus.Failed => "danger",
+            DeploymentStatus.CanceledByUser => "warning",
+            DeploymentStatus.InProgress => "info",
+            _ => "neutral"
+        };
+    }
+}

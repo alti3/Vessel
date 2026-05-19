@@ -1,0 +1,19 @@
+@page "/profile"
+@attribute [Authorize]
+
+<PageTitle>Profile | Vessel</PageTitle>
+<PageHeader Kicker="Account" Title="Profile" Description="Security controls for the current operator account." />
+
+<section class="dashboard-grid">
+    <div class="panel">
+        <div class="panel-header"><div><h2>Two-factor authentication</h2><p>Enable TOTP before using higher-risk operations such as terminal access.</p></div></div>
+        <form class="form-stack">
+            <label>Authenticator code<input inputmode="numeric" autocomplete="one-time-code" placeholder="000000" /></label>
+            <button class="button button-secondary" type="button">Verify setup</button>
+        </form>
+    </div>
+    <div class="panel">
+        <div class="panel-header"><div><h2>Personal tokens</h2><p>Create narrowly scoped tokens for CLI and automation access.</p></div></div>
+        <a class="button button-primary" href="/tokens">Manage tokens</a>
+    </div>
+</section>

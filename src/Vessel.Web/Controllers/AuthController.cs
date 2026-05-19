@@ -65,6 +65,43 @@ public sealed class AuthController : ControllerBase
         return Ok(AuthResponse.From(user));
     }
 
+    [HttpPost("/auth/login")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> LoginForm(
+        [FromForm] LoginFormRequest request,
+        CancellationToken cancellationToken)
+    {
+        AuthenticatedUser? user = await _authenticationService.LoginAsync(
+            request.Email,
+            request.Password,
+            request.TwoFactorCode,
+            CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+            cancellationToken);
+
+        if (user is null || user.TwoFactorRequired)
+            return Redirect($"/login?error=invalid&returnUrl={Uri.EscapeDataString(request.ReturnUrl ?? string.Empty)}");
+
+        await SignInAsync(user);
+        return LocalRedirect(NormalizeReturnUrl(request.ReturnUrl));
+    }
+
+    [HttpPost("/auth/register")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> RegisterForm(
+        [FromForm] RegisterFormRequest request,
+        CancellationToken cancellationToken)
+    {
+        AuthenticatedUser user = await _authenticationService.RegisterAsync(
+            request.Name,
+            request.Email,
+            request.Password,
+            CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+            cancellationToken);
+
+        await SignInAsync(user);
+        return LocalRedirect("/");
+    }
+
     [Authorize]
     [HttpPost("logout")]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
@@ -159,11 +196,22 @@ public sealed class AuthController : ControllerBase
         var identity = new ClaimsIdentity(claims, VesselAuthenticationSchemes.Cookie);
         await HttpContext.SignInAsync(VesselAuthenticationSchemes.Cookie, new ClaimsPrincipal(identity));
     }
+
+    private static string NormalizeReturnUrl(string? returnUrl)
+    {
+        return string.IsNullOrWhiteSpace(returnUrl) || !Uri.IsWellFormedUriString(returnUrl, UriKind.Relative)
+            ? "/"
+            : $"/{returnUrl.TrimStart('/')}";
+    }
 }
 
 public sealed record RegisterRequest(string Name, string Email, string Password);
 
 public sealed record LoginRequest(string Email, string Password, string? TwoFactorCode);
+
+public sealed record LoginFormRequest(string Email, string Password, string? TwoFactorCode, string? ReturnUrl);
+
+public sealed record RegisterFormRequest(string Name, string Email, string Password);
 
 public sealed record PasswordResetRequest(string Email);
 

@@ -1,0 +1,12 @@
+<label>
+    @Label
+    <input name="@Name" type="@Type" placeholder="@Placeholder" value="@Value" />
+</label>
+
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Type { get; set; } = "text";
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? Value { get; set; }
+}

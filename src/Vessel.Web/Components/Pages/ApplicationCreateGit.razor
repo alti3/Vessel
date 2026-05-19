@@ -1,0 +1,17 @@
+@page "/applications/new/git"
+@attribute [Authorize]
+
+<PageTitle>Git application | Vessel</PageTitle>
+<PageHeader Kicker="Applications" Title="Git application" Description="Connect source, build configuration, target server, and environment." />
+
+<SettingsPanel Title="Source and build" Description="Coolify supports Git-based apps, build packs, Dockerfile builds, and compose repositories.">
+    <form class="form-grid">
+        <FormField Label="Name" Name="name" Placeholder="api" />
+        <FormField Label="Repository URL" Name="repo" Placeholder="https://github.com/org/repo.git" />
+        <FormField Label="Branch" Name="branch" Placeholder="main" />
+        <label>Build pack<select name="buildPack"><option>Nixpacks</option><option>Dockerfile</option><option>Docker Compose</option><option>Static</option></select></label>
+        <FormField Label="Base directory" Name="baseDirectory" Placeholder="/" />
+        <FormField Label="Publish domain" Name="domain" Placeholder="https://api.example.com" />
+        <button class="button button-primary" type="button">Create application</button>
+    </form>
+</SettingsPanel>

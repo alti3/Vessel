@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Vessel.Application.Auditing;
+using Vessel.Application.Dashboard;
 using Vessel.Application.Docker;
 using Vessel.Application.Files;
 using Vessel.Application.Git;
@@ -18,6 +19,7 @@ using Vessel.Application.Ssh;
 using Vessel.Application.Storage;
 using Vessel.Infrastructure.Auditing;
 using Vessel.Infrastructure.Configuration;
+using Vessel.Infrastructure.Dashboard;
 using Vessel.Infrastructure.Docker;
 using Vessel.Infrastructure.Files;
 using Vessel.Infrastructure.Git;
@@ -85,6 +87,15 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddScoped<IVesselDbContext>(provider => provider.GetRequiredService<VesselDbContext>());
             services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<VesselDbContext>());
             services.AddScoped<IAuditWriter, EfAuditWriter>();
+            services.AddScoped<EfDashboardQueries>();
+            services.AddScoped<IDashboardOverviewQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<IProjectCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<IServerCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<IApplicationCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<IDeploymentCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<IDatabaseCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<INotificationCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<ISettingsCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
         }
 
         services.TryAddSingleton<IPasswordHasher, Argon2PasswordHasher>();

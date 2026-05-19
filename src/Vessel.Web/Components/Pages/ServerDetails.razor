@@ -1,0 +1,27 @@
+@page "/servers/{Id:guid}"
+@attribute [Authorize]
+
+<PageTitle>Server | Vessel</PageTitle>
+<PageHeader Kicker="Server" Title="Server status" Description="@($"Server {Id} runtime, health, and operations.")">
+    <a class="button button-secondary" href="/terminal">Open terminal</a>
+</PageHeader>
+
+<section class="metric-grid">
+    <MetricCard Label="Runtime" Value="Docker" IconName="server" />
+    <MetricCard Label="Containers" Value="0" IconName="rocket" />
+    <MetricCard Label="Disk" Value="n/a" IconName="database" />
+    <MetricCard Label="Status" Value="Unknown" IconName="shield" Tone="info" />
+</section>
+
+<section class="dashboard-grid">
+    <SettingsPanel Title="Health checks" Description="Connectivity, runtime availability, proxy status, and capacity checks will be recorded here.">
+        <EmptyState Title="No health snapshots" Description="Scheduled health checks are introduced in later phases." />
+    </SettingsPanel>
+    <SettingsPanel Title="Danger zone" Description="Disabling a server prevents new deployment work from targeting it.">
+        <DangerButton>Disable server</DangerButton>
+    </SettingsPanel>
+</section>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+}

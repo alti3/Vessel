@@ -1,0 +1,9 @@
+<button class="button button-danger" type="@Type" disabled="@Disabled">
+    @ChildContent
+</button>
+
+@code {
+    [Parameter] public string Type { get; set; } = "button";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

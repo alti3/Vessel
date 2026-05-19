@@ -1,0 +1,32 @@
+@page "/applications"
+@attribute [Authorize]
+@inject IApplicationCatalogQuery ApplicationQuery
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Applications | Vessel</PageTitle>
+<PageHeader Kicker="Resources" Title="Applications" Description="Application records connect source repositories, runtime settings, servers, and deployment policy.">
+    <a class="button button-primary" href="/applications/new"><Icon Name="plus" CssClass="size-4" />New application</a>
+</PageHeader>
+
+@if (Items.Count == 0)
+{
+    <EmptyState Title="No applications found" Description="Create a project and server first, then add an application connected to a Git source." ActionHref="/applications/new" ActionText="Create application" />
+}
+else
+{
+    <div class="resource-grid">
+        @foreach (var item in Items)
+        {
+            <ResourceCard Href="@($"/applications/{item.Id}")" IconName="rocket" Title="@item.Name" Description="@(item.Description ?? "No description recorded.")" Meta="Configured" />
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ApplicationListItem> Items { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Items = ApplicationQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+    }
+}

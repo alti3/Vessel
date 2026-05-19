@@ -23,6 +23,8 @@ public static class WebApplicationExtensions
         if (!app.Environment.IsDevelopment()) app.UseHsts();
 
         app.UseMiddleware<SecurityHeadersMiddleware>();
+        app.UseStaticFiles();
+        app.UseAntiforgery();
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
