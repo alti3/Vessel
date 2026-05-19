@@ -23,6 +23,8 @@ public sealed class Project : Entity<ProjectId>
 
     public Description? Description { get; private set; }
 
+    public bool IsArchived { get; private set; }
+
     public static Project Create(TeamId teamId, ResourceName name, DateTimeOffset now, Description? description = null)
     {
         var project = new Project(ProjectId.New(), teamId, name, description, now);
@@ -34,6 +36,19 @@ public sealed class Project : Entity<ProjectId>
     public void Rename(ResourceName name, DateTimeOffset now)
     {
         Name = name;
+        Touch(now);
+    }
+
+    public void UpdateDetails(ResourceName name, Description? description, DateTimeOffset now)
+    {
+        Name = name;
+        Description = description;
+        Touch(now);
+    }
+
+    public void Archive(DateTimeOffset now)
+    {
+        IsArchived = true;
         Touch(now);
     }
 }

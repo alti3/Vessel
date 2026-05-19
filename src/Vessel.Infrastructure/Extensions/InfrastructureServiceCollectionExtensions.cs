@@ -75,6 +75,14 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor
             .Singleton<IValidateOptions<ObjectStorageOptions>, ObjectStorageOptionsValidator>());
 
+        services
+            .AddOptions<SecretStorageOptions>()
+            .Bind(configuration.GetSection(SecretStorageOptions.SectionName))
+            .Validate(options => string.IsNullOrWhiteSpace(options.MasterKey)
+                                 || Convert.FromBase64String(options.MasterKey).Length == 32,
+                "Secrets:MasterKey must be a base64-encoded 256-bit key when configured.")
+            .ValidateOnStart();
+
         DatabaseOptions databaseOptions = configuration
             .GetSection(DatabaseOptions.SectionName)
             .Get<DatabaseOptions>() ?? new DatabaseOptions();
@@ -102,6 +110,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ITokenGenerator, SecureTokenGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ISecretRedactor, SecretRedactor>();
+        services.AddScoped<ISecretVault, AesSecretVault>();
         services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();

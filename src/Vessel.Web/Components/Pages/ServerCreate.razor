@@ -1,17 +1,60 @@
 @page "/servers/new"
 @attribute [Authorize]
+@inject ResourceManagementService Resources
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
 
 <PageTitle>Add server | Vessel</PageTitle>
-<PageHeader Kicker="Servers" Title="Add server" Description="Register a host runtime. Access to Docker socket or remote SSH is host-root-equivalent and must be treated carefully." />
+<PageHeader Kicker="Servers" Title="Add server" Description="Register a host runtime. Docker socket and remote shell access are host-root-equivalent." />
 
-<SettingsPanel Title="Connection" Description="Coolify asks for server address, user, port, and credentials before validating runtime readiness.">
-    <form class="form-grid">
-        <FormField Label="Name" Name="name" Placeholder="prod-01" />
-        <FormField Label="Host" Name="host" Placeholder="10.0.0.10 or server.example.com" />
-        <FormField Label="SSH user" Name="user" Placeholder="root" />
-        <FormField Label="SSH port" Name="port" Type="number" Placeholder="22" />
-        <label>Runtime preference<select name="runtime"><option>Docker</option><option>Podman-compatible</option></select></label>
-        <label>Connection type<select name="connectionType"><option>SSH</option><option>Local socket</option></select></label>
-        <button class="button button-primary" type="button">Validate server</button>
-    </form>
+<SettingsPanel Title="Connection" Description="Validation records a status snapshot; runtime probing is owned by infrastructure adapters.">
+    <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-server">
+        <div class="form-grid">
+            <label>Name<InputText @bind-Value="Model.Name" name="name" placeholder="prod-01" /></label>
+            <label>Host<InputText @bind-Value="Model.Host" name="host" placeholder="server.example.com" /></label>
+            <label>SSH user<InputText @bind-Value="Model.User" name="user" placeholder="root" /></label>
+            <label>Port<InputNumber @bind-Value="Model.Port" name="port" /></label>
+            <label>Runtime<select @bind="Model.Runtime" name="runtime"><option value="@ContainerRuntimeKind.Docker">Docker</option><option value="@ContainerRuntimeKind.Podman">Podman</option></select></label>
+            <label>Connection<select @bind="Model.ConnectionType" name="connectionType"><option value="@ServerConnectionType.Ssh">SSH</option><option value="@ServerConnectionType.DockerSocket">Docker socket</option><option value="@ServerConnectionType.Local">Local</option></select></label>
+            <label class="form-wide">Labels<InputText @bind-Value="Model.Labels" name="labels" placeholder="region=us-east tier=prod" /></label>
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="form-alert form-wide">@Error</div>
+            }
+            <button class="button button-primary" type="submit">Validate server</button>
+        </div>
+    </EditForm>
 </SettingsPanel>
+
+@code {
+    private ServerForm Model { get; } = new();
+    private string? Error { get; set; }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            ServerSummary server = await Resources.CreateServerAsync(user.GetUserId(), user.GetTeamId(),
+                new CreateServerRequest(Model.Name, null, Model.Host, Model.Port, Model.User, Model.ConnectionType,
+                    Model.Runtime, Model.Labels));
+            await Resources.TestServerConnectivityAsync(user.GetUserId(), user.GetTeamId(), new Vessel.Domain.ServerId(server.Id));
+            Navigation.NavigateTo("/servers");
+        }
+        catch (Exception exception)
+        {
+            Error = exception.Message;
+        }
+    }
+
+    private sealed class ServerForm
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Host { get; set; } = string.Empty;
+        public string? User { get; set; } = "root";
+        public int Port { get; set; } = 22;
+        public ServerConnectionType ConnectionType { get; set; } = ServerConnectionType.Ssh;
+        public ContainerRuntimeKind Runtime { get; set; } = ContainerRuntimeKind.Docker;
+        public string? Labels { get; set; }
+    }
+}

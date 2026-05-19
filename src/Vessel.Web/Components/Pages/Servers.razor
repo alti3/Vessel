@@ -1,6 +1,6 @@
 @page "/servers"
 @attribute [Authorize]
-@inject IServerCatalogQuery ServerQuery
+@inject ResourceManagementService Resources
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Servers | Vessel</PageTitle>
@@ -33,11 +33,12 @@ else
 }
 
 @code {
-    private IReadOnlyList<ServerListItem> Items { get; set; } = [];
+    private IReadOnlyList<ServerSummary> Items { get; set; } = [];
 
     protected override async Task OnInitializedAsync()
     {
-        Items = ServerQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Items = Resources.ListServers(user.GetUserId(), user.GetTeamId());
     }
 
     private static string ServerTone(ServerStatus status)

@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vessel.Application.Authorization;
-using Vessel.Application.Dashboard;
+using Vessel.Application.Resources;
 using Vessel.Web.Security;
 
 namespace Vessel.Web.Controllers.Api.V1;
@@ -11,16 +11,23 @@ namespace Vessel.Web.Controllers.Api.V1;
 [Route("api/v1/databases")]
 public sealed class DatabasesController : ControllerBase
 {
-    private readonly IDatabaseCatalogQuery _databases;
+    private readonly ResourceManagementService _resources;
 
-    public DatabasesController(IDatabaseCatalogQuery databases)
+    public DatabasesController(ResourceManagementService resources)
     {
-        _databases = databases;
+        _resources = resources;
     }
 
     [HttpGet]
-    public ActionResult<IReadOnlyList<DatabaseListItem>> List()
+    public ActionResult<IReadOnlyList<DatabaseSummary>> List()
     {
-        return Ok(_databases.List(User.GetTeamId()));
+        return Ok(_resources.ListDatabases(User.GetUserId(), User.GetTeamId()));
+    }
+
+    [HttpPost]
+    [Authorize(Policy = VesselPermissions.ProjectsWrite)]
+    public async Task<ActionResult<DatabaseSummary>> Create(CreateDatabaseRequest request, CancellationToken cancellationToken)
+    {
+        return Ok(await _resources.CreateDatabaseAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken));
     }
 }

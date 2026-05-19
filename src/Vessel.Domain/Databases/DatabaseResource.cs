@@ -72,6 +72,22 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
         Touch(now);
     }
 
+    public void UpdateSettings(
+        ResourceName name,
+        Description? description,
+        VersionLabel version,
+        StorageConfiguration storage,
+        SecretReferenceId credentialsReferenceId,
+        DateTimeOffset now)
+    {
+        Name = name;
+        Description = description;
+        Version = version;
+        Storage = storage;
+        CredentialsReferenceId = credentialsReferenceId;
+        Touch(now);
+    }
+
     public void AddBackupPolicy(string cronExpression, int retentionCount, DateTimeOffset now)
     {
         _backupPolicies.Add(new BackupPolicy(Id, cronExpression, retentionCount));

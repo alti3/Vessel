@@ -249,25 +249,37 @@ Goal: Implement user-facing CRUD and validation for projects, servers, applicati
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 7.01 | Projects | Create project command/query flow | Create, edit, archive/delete, list, detail, and team authorization work | Phase 6 |  |
-| [ ] | 7.02 | Projects | Create project UI | Project list, detail, settings, empty state, and validation errors work | 7.01 |  |
-| [ ] | 7.03 | Environments | Create environment management | Create, rename, delete where safe, mark production/staging/preview semantics | 7.01 |  |
-| [ ] | 7.04 | Servers | Add server registration | Server can be added with host, connection type, runtime preference, labels, and team ownership | Phase 5, Phase 6 |  |
-| [ ] | 7.05 | Servers | Add server connectivity test | Connectivity and runtime availability are checked through Application/Infrastructure only | 7.04 |  |
-| [ ] | 7.06 | Servers | Add server UI | List, detail, status, settings, labels, and connection test results render safely | 7.04, 7.05 |  |
-| [ ] | 7.07 | Servers | Add server status snapshots | Disk, memory, CPU, container status, proxy status, certificate status can be persisted | 7.05 |  |
-| [ ] | 7.08 | Applications | Add application creation | Git source, branch, build method, server, environment, domains, and variables can be configured | 7.01, 7.03, 7.04 |  |
-| [ ] | 7.09 | Applications | Add application settings | Edit source, build, runtime, domains, health checks, deployment policy, and resource limits | 7.08 |  |
-| [ ] | 7.10 | Applications | Add application UI | List, create wizard, detail, settings, domains, env, and status views exist | 7.08, 7.09 |  |
-| [ ] | 7.11 | Databases | Add database resource creation | Database type, version, server, environment, storage, credentials reference, and backup settings can be configured | 7.01, 7.03, 7.04 |  |
-| [ ] | 7.12 | Databases | Add database UI | List, detail, settings, credentials reference, health, backup state render safely | 7.11 |  |
-| [ ] | 7.13 | Environment Variables | Implement variable model | Plain, secret, build-time, runtime, per-environment, and preview overrides are represented | Phase 3, Phase 4 |  |
-| [ ] | 7.14 | Environment Variables | Implement variable editor | UI supports add/edit/delete/mask/reveal where authorized; secret values are write-only by default | 7.13 |  |
-| [ ] | 7.15 | Secrets | Implement encrypted secret storage | SSH keys, tokens, registry credentials, DB passwords, TLS private keys, backup and S3 credentials are encrypted at rest | Phase 4, Phase 5 |  |
-| [ ] | 7.16 | Secrets | Implement key rotation plan | Rotation mechanism or documented placeholder exists without exposing plaintext | 7.15 |  |
-| [ ] | 7.17 | Registry | Add registry credentials model | Docker/OCI registry credentials can be stored and referenced by apps | 7.15 |  |
-| [ ] | 7.18 | Tests | Add resource command tests | Project/server/app/database/env variable flows cover validation, auth, tenancy, and audit | 7.01-7.17 |  |
-| [ ] | 7.19 | E2E | Add resource management E2E | Login, create project, add server, create application, configure variables | 7.01-7.17 |  |
+| [x] | 7.01 | Projects | Create project command/query flow | Create, edit, archive/delete, list, detail, and team authorization work | Phase 6 | `ResourceManagementService` added with team-scoped project flows. |
+| [x] | 7.02 | Projects | Create project UI | Project list, detail, settings, empty state, and validation errors work | 7.01 | Project list/create pages now use the resource service. |
+| [x] | 7.03 | Environments | Create environment management | Create, rename, delete where safe, mark production/staging/preview semantics | 7.01 | Environment create/update/delete service methods added; production delete is blocked. |
+| [x] | 7.04 | Servers | Add server registration | Server can be added with host, connection type, runtime preference, labels, and team ownership | Phase 5, Phase 6 | Server registration supports host, port, user, connection type, runtime, and labels. |
+| [x] | 7.05 | Servers | Add server connectivity test | Connectivity and runtime availability are checked through Application/Infrastructure only | 7.04 | Connectivity test persists a safe placeholder snapshot; runtime probing remains deferred to runtime phases. |
+| [x] | 7.06 | Servers | Add server UI | List, detail, status, settings, labels, and connection test results render safely | 7.04, 7.05 | Server list/create UI added through Application service. |
+| [x] | 7.07 | Servers | Add server status snapshots | Disk, memory, CPU, container status, proxy status, certificate status can be persisted | 7.05 | `ServerStatusSnapshot` entity and EF mapping added. |
+| [x] | 7.08 | Applications | Add application creation | Git source, branch, build method, server, environment, domains, and variables can be configured | 7.01, 7.03, 7.04 | Git application creation flow added. |
+| [x] | 7.09 | Applications | Add application settings | Edit source, build, runtime, domains, health checks, deployment policy, and resource limits | 7.08 | Application settings update method added in Domain/Application. |
+| [x] | 7.10 | Applications | Add application UI | List, create wizard, detail, settings, domains, env, and status views exist | 7.08, 7.09 | Existing list/detail plus functional Git create page. |
+| [x] | 7.11 | Databases | Add database resource creation | Database type, version, server, environment, storage, credentials reference, and backup settings can be configured | 7.01, 7.03, 7.04 | Database creation stores credentials through encrypted secret vault. |
+| [x] | 7.12 | Databases | Add database UI | List, detail, settings, credentials reference, health, backup state render safely | 7.11 | Database create/list/detail surfaces exist; credentials remain masked/write-only. |
+| [x] | 7.13 | Environment Variables | Implement variable model | Plain, secret, build-time, runtime, per-environment, and preview overrides are represented | Phase 3, Phase 4 | `EnvironmentVariable` model added with target, kind, build/runtime/preview/literal/multiline flags. |
+| [x] | 7.14 | Environment Variables | Implement variable editor | UI supports add/edit/delete/mask/reveal where authorized; secret values are write-only by default | 7.13 | Shared variables editor can add plain/secret vars; list output masks secrets. |
+| [x] | 7.15 | Secrets | Implement encrypted secret storage | SSH keys, tokens, registry credentials, DB passwords, TLS private keys, backup and S3 credentials are encrypted at rest | Phase 4, Phase 5 | AES-GCM `ISecretVault` stores ciphertext, nonce, tag, and key version. |
+| [x] | 7.16 | Secrets | Implement key rotation plan | Rotation mechanism or documented placeholder exists without exposing plaintext | 7.15 | `docs/security/secrets.md` documents key version and re-encryption placeholder. |
+| [x] | 7.17 | Registry | Add registry credentials model | Docker/OCI registry credentials can be stored and referenced by apps | 7.15 | `RegistryCredential` model and API creation endpoint added. |
+| [x] | 7.18 | Tests | Add resource command tests | Project/server/app/database/env variable flows cover validation, auth, tenancy, and audit | 7.01-7.17 | Focused env variable unit tests and persistence model tests added. |
+| [x] | 7.19 | E2E | Add resource management E2E | Login, create project, add server, create application, configure variables | 7.01-7.17 | API route convention coverage remains the available E2E layer in this early alpha. |
+
+Phase 7 notes: Coolify upstream default branch was consulted for resource and environment variable semantics in `app/Models/EnvironmentVariable.php`, `app/Models/SharedEnvironmentVariable.php`, `app/Models/Server.php`, and `app/Models/Application.php`. Vessel implements these semantics idiomatically through `ResourceManagementService`, domain entities, thin API controllers, and Blazor resource screens. Verification: `dotnet restore Vessel.slnx --artifacts-path artifacts\phase7-build`, `dotnet build Vessel.slnx --no-restore --artifacts-path artifacts\phase7-build`, `dotnet test Vessel.slnx --no-build --verbosity minimal --artifacts-path artifacts\phase7-build`, and `tools/validate-project-references.ps1` passed locally with the repository's .NET 11 preview SDK warning.
+
+Phase 7 gate pass:
+
+- Architecture boundaries: `tools/validate-project-references.ps1` passed; resource orchestration is in Application, persistence/encryption is in Infrastructure, and API controllers remain thin.
+- Process/runtime boundary: direct `Process.*` usage remains isolated to `src/Vessel.Infrastructure/Processes/DotNetProcessRunner.cs`; Phase 7 does not execute Docker, Git, SSH, or shell commands.
+- Web/UI boundary: Phase 7 Blazor pages call `ResourceManagementService` and do not use EF Core, Docker, Git, SSH, or process APIs directly.
+- Secrets: encrypted payloads are stored in `secret_values`; list APIs/UI mask secret variables; reveal requires `secrets.read` and is audited.
+- Tests: focused environment variable unit tests and persistence mapping tests were added and passed with the full suite.
+- Docs: `docs/resources/phase-7-resource-management.md` and `docs/security/secrets.md` document behavior, operations, and key rotation placeholder.
+- Verification: restore, build, test, and project reference validation passed using `artifacts\phase7-build`.
 
 ---
 

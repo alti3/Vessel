@@ -1,14 +1,51 @@
 @page "/projects/new"
 @attribute [Authorize]
+@inject ResourceManagementService Resources
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
 
 <PageTitle>New project | Vessel</PageTitle>
-<PageHeader Kicker="Projects" Title="Create project" Description="Coolify starts most resource creation by choosing a project and environment. Vessel keeps the same operator mental model." />
+<PageHeader Kicker="Projects" Title="Create project" Description="Projects group environments, applications, databases, and shared variables." />
 
-<SettingsPanel Title="Project details" Description="Name the deployment boundary and prepare default environments.">
-    <form class="form-grid">
-        <FormField Label="Name" Name="name" Placeholder="customer-api" />
-        <FormField Label="Default environment" Name="environment" Placeholder="production" />
-        <label class="form-wide">Description<input name="description" placeholder="What this project owns" /></label>
-        <button class="button button-primary" type="button">Create project</button>
-    </form>
+<SettingsPanel Title="Project details" Description="A production environment is created automatically.">
+    <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-project">
+        <DataAnnotationsValidator />
+        <div class="form-grid">
+            <label>Name<InputText @bind-Value="Model.Name" name="name" placeholder="customer-api" /></label>
+            <label class="form-wide">Description<InputText @bind-Value="Model.Description" name="description" placeholder="What this project owns" /></label>
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="form-alert form-wide">@Error</div>
+            }
+            <button class="button button-primary" type="submit">Create project</button>
+        </div>
+    </EditForm>
 </SettingsPanel>
+
+@code {
+    private ProjectForm Model { get; } = new();
+    private string? Error { get; set; }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            Vessel.Application.Resources.ProjectDetails project = await Resources.CreateProjectAsync(
+                user.GetUserId(),
+                user.GetTeamId(),
+                new CreateProjectRequest(Model.Name, Model.Description));
+            Navigation.NavigateTo($"/projects/{project.Id}");
+        }
+        catch (Exception exception)
+        {
+            Error = exception.Message;
+        }
+    }
+
+    private sealed class ProjectForm
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+    }
+}

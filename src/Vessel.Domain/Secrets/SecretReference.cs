@@ -64,4 +64,34 @@ public sealed class SecretReference : Entity<SecretReferenceId>
         return new SecretReference(SecretReferenceId.New(), teamId, scope, normalizedKey, provider, normalizedReference,
             policy, now);
     }
+
+    public void TargetProject(ProjectId projectId)
+    {
+        ProjectId = projectId;
+    }
+
+    public void TargetEnvironment(ProjectId projectId, EnvironmentId environmentId)
+    {
+        ProjectId = projectId;
+        EnvironmentId = environmentId;
+    }
+
+    public void TargetServer(ServerId serverId)
+    {
+        ServerId = serverId;
+    }
+
+    public void TargetApplication(ProjectId projectId, EnvironmentId environmentId, ApplicationId applicationId)
+    {
+        ProjectId = projectId;
+        EnvironmentId = environmentId;
+        ApplicationId = applicationId;
+    }
+
+    public void TargetDatabase(ProjectId projectId, EnvironmentId environmentId, DatabaseResourceId databaseResourceId)
+    {
+        ProjectId = projectId;
+        EnvironmentId = environmentId;
+        DatabaseResourceId = databaseResourceId;
+    }
 }

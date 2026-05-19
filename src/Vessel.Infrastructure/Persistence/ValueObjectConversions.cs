@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Databases;
+using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.ValueObjects;
@@ -26,6 +27,9 @@ internal static class ValueObjectConversions
 
     public static readonly ValueConverter<ResourceName, string> ResourceName = new(value => value.Value,
         value => new ResourceName(value));
+
+    public static readonly ValueConverter<EnvironmentVariableKey, string> EnvironmentVariableKey =
+        new(value => value.Value, value => new EnvironmentVariableKey(value));
 
     public static readonly ValueConverter<Slug, string> Slug = new(value => value.Value, value => new Slug(value));
 
