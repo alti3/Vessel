@@ -7,6 +7,7 @@ using Hangfire;
 using Hangfire.PostgreSql;
 using Vessel.Application.Auditing;
 using Vessel.Application.Dashboard;
+using Vessel.Application.Deployments;
 using Vessel.Application.Docker;
 using Vessel.Application.Files;
 using Vessel.Application.Git;
@@ -20,6 +21,7 @@ using Vessel.Application.Storage;
 using Vessel.Infrastructure.Auditing;
 using Vessel.Infrastructure.Configuration;
 using Vessel.Infrastructure.Dashboard;
+using Vessel.Infrastructure.Deployments;
 using Vessel.Infrastructure.Docker;
 using Vessel.Infrastructure.Files;
 using Vessel.Infrastructure.Git;
@@ -112,6 +114,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ISecretRedactor, SecretRedactor>();
         services.AddScoped<ISecretVault, AesSecretVault>();
         services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
+        services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
@@ -126,7 +129,7 @@ public static class InfrastructureServiceCollectionExtensions
         {
             services.TryAddSingleton<RedisConnectionProvider>();
             services.TryAddSingleton<IRedisCache, RedisCache>();
-            services.TryAddSingleton<IDistributedLockManager, RedisDistributedLockManager>();
+            services.AddSingleton<IDistributedLockManager, RedisDistributedLockManager>();
         }
 
         ObjectStorageOptions objectStorageOptions = configuration
@@ -164,7 +167,7 @@ public static class InfrastructureServiceCollectionExtensions
                 options.Queues = ["critical", "deployments", "default", "maintenance"];
                 options.WorkerCount = Math.Max(1, Environment.ProcessorCount);
             });
-            services.TryAddSingleton<IBackgroundJobDispatcher, HangfireBackgroundJobDispatcher>();
+            services.AddSingleton<IBackgroundJobDispatcher, HangfireBackgroundJobDispatcher>();
         }
 
         return services;

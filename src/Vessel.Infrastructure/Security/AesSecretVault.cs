@@ -77,6 +77,22 @@ public sealed class AesSecretVault(
         return plaintext;
     }
 
+    public async Task<string> RevealForDeploymentAsync(
+        TeamId teamId,
+        SecretReferenceId secretReferenceId,
+        CancellationToken cancellationToken = default)
+    {
+        SecretReference reference = dbContext.SecretReferences.Single(reference => reference.Id == secretReferenceId);
+        if (reference.TeamId != teamId) throw new UnauthorizedAccessException("Secret is outside the active team.");
+        SecretValue secretValue = dbContext.SecretValues.Single(value => value.SecretReferenceId == secretReferenceId);
+        await auditWriter.RecordAsync(teamId, null, AuditActions.SecretRevealed,
+            new AuditTarget("secret", secretReferenceId.Value.ToString("D")), null,
+            new Dictionary<string, object?> { ["scope"] = reference.Scope.ToString(), ["key"] = reference.Key, ["purpose"] = "deployment" },
+            cancellationToken);
+
+        return Decrypt(secretValue);
+    }
+
     private EncryptedSecret Encrypt(string plaintext, SecretReferenceId secretReferenceId)
     {
         byte[] nonce = RandomNumberGenerator.GetBytes(12);

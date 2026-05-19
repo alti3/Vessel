@@ -14,7 +14,7 @@ else
 {
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Status</th><th>Application</th><th>Commit</th><th>Created</th><th>Completed</th></tr></thead>
+            <thead><tr><th>Status</th><th>Application</th><th>Commit</th><th>Created</th><th>Completed</th><th></th></tr></thead>
             <tbody>
                 @foreach (var item in Items)
                 {
@@ -24,6 +24,7 @@ else
                         <td>@(item.CommitSha ?? "not recorded")</td>
                         <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
                         <td>@(item.CompletedAt?.ToLocalTime().ToString("g") ?? "running")</td>
+                        <td><a class="button button-secondary" href="@($"/deployments/{item.Id}")">Open</a></td>
                     </tr>
                 }
             </tbody>
@@ -46,6 +47,7 @@ else
             DeploymentStatus.Succeeded => "success",
             DeploymentStatus.Failed => "danger",
             DeploymentStatus.CanceledByUser => "warning",
+            DeploymentStatus.CancelRequested => "warning",
             DeploymentStatus.InProgress => "info",
             _ => "neutral"
         };

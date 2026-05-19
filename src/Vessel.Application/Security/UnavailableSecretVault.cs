@@ -33,4 +33,12 @@ public sealed class UnavailableSecretVault : ISecretVault
     {
         throw new InvalidOperationException("Secret storage is unavailable because database persistence is disabled.");
     }
+
+    public Task<string> RevealForDeploymentAsync(
+        TeamId teamId,
+        SecretReferenceId secretReferenceId,
+        CancellationToken cancellationToken = default)
+    {
+        throw new InvalidOperationException("Secret storage is unavailable because database persistence is disabled.");
+    }
 }

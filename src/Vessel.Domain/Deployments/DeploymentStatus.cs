@@ -6,5 +6,6 @@ public enum DeploymentStatus
     InProgress = 1,
     Succeeded = 2,
     Failed = 3,
-    CanceledByUser = 4
+    CanceledByUser = 4,
+    CancelRequested = 5
 }

@@ -24,6 +24,11 @@ public interface ISecretVault
         TeamId teamId,
         SecretReferenceId secretReferenceId,
         CancellationToken cancellationToken = default);
+
+    Task<string> RevealForDeploymentAsync(
+        TeamId teamId,
+        SecretReferenceId secretReferenceId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record SecretTarget(

@@ -6,14 +6,19 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using OpenTelemetry;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Vessel.Application.Auth;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Dashboard;
+using Vessel.Application.Diagnostics;
+using Vessel.Application.Deployments;
+using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
+using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
@@ -74,8 +79,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
         services.AddScoped<Vessel.Application.Resources.ResourceManagementService>();
+        services.AddScoped<StartDeploymentService>();
+        services.AddScoped<DeploymentQueryService>();
+        services.AddScoped<IDeploymentRunner, DeploymentRunner>();
         services.AddScoped<TotpService>();
         services.TryAddScoped<ISecretVault, UnavailableSecretVault>();
+        services.TryAddSingleton<IDistributedLockManager, InMemoryDistributedLockManager>();
+        services.TryAddSingleton<IBackgroundJobDispatcher, UnavailableBackgroundJobDispatcher>();
         services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
         services.AddScoped<IDashboardOverviewQuery, EmptyDashboardOverviewQuery>();
         services.AddScoped<IProjectCatalogQuery, EmptyProjectCatalogQuery>();
@@ -203,7 +213,7 @@ public static class ServiceCollectionExtensions
         openTelemetryBuilder.WithTracing(tracing =>
         {
             tracing
-                .AddSource("Vessel")
+                .AddSource(VesselDiagnostics.InstrumentationName)
                 .AddAspNetCoreInstrumentation(options =>
                 {
                     options.EnrichWithHttpRequest = (activity, request) =>
@@ -217,6 +227,17 @@ public static class ServiceCollectionExtensions
 
             if (!string.IsNullOrWhiteSpace(diagnosticsOptions.OtlpEndpoint))
                 tracing.AddOtlpExporter(options => { options.Endpoint = new Uri(diagnosticsOptions.OtlpEndpoint); });
+        });
+
+        openTelemetryBuilder.WithMetrics(metrics =>
+        {
+            metrics
+                .AddMeter(VesselDiagnostics.InstrumentationName)
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation();
+
+            if (!string.IsNullOrWhiteSpace(diagnosticsOptions.OtlpEndpoint))
+                metrics.AddOtlpExporter(options => { options.Endpoint = new Uri(diagnosticsOptions.OtlpEndpoint); });
         });
 
         return services;
