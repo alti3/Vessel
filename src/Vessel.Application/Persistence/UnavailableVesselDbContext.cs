@@ -11,6 +11,7 @@ using Vessel.Domain.Servers;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
+using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
 using AppId = Vessel.Domain.ApplicationId;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
@@ -38,6 +39,9 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IQueryable<AuditLog> AuditLogs => Enumerable.Empty<AuditLog>().AsQueryable();
     public IQueryable<SettingEntry> Settings => Enumerable.Empty<SettingEntry>().AsQueryable();
     public IQueryable<PersonalAccessToken> PersonalAccessTokens => Enumerable.Empty<PersonalAccessToken>().AsQueryable();
+    public IQueryable<WebhookEvent> WebhookEvents => Enumerable.Empty<WebhookEvent>().AsQueryable();
+    public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations => Enumerable.Empty<ApplicationWebhookConfiguration>().AsQueryable();
+    public IQueryable<ApplicationPreview> ApplicationPreviews => Enumerable.Empty<ApplicationPreview>().AsQueryable();
 
     public IRepository<User, UserId> UserRepository { get; } = new UnavailableRepository<User, UserId>();
     public IRepository<Team, TeamId> TeamRepository { get; } = new UnavailableRepository<Team, TeamId>();
@@ -54,6 +58,9 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IRepository<EnvironmentVariable, EnvironmentVariableId> EnvironmentVariableRepository { get; } = new UnavailableRepository<EnvironmentVariable, EnvironmentVariableId>();
     public IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository { get; } = new UnavailableRepository<RegistryCredential, RegistryCredentialId>();
     public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; } = new UnavailableRepository<ServerStatusSnapshot, ServerStatusSnapshotId>();
+    public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; } = new UnavailableRepository<WebhookEvent, WebhookEventId>();
+    public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId> ApplicationWebhookConfigurationRepository { get; } = new UnavailableRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>();
+    public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; } = new UnavailableRepository<ApplicationPreview, ApplicationPreviewId>();
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

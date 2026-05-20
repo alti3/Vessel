@@ -11,6 +11,7 @@ using Vessel.Domain.Servers;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
+using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
 using AppId = Vessel.Domain.ApplicationId;
 using Environment = Vessel.Domain.Projects.Environment;
@@ -57,6 +58,12 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<PersonalAccessToken> PersonalAccessTokens { get; }
 
+    IQueryable<WebhookEvent> WebhookEvents { get; }
+
+    IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations { get; }
+
+    IQueryable<ApplicationPreview> ApplicationPreviews { get; }
+
     IRepository<User, UserId> UserRepository { get; }
 
     IRepository<Team, TeamId> TeamRepository { get; }
@@ -86,4 +93,10 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository { get; }
 
     IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; }
+
+    IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
+
+    IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId> ApplicationWebhookConfigurationRepository { get; }
+
+    IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
 }

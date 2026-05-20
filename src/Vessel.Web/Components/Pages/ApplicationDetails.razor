@@ -3,6 +3,7 @@
 @inject StartDeploymentService DeploymentStarter
 @inject DeploymentQueryService DeploymentDetails
 @inject IDeploymentCatalogQuery DeploymentCatalog
+@inject ApplicationWebhookConfigurationService WebhookConfiguration
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Application | Vessel</PageTitle>
@@ -32,6 +33,35 @@
             <button class="button button-secondary" type="button">Save configuration</button>
         </form>
     </SettingsPanel>
+    <SettingsPanel Title="Git Webhooks" Description="Provider trigger secrets, branch discovery, and preview deployment settings.">
+        <div class="signal-list">
+            @foreach (var webhook in Webhooks)
+            {
+                <div class="signal-row">
+                    <span>@webhook.Provider</span>
+                    <StatusBadge Text="Configured" Tone="success" />
+                </div>
+            }
+            @if (Webhooks.Count == 0)
+            {
+                <div class="signal-row"><span>No provider webhooks configured</span><StatusBadge Text="Missing" Tone="warning" /></div>
+            }
+        </div>
+        <form class="form-stack" @onsubmit="SaveWebhookAsync" @onsubmit:preventDefault>
+            <label>
+                Provider
+                <select class="form-control" @bind="WebhookProviderValue">
+                    <option value="GitHub">GitHub</option>
+                    <option value="GitLab">GitLab</option>
+                    <option value="Gitea">Gitea</option>
+                    <option value="Bitbucket">Bitbucket</option>
+                    <option value="Generic">Generic</option>
+                </select>
+            </label>
+            <label>Secret<SecretInput Name="webhook-secret" @bind-Value="WebhookSecret" Placeholder="Webhook secret" /></label>
+            <button class="button button-secondary" type="submit">Save webhook</button>
+        </form>
+    </SettingsPanel>
 </section>
 
 @if (Latest is not null)
@@ -54,6 +84,9 @@
     private bool IsStarting { get; set; }
     private string? Message { get; set; }
     private System.Security.Claims.ClaimsPrincipal? User { get; set; }
+    private IReadOnlyList<ApplicationWebhookConfigurationSummary> Webhooks { get; set; } = [];
+    private string WebhookProviderValue { get; set; } = WebhookProvider.GitHub.ToString();
+    private string WebhookSecret { get; set; } = string.Empty;
 
     private string LatestStatus => Latest?.Status.ToString() ?? "Unknown";
 
@@ -61,6 +94,7 @@
     {
         User = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         LoadLatest();
+        LoadWebhooks();
     }
 
     private async Task StartDeploymentAsync()
@@ -96,6 +130,33 @@
             .FirstOrDefault();
         if (latest is not null)
             Latest = DeploymentDetails.Get(User.GetUserId(), User.GetTeamId(), new DeploymentId(latest.Id));
+    }
+
+    private void LoadWebhooks()
+    {
+        if (User is null) return;
+        Webhooks = WebhookConfiguration.List(User.GetUserId(), User.GetTeamId(), new Vessel.Domain.ApplicationId(Id));
+    }
+
+    private async Task SaveWebhookAsync()
+    {
+        if (User is null) return;
+        if (!Enum.TryParse(WebhookProviderValue, out WebhookProvider provider)) return;
+        try
+        {
+            await WebhookConfiguration.ConfigureAsync(
+                User.GetUserId(),
+                User.GetTeamId(),
+                new Vessel.Domain.ApplicationId(Id),
+                new ConfigureApplicationWebhookRequest(provider, WebhookSecret));
+            WebhookSecret = string.Empty;
+            LoadWebhooks();
+            Message = "Webhook configuration saved.";
+        }
+        catch (Exception ex)
+        {
+            Message = ex.Message;
+        }
     }
 
     private static string DeploymentTone(DeploymentStatus? status)

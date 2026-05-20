@@ -28,6 +28,12 @@ public static class AuditActions
     public const string DeploymentStarted = "deployment.started";
     public const string DeploymentCanceled = "deployment.canceled";
     public const string DeploymentFinished = "deployment.finished";
+    public const string WebhookConfigured = "webhook.configured";
+    public const string WebhookReceived = "webhook.received";
+    public const string WebhookRejected = "webhook.rejected";
+    public const string WebhookProcessed = "webhook.processed";
+    public const string PreviewOpened = "preview.opened";
+    public const string PreviewArchived = "preview.archived";
     public const string DatabaseCreated = "database.created";
     public const string EnvironmentVariableCreated = "environment_variable.created";
     public const string SecretStored = "secret.stored";

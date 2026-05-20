@@ -16,6 +16,7 @@ public sealed class ApiRouteConventionTests
             typeof(ProjectsController),
             typeof(ServersController),
             typeof(ApplicationsController),
+            typeof(ApplicationWebhooksController),
             typeof(DeploymentsController),
             typeof(DatabasesController),
             typeof(NotificationsController),

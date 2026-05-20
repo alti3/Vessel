@@ -78,10 +78,14 @@ public sealed class DeploymentRunner(
             workspace = await workspaces.PrepareAsync(deploymentId, cancellationToken);
 
             await AppendAsync(deploymentId, "system", "Cloning application source.", cancellationToken);
+            string? checkoutRef = string.IsNullOrWhiteSpace(deployment.CommitSha)
+                || string.Equals(deployment.CommitSha, "pending", StringComparison.OrdinalIgnoreCase)
+                    ? application.GitSource.CommitSha ?? application.GitSource.Branch
+                    : deployment.CommitSha;
             await git.CloneAsync(new GitCloneRequest(
                 new Uri(application.GitSource.RepositoryUrl.Value),
                 workspace.RepositoryDirectory,
-                application.GitSource.CommitSha ?? application.GitSource.Branch,
+                checkoutRef,
                 Depth: 1), cancellationToken);
             GitCommitInfo commit = await git.GetCommitAsync(workspace.RepositoryDirectory, "HEAD", cancellationToken);
             await RecordSourceAsync(deploymentId, application, commit, cancellationToken);

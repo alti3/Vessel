@@ -16,6 +16,8 @@ public sealed class Deployment : Entity<DeploymentId>
         ServerId serverId,
         UserId? actorUserId,
         string? commitSha,
+        ApplicationPreviewId? previewId,
+        WebhookEventId? webhookEventId,
         bool isRollback,
         DateTimeOffset createdAt)
         : base(id, createdAt)
@@ -24,6 +26,8 @@ public sealed class Deployment : Entity<DeploymentId>
         ServerId = serverId;
         ActorUserId = actorUserId;
         CommitSha = commitSha;
+        PreviewId = previewId;
+        WebhookEventId = webhookEventId;
         IsRollback = isRollback;
         Status = DeploymentStatus.Queued;
     }
@@ -41,6 +45,14 @@ public sealed class Deployment : Entity<DeploymentId>
     public string? CommitMessage { get; private set; }
 
     public string? RepositoryUrl { get; private set; }
+
+    public ApplicationPreviewId? PreviewId { get; private set; }
+
+    public WebhookEventId? WebhookEventId { get; private set; }
+
+    public bool IsPreview => PreviewId.HasValue;
+
+    public bool IsWebhookTriggered => WebhookEventId.HasValue;
 
     public string? ArtifactReference { get; private set; }
 
@@ -67,7 +79,19 @@ public sealed class Deployment : Entity<DeploymentId>
         string? commitSha,
         DateTimeOffset now)
     {
-        return new Deployment(DeploymentId.New(), applicationId, serverId, actorUserId, commitSha, false, now);
+        return Queue(applicationId, serverId, actorUserId, commitSha, null, null, now);
+    }
+
+    public static Deployment Queue(
+        ApplicationId applicationId,
+        ServerId serverId,
+        UserId? actorUserId,
+        string? commitSha,
+        ApplicationPreviewId? previewId,
+        WebhookEventId? webhookEventId,
+        DateTimeOffset now)
+    {
+        return new Deployment(DeploymentId.New(), applicationId, serverId, actorUserId, commitSha, previewId, webhookEventId, false, now);
     }
 
     public void Start(DateTimeOffset now)

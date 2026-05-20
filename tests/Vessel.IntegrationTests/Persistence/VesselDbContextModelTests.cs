@@ -5,6 +5,7 @@ using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Teams;
+using Vessel.Domain.Webhooks;
 using Vessel.Infrastructure.Persistence;
 using AppEntity = Vessel.Domain.Applications.Application;
 
@@ -50,6 +51,8 @@ public sealed class VesselDbContextModelTests
             migration => migration.EndsWith("Phase4Auth", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("Phase8DeploymentMvp", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("Phase9WebhooksAndPreviews", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -68,8 +71,13 @@ public sealed class VesselDbContextModelTests
         Assert.Contains("secret_values", script, StringComparison.Ordinal);
         Assert.Contains("registry_credentials", script, StringComparison.Ordinal);
         Assert.Contains("server_status_snapshots", script, StringComparison.Ordinal);
+        Assert.Contains("webhook_events", script, StringComparison.Ordinal);
+        Assert.Contains("application_webhook_configurations", script, StringComparison.Ordinal);
+        Assert.Contains("application_previews", script, StringComparison.Ordinal);
         Assert.Contains("ConfigurationSnapshotReference", script, StringComparison.Ordinal);
         Assert.Contains("CancellationRequestedAt", script, StringComparison.Ordinal);
+        Assert.Contains("WebhookEventId", script, StringComparison.Ordinal);
+        Assert.Contains("PreviewId", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -82,6 +90,22 @@ public sealed class VesselDbContextModelTests
         Assert.Equal(2048, deployment?.FindProperty(nameof(Deployment.RepositoryUrl))?.GetMaxLength());
         Assert.Equal(255, deployment?.FindProperty(nameof(Deployment.CommitBranch))?.GetMaxLength());
         Assert.Equal(512, deployment?.FindProperty(nameof(Deployment.ConfigurationSnapshotReference))?.GetMaxLength());
+    }
+
+    [Fact]
+    public void Model_MapsPhase9WebhookAndPreviewTables()
+    {
+        using VesselDbContext context = CreateContext();
+
+        var webhookEvent = context.Model.FindEntityType(typeof(WebhookEvent));
+        var configuration = context.Model.FindEntityType(typeof(ApplicationWebhookConfiguration));
+        var preview = context.Model.FindEntityType(typeof(ApplicationPreview));
+
+        Assert.Equal("webhook_events", webhookEvent?.GetTableName());
+        Assert.Equal(512, webhookEvent?.FindProperty(nameof(WebhookEvent.DedupeKey))?.GetMaxLength());
+        Assert.Equal("application_webhook_configurations", configuration?.GetTableName());
+        Assert.Equal("application_previews", preview?.GetTableName());
+        Assert.Equal(2048, preview?.FindProperty(nameof(ApplicationPreview.PullRequestUrl))?.GetMaxLength());
     }
 
     private static VesselDbContext CreateContext()
