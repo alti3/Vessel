@@ -38,9 +38,16 @@ Pull requests should:
 
 - Keep scope focused.
 - Include tests for behavior changes when the relevant test project exists.
+- Include EF Core migrations when changes modify persisted models, indexes, foreign keys, constraints, or other database schema.
 - Update docs or ADRs when public behavior, deployment shape, or architecture changes.
 - Avoid unrelated formatting churn.
 - Note verification commands run and any commands that could not run.
+
+When a contribution requires a schema change, create the migration from the repository root and commit the generated files. Use a descriptive migration name for the feature or phase, for example:
+
+```powershell
+dotnet ef migrations add Phase10ProxyDomainsTls --project src\Vessel.Infrastructure\Vessel.Infrastructure.csproj --startup-project src\Vessel.Web\Vessel.Web.csproj --output-dir Persistence\Migrations
+```
 
 ## Security
 
