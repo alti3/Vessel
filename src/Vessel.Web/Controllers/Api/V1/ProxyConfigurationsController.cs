@@ -29,10 +29,11 @@ public sealed class ProxyConfigurationsController(ProxyConfigurationService prox
     [HttpPost("{versionId:guid}/rollback")]
     [Authorize(Policy = VesselPermissions.ServersWrite)]
     public async Task<ActionResult<ProxyConfigurationSummary>> Rollback(
+        Guid serverId,
         Guid versionId,
         CancellationToken cancellationToken)
     {
         return Ok(await proxyConfigurations.RollbackAsync(User.GetUserId(), User.GetTeamId(),
-            new ProxyConfigurationVersionId(versionId), cancellationToken));
+            new ServerId(serverId), new ProxyConfigurationVersionId(versionId), cancellationToken));
     }
 }

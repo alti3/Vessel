@@ -82,6 +82,9 @@ public sealed class ProxyConfigurationVersion : Entity<ProxyConfigurationVersion
 
     public void MarkApplied(DateTimeOffset now)
     {
+        if (Status != ProxyConfigurationStatus.Validated)
+            throw new DomainException("Only validated proxy configurations can be applied.");
+
         Status = ProxyConfigurationStatus.Applied;
         ApplyError = null;
         AppliedAt = now;
@@ -97,6 +100,9 @@ public sealed class ProxyConfigurationVersion : Entity<ProxyConfigurationVersion
 
     public void MarkRolledBack(DateTimeOffset now)
     {
+        if (Status != ProxyConfigurationStatus.Applied)
+            throw new DomainException("Only applied proxy configurations can be rolled back.");
+
         Status = ProxyConfigurationStatus.RolledBack;
         RolledBackAt = now;
         Touch(now);

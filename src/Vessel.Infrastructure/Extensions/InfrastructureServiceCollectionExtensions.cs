@@ -1,10 +1,10 @@
+using Hangfire;
+using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using Hangfire;
-using Hangfire.PostgreSql;
 using Vessel.Application.Auditing;
 using Vessel.Application.Dashboard;
 using Vessel.Application.Deployments;

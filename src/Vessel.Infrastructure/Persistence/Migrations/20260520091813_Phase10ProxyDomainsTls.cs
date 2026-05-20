@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -17,7 +17,20 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                 table: "application_domains",
                 type: "boolean",
                 nullable: false,
-                defaultValue: true);
+                defaultValue: false);
+
+            migrationBuilder.Sql("""
+                UPDATE vessel.application_domains AS domain
+                SET "Canonical" = TRUE
+                FROM (
+                    SELECT "ApplicationId", "DomainName",
+                           ROW_NUMBER() OVER (PARTITION BY "ApplicationId" ORDER BY "DomainName") AS row_number
+                    FROM vessel.application_domains
+                ) AS ranked
+                WHERE domain."ApplicationId" = ranked."ApplicationId"
+                  AND domain."DomainName" = ranked."DomainName"
+                  AND ranked.row_number = 1;
+                """);
 
             migrationBuilder.AddColumn<bool>(
                 name: "RedirectToCanonical",
@@ -74,6 +87,20 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                         principalTable: "applications",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_certificates_secret_references_CertificateSecretReferenceId",
+                        column: x => x.CertificateSecretReferenceId,
+                        principalSchema: "vessel",
+                        principalTable: "secret_references",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_certificates_secret_references_PrivateKeySecretReferenceId",
+                        column: x => x.PrivateKeySecretReferenceId,
+                        principalSchema: "vessel",
+                        principalTable: "secret_references",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.CreateTable(
@@ -102,6 +129,13 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                 {
                     table.PrimaryKey("PK_proxy_configuration_versions", x => x.Id);
                     table.ForeignKey(
+                        name: "FK_proxy_configuration_versions_previous_version",
+                        column: x => x.PreviousVersionId,
+                        principalSchema: "vessel",
+                        principalTable: "proxy_configuration_versions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
                         name: "FK_proxy_configuration_versions_servers_ServerId",
                         column: x => x.ServerId,
                         principalSchema: "vessel",
@@ -118,6 +152,18 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_certificates_CertificateSecretReferenceId",
+                schema: "vessel",
+                table: "certificates",
+                column: "CertificateSecretReferenceId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_certificates_PrivateKeySecretReferenceId",
+                schema: "vessel",
+                table: "certificates",
+                column: "PrivateKeySecretReferenceId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_certificates_TeamId_RenewalDueAt",
                 schema: "vessel",
                 table: "certificates",
@@ -128,6 +174,12 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                 schema: "vessel",
                 table: "proxy_configuration_versions",
                 columns: new[] { "ServerId", "ConfigurationHash" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_proxy_configuration_versions_PreviousVersionId",
+                schema: "vessel",
+                table: "proxy_configuration_versions",
+                column: "PreviousVersionId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_proxy_configuration_versions_ServerId_CreatedAt",

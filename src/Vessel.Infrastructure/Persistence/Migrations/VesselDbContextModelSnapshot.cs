@@ -219,6 +219,10 @@ namespace Vessel.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CertificateSecretReferenceId");
+
+                    b.HasIndex("PrivateKeySecretReferenceId");
+
                     b.HasIndex("ApplicationId", "Host")
                         .IsUnique();
 
@@ -696,6 +700,8 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(80)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PreviousVersionId");
 
                     b.HasIndex("ServerId", "ConfigurationHash");
 
@@ -1520,6 +1526,16 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ApplicationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Vessel.Domain.Secrets.SecretReference", null)
+                        .WithMany()
+                        .HasForeignKey("CertificateSecretReferenceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Vessel.Domain.Secrets.SecretReference", null)
+                        .WithMany()
+                        .HasForeignKey("PrivateKeySecretReferenceId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Vessel.Domain.Databases.BackupPolicy", b =>
@@ -1639,6 +1655,11 @@ namespace Vessel.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Vessel.Domain.Proxy.ProxyConfigurationVersion", b =>
                 {
+                    b.HasOne("Vessel.Domain.Proxy.ProxyConfigurationVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PreviousVersionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Vessel.Domain.Servers.Server", null)
                         .WithMany()
                         .HasForeignKey("ServerId")

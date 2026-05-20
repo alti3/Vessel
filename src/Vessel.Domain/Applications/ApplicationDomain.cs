@@ -1,5 +1,5 @@
-using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Common;
+using Vessel.Domain.ValueObjects;
 
 namespace Vessel.Domain.Applications;
 

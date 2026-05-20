@@ -1,4 +1,5 @@
 using Vessel.Domain;
+using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
@@ -30,6 +31,7 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IQueryable<EnvironmentEntity> Environments => Enumerable.Empty<EnvironmentEntity>().AsQueryable();
     public IQueryable<Server> Servers => Enumerable.Empty<Server>().AsQueryable();
     public IQueryable<AppEntity> Applications => Enumerable.Empty<AppEntity>().AsQueryable();
+    public IQueryable<ApplicationDomain> ApplicationDomains => Enumerable.Empty<ApplicationDomain>().AsQueryable();
     public IQueryable<DatabaseResource> DatabaseResources => Enumerable.Empty<DatabaseResource>().AsQueryable();
     public IQueryable<Deployment> Deployments => Enumerable.Empty<Deployment>().AsQueryable();
     public IQueryable<SecretReference> SecretReferences => Enumerable.Empty<SecretReference>().AsQueryable();

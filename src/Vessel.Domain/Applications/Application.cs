@@ -89,6 +89,9 @@ public sealed class Application : Entity<ApplicationId>
         bool redirectToCanonical,
         DateTimeOffset now)
     {
+        if (canonical && redirectToCanonical)
+            throw new DomainException("Canonical domain cannot redirect to itself.");
+
         ApplicationDomain? existing = _domains.SingleOrDefault(domain => domain.DomainName == domainName);
         if (existing is null)
         {

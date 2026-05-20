@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Vessel.Domain.Proxy;
+using Vessel.Domain.Certificates;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
-using Vessel.Domain.Certificates;
-using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;

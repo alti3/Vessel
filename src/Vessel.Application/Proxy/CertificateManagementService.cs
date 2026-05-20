@@ -45,7 +45,6 @@ public sealed class CertificateManagementService(
         if (existing is null)
             await dbContext.CertificateRepository.AddAsync(certificate, cancellationToken);
 
-        certificate.QueueRenewal(timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.CertificateIssuanceQueued,
             new AuditTarget("certificate", certificate.Id.Value.ToString("D")), null,
@@ -74,8 +73,6 @@ public sealed class CertificateManagementService(
             try
             {
                 certificate.QueueRenewal(now);
-                certificate.MarkIssued(now, now.AddDays(90), certificate.CertificateSecretReferenceId,
-                    certificate.PrivateKeySecretReferenceId);
                 renewed++;
             }
             catch (Exception ex)
@@ -86,6 +83,21 @@ public sealed class CertificateManagementService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return renewed;
+    }
+
+    public async Task<CertificateSummary> FinalizeIssuanceAsync(
+        CertificateId certificateId,
+        DateTimeOffset expiresAt,
+        SecretReferenceId? certificateSecretReferenceId,
+        SecretReferenceId? privateKeySecretReferenceId,
+        CancellationToken cancellationToken = default)
+    {
+        Certificate certificate = dbContext.Certificates.SingleOrDefault(item => item.Id == certificateId)
+            ?? throw new InvalidOperationException("Certificate was not found.");
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        certificate.MarkIssued(now, expiresAt, certificateSecretReferenceId, privateKeySecretReferenceId);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToSummary(certificate);
     }
 
     private void RequireApplication(UserId actorUserId, TeamId teamId, AppId applicationId, string permission)

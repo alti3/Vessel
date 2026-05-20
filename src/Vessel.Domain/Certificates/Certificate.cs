@@ -77,6 +77,9 @@ public sealed class Certificate : Entity<CertificateId>
 
     public void QueueRenewal(DateTimeOffset now)
     {
+        if (Status != CertificateStatus.Issued || IssuedAt is null)
+            throw new DomainException("Only issued certificates can be queued for renewal.");
+
         Status = CertificateStatus.RenewalQueued;
         LastAttemptedAt = now;
         Touch(now);

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
@@ -118,7 +117,7 @@ public sealed class DeploymentRunner(
 
             await RunHealthCheckAsync(plan, deploymentId, cancellationToken);
             await AppendAsync(deploymentId, "system", "Applying reverse proxy routes.", cancellationToken);
-            await proxyConfiguration.ApplyForDeploymentAsync(deployment.ActorUserId ?? UserId.New(), teamId, server.Id, cancellationToken);
+            await proxyConfiguration.ApplyForDeploymentAsync(deployment.ActorUserId, teamId, server.Id, cancellationToken);
             await SucceedAsync(deploymentId, plan.ImageName, cancellationToken);
             finalStatus = DeploymentStatus.Succeeded;
             await auditWriter.RecordAsync(teamId, deployment.ActorUserId, AuditActions.DeploymentFinished,

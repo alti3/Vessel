@@ -53,20 +53,30 @@ public sealed class TraefikProxyProvider(IProcessRunner processRunner, IPathSafe
             builder.AppendLine($"          - url: \"http://{route.ServiceName}:{route.TargetPort}\"");
         }
 
-        var redirectRoutes = routes.Where(route => route.RedirectToCanonical && !route.Canonical).ToArray();
-        if (redirectRoutes.Length > 0)
-        {
-            string? canonicalHost = routes.FirstOrDefault(route => route.Canonical)?.Host;
-            if (!string.IsNullOrWhiteSpace(canonicalHost))
+        var routeGroups = routes.GroupBy(route => route.ApplicationId);
+        var middlewareGroups = routeGroups
+            .Select(group => new
             {
-                builder.AppendLine("  middlewares:");
-                foreach (ProxyRoute route in redirectRoutes.OrderBy(route => route.Host, StringComparer.OrdinalIgnoreCase))
+                CanonicalHost = group.FirstOrDefault(route => route.Canonical)?.Host,
+                RedirectRoutes = group.Where(route => route.RedirectToCanonical && !route.Canonical).ToArray()
+            })
+            .Where(group => group.RedirectRoutes.Length > 0)
+            .ToArray();
+        if (middlewareGroups.Length > 0)
+        {
+            builder.AppendLine("  middlewares:");
+            foreach (var group in middlewareGroups)
+            {
+                if (string.IsNullOrWhiteSpace(group.CanonicalHost))
+                    throw new InvalidOperationException("Redirect-to-canonical routes require a canonical domain for the same application.");
+
+                foreach (ProxyRoute route in group.RedirectRoutes.OrderBy(route => route.Host, StringComparer.OrdinalIgnoreCase))
                 {
                     string name = RouteName(route);
                     builder.AppendLine($"    {name}-canonical:");
                     builder.AppendLine("      redirectRegex:");
                     builder.AppendLine($"        regex: \"^https?://{Regex.Escape(route.Host)}(.*)\"");
-                    builder.AppendLine($"        replacement: \"https://{canonicalHost}$${{1}}\"");
+                    builder.AppendLine($"        replacement: \"https://{group.CanonicalHost}$${{1}}\"");
                     builder.AppendLine("        permanent: true");
                 }
             }

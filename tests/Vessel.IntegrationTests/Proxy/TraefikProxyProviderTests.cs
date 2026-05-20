@@ -58,6 +58,11 @@ public sealed class TraefikProxyProviderTests
         var serverId = ServerId.New();
         var previous = new ProxyConfigurationDocument(serverId, Vessel.Domain.Proxy.ProxyProviderKind.Traefik,
             "previous", "http:\n  routers: {}\n  services: {}\n", "hash", []);
+        string configPath = Path.Combine(AppContext.BaseDirectory, "proxy", "traefik", "dynamic",
+            $"server-{serverId.Value:N}.yml");
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+        await File.WriteAllTextAsync(configPath, previous.Contents);
+        string originalContent = await File.ReadAllTextAsync(configPath);
         var current = provider.Generate(serverId,
         [
             new ProxyRoute(AppId.New(), serverId, "vessel-app", "app.example.com", 8080, true, true, false)
@@ -67,6 +72,7 @@ public sealed class TraefikProxyProviderTests
 
         Assert.False(result.Succeeded);
         Assert.True(processRunner.RunCount >= 2);
+        Assert.Equal(originalContent, await File.ReadAllTextAsync(configPath));
     }
 
     private static TraefikProxyProvider CreateProvider()

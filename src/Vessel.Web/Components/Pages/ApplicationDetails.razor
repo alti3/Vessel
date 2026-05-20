@@ -8,6 +8,7 @@
 @inject ProxyConfigurationService ProxyConfiguration
 @inject Vessel.Application.Resources.ResourceManagementService Resources
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<ApplicationDetails> Logger
 
 <PageTitle>Application | Vessel</PageTitle>
 <PageHeader Kicker="Application" Title="Application overview" Description="@($"Application {Id} deployment, domains, environment, and logs.")">
@@ -106,6 +107,7 @@
     private Vessel.Application.Deployments.DeploymentDetails? Latest { get; set; }
     private bool IsStarting { get; set; }
     private string? Message { get; set; }
+    private const string GenericErrorMessage = "An unexpected error occurred; please try again or contact support.";
     private System.Security.Claims.ClaimsPrincipal? User { get; set; }
     private IReadOnlyList<ApplicationWebhookConfigurationSummary> Webhooks { get; set; } = [];
     private IReadOnlyList<DomainRouteSummary> Domains { get; set; } = [];
@@ -145,7 +147,8 @@
         }
         catch (Exception ex)
         {
-            Message = ex.Message;
+            Logger.LogError(ex, "Failed to start deployment for application {ApplicationId}.", Id);
+            Message = GenericErrorMessage;
         }
         finally
         {
@@ -199,7 +202,8 @@
         }
         catch (Exception ex)
         {
-            Message = ex.Message;
+            Logger.LogError(ex, "Failed to save domain route for application {ApplicationId}.", Id);
+            Message = GenericErrorMessage;
         }
     }
 
@@ -219,7 +223,8 @@
         }
         catch (Exception ex)
         {
-            Message = ex.Message;
+            Logger.LogError(ex, "Failed to apply proxy routes for application {ApplicationId}.", Id);
+            Message = GenericErrorMessage;
         }
     }
 
@@ -240,7 +245,8 @@
         }
         catch (Exception ex)
         {
-            Message = ex.Message;
+            Logger.LogError(ex, "Failed to save webhook configuration for application {ApplicationId}.", Id);
+            Message = GenericErrorMessage;
         }
     }
 

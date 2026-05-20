@@ -1,4 +1,5 @@
 using Vessel.Domain;
+using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
@@ -37,6 +38,8 @@ public interface IVesselDbContext : IUnitOfWork
     IQueryable<Server> Servers { get; }
 
     IQueryable<AppEntity> Applications { get; }
+
+    IQueryable<ApplicationDomain> ApplicationDomains { get; }
 
     IQueryable<DatabaseResource> DatabaseResources { get; }
 

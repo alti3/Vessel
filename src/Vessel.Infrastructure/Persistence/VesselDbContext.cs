@@ -68,6 +68,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<AppEntity> ApplicationSet => Set<AppEntity>();
 
+    public DbSet<ApplicationDomain> ApplicationDomainSet => Set<ApplicationDomain>();
+
     public DbSet<DatabaseResource> DatabaseResourceSet => Set<DatabaseResource>();
 
     public DbSet<Deployment> DeploymentSet => Set<Deployment>();
@@ -115,6 +117,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public IQueryable<Server> Servers => ServerSet;
 
     public IQueryable<AppEntity> Applications => ApplicationSet;
+
+    public IQueryable<ApplicationDomain> ApplicationDomains => ApplicationDomainSet;
 
     public IQueryable<DatabaseResource> DatabaseResources => DatabaseResourceSet;
 
@@ -472,10 +476,15 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Ignore(version => version.DomainEvents);
             builder.HasIndex(version => new { version.ServerId, version.CreatedAt });
             builder.HasIndex(version => new { version.ServerId, version.ConfigurationHash });
+            builder.HasIndex(version => version.PreviousVersionId);
             builder.HasOne<Server>()
                 .WithMany()
                 .HasForeignKey(version => version.ServerId)
                 .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<ProxyConfigurationVersion>()
+                .WithMany()
+                .HasForeignKey(version => version.PreviousVersionId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 
@@ -498,10 +507,20 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Ignore(certificate => certificate.DomainEvents);
             builder.HasIndex(certificate => new { certificate.ApplicationId, certificate.Host }).IsUnique();
             builder.HasIndex(certificate => new { certificate.TeamId, certificate.RenewalDueAt });
+            builder.HasIndex(certificate => certificate.CertificateSecretReferenceId);
+            builder.HasIndex(certificate => certificate.PrivateKeySecretReferenceId);
             builder.HasOne<AppEntity>()
                 .WithMany()
                 .HasForeignKey(certificate => certificate.ApplicationId)
                 .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(certificate => certificate.CertificateSecretReferenceId)
+                .OnDelete(DeleteBehavior.SetNull);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(certificate => certificate.PrivateKeySecretReferenceId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 

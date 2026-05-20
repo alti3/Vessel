@@ -90,8 +90,10 @@ public sealed class DomainRoutingService(
 
     private Domain.Applications.Application GetApplication(AppId applicationId)
     {
-        return dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
+        Domain.Applications.Application application = dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
             ?? throw new InvalidOperationException("Application was not found.");
+        _ = dbContext.ApplicationDomains.Where(domain => domain.ApplicationId == applicationId).ToArray();
+        return application;
     }
 
     private void RequireApplication(UserId actorUserId, TeamId teamId, AppId applicationId, string permission)
