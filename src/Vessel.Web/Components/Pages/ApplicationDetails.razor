@@ -4,6 +4,9 @@
 @inject DeploymentQueryService DeploymentDetails
 @inject IDeploymentCatalogQuery DeploymentCatalog
 @inject ApplicationWebhookConfigurationService WebhookConfiguration
+@inject DomainRoutingService DomainRouting
+@inject ProxyConfigurationService ProxyConfiguration
+@inject Vessel.Application.Resources.ResourceManagementService Resources
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Application | Vessel</PageTitle>
@@ -27,11 +30,31 @@
         </div>
     </SettingsPanel>
     <SettingsPanel Title="Configuration" Description="Build pack, runtime, domains, ports, and secret references.">
-        <form class="form-stack">
-            <FormField Label="Primary domain" Name="domain" Placeholder="https://app.example.com" />
-            <label>Environment variable<SecretInput Name="env-secret" Placeholder="DATABASE_URL" /></label>
-            <button class="button button-secondary" type="button">Save configuration</button>
+        <div class="signal-list">
+            @foreach (var domain in Domains)
+            {
+                <div class="signal-row">
+                    <span>@domain.Host</span>
+                    <StatusBadge Text="@(domain.TlsEnabled ? domain.CertificateStatus?.ToString() ?? "TLS pending" : "HTTP")" Tone="@(domain.TlsEnabled ? "success" : "warning")" />
+                </div>
+            }
+            @if (Domains.Count == 0)
+            {
+                <div class="signal-row"><span>No domains configured</span><StatusBadge Text="Missing" Tone="warning" /></div>
+            }
+        </div>
+        <form class="form-stack" @onsubmit="SaveDomainAsync" @onsubmit:preventDefault>
+            <FormField Label="Domain" Name="domain" @bind-Value="DomainHost" Placeholder="app.example.com" />
+            <label>
+                Target port
+                <input class="form-control" type="number" min="1" max="65535" @bind="DomainPort" />
+            </label>
+            <label><input type="checkbox" @bind="DomainTlsEnabled" /> TLS</label>
+            <label><input type="checkbox" @bind="DomainCanonical" /> Canonical host</label>
+            <label><input type="checkbox" @bind="DomainRedirect" /> Redirect to canonical host</label>
+            <button class="button button-secondary" type="submit">Save route</button>
         </form>
+        <button class="button button-secondary" type="button" @onclick="ApplyProxyAsync">Apply proxy routes</button>
     </SettingsPanel>
     <SettingsPanel Title="Git Webhooks" Description="Provider trigger secrets, branch discovery, and preview deployment settings.">
         <div class="signal-list">
@@ -85,8 +108,15 @@
     private string? Message { get; set; }
     private System.Security.Claims.ClaimsPrincipal? User { get; set; }
     private IReadOnlyList<ApplicationWebhookConfigurationSummary> Webhooks { get; set; } = [];
+    private IReadOnlyList<DomainRouteSummary> Domains { get; set; } = [];
+    private Guid? ServerId { get; set; }
     private string WebhookProviderValue { get; set; } = WebhookProvider.GitHub.ToString();
     private string WebhookSecret { get; set; } = string.Empty;
+    private string DomainHost { get; set; } = string.Empty;
+    private int? DomainPort { get; set; } = 8080;
+    private bool DomainTlsEnabled { get; set; } = true;
+    private bool DomainCanonical { get; set; } = true;
+    private bool DomainRedirect { get; set; }
 
     private string LatestStatus => Latest?.Status.ToString() ?? "Unknown";
 
@@ -95,6 +125,8 @@
         User = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         LoadLatest();
         LoadWebhooks();
+        LoadDomains();
+        LoadApplication();
     }
 
     private async Task StartDeploymentAsync()
@@ -136,6 +168,59 @@
     {
         if (User is null) return;
         Webhooks = WebhookConfiguration.List(User.GetUserId(), User.GetTeamId(), new Vessel.Domain.ApplicationId(Id));
+    }
+
+    private void LoadDomains()
+    {
+        if (User is null) return;
+        Domains = DomainRouting.List(User.GetUserId(), User.GetTeamId(), new Vessel.Domain.ApplicationId(Id));
+    }
+
+    private void LoadApplication()
+    {
+        if (User is null) return;
+        ServerId = Resources.ListApplications(User.GetUserId(), User.GetTeamId())
+            .SingleOrDefault(application => application.Id == Id)?.ServerId;
+    }
+
+    private async Task SaveDomainAsync()
+    {
+        if (User is null) return;
+        try
+        {
+            await DomainRouting.ConfigureAsync(
+                User.GetUserId(),
+                User.GetTeamId(),
+                new Vessel.Domain.ApplicationId(Id),
+                new ConfigureDomainRouteRequest(DomainHost, DomainPort, DomainTlsEnabled, DomainCanonical, DomainRedirect));
+            DomainHost = string.Empty;
+            LoadDomains();
+            Message = "Domain route saved.";
+        }
+        catch (Exception ex)
+        {
+            Message = ex.Message;
+        }
+    }
+
+    private async Task ApplyProxyAsync()
+    {
+        if (User is null) return;
+        try
+        {
+            if (ServerId is null)
+            {
+                Message = "Application server was not found.";
+                return;
+            }
+
+            await ProxyConfiguration.GenerateValidateAndApplyAsync(User.GetUserId(), User.GetTeamId(), new ServerId(ServerId.Value));
+            Message = "Proxy routes applied.";
+        }
+        catch (Exception ex)
+        {
+            Message = ex.Message;
+        }
     }
 
     private async Task SaveWebhookAsync()

@@ -17,6 +17,7 @@ using Vessel.Application.Diagnostics;
 using Vessel.Application.Deployments;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -83,6 +84,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<StartDeploymentService>();
         services.AddScoped<DeploymentQueryService>();
         services.AddScoped<IDeploymentRunner, DeploymentRunner>();
+        services.AddScoped<DomainRoutingService>();
+        services.AddScoped<ProxyConfigurationService>();
+        services.AddScoped<CertificateManagementService>();
+        services.AddScoped<CertificateRenewalJob>();
         services.AddScoped<WebhookReceiptService>();
         services.AddScoped<WebhookProcessingService>();
         services.AddScoped<ApplicationWebhookConfigurationService>();

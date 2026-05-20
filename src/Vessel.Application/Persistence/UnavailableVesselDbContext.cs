@@ -1,10 +1,12 @@
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
@@ -42,6 +44,8 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IQueryable<WebhookEvent> WebhookEvents => Enumerable.Empty<WebhookEvent>().AsQueryable();
     public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations => Enumerable.Empty<ApplicationWebhookConfiguration>().AsQueryable();
     public IQueryable<ApplicationPreview> ApplicationPreviews => Enumerable.Empty<ApplicationPreview>().AsQueryable();
+    public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => Enumerable.Empty<ProxyConfigurationVersion>().AsQueryable();
+    public IQueryable<Certificate> Certificates => Enumerable.Empty<Certificate>().AsQueryable();
 
     public IRepository<User, UserId> UserRepository { get; } = new UnavailableRepository<User, UserId>();
     public IRepository<Team, TeamId> TeamRepository { get; } = new UnavailableRepository<Team, TeamId>();
@@ -61,6 +65,8 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; } = new UnavailableRepository<WebhookEvent, WebhookEventId>();
     public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId> ApplicationWebhookConfigurationRepository { get; } = new UnavailableRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>();
     public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; } = new UnavailableRepository<ApplicationPreview, ApplicationPreviewId>();
+    public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository { get; } = new UnavailableRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>();
+    public IRepository<Certificate, CertificateId> CertificateRepository { get; } = new UnavailableRepository<Certificate, CertificateId>();
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

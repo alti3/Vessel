@@ -34,6 +34,12 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<ApplicationPreviewId, Guid> ApplicationPreviewId =
         new(id => id.Value, value => new ApplicationPreviewId(value));
 
+    public static readonly ValueConverter<ProxyConfigurationVersionId, Guid> ProxyConfigurationVersionId =
+        new(id => id.Value, value => new ProxyConfigurationVersionId(value));
+
+    public static readonly ValueConverter<CertificateId, Guid> CertificateId =
+        new(id => id.Value, value => new CertificateId(value));
+
     public static readonly ValueConverter<SecretReferenceId, Guid> SecretReferenceId =
         new(id => id.Value, value => new SecretReferenceId(value));
 
@@ -123,6 +129,18 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<ApplicationPreviewId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(ApplicationPreviewId);
+    }
+
+    public static PropertyBuilder<ProxyConfigurationVersionId> HasProxyConfigurationVersionIdConversion(
+        this PropertyBuilder<ProxyConfigurationVersionId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(ProxyConfigurationVersionId);
+    }
+
+    public static PropertyBuilder<CertificateId> HasCertificateIdConversion(
+        this PropertyBuilder<CertificateId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(CertificateId);
     }
 
     public static PropertyBuilder<SecretReferenceId> HasSecretReferenceIdConversion(

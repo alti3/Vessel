@@ -3,11 +3,13 @@ using Vessel.Application.Persistence;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
@@ -44,6 +46,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         WebhookEventRepository = new EfRepository<WebhookEvent, WebhookEventId>(this);
         ApplicationWebhookConfigurationRepository = new EfRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>(this);
         ApplicationPreviewRepository = new EfRepository<ApplicationPreview, ApplicationPreviewId>(this);
+        ProxyConfigurationVersionRepository = new EfRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(this);
+        CertificateRepository = new EfRepository<Certificate, CertificateId>(this);
     }
 
     public DbSet<User> UserSet => Set<User>();
@@ -90,6 +94,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<ApplicationPreview> ApplicationPreviewSet => Set<ApplicationPreview>();
 
+    public DbSet<ProxyConfigurationVersion> ProxyConfigurationVersionSet => Set<ProxyConfigurationVersion>();
+
+    public DbSet<Certificate> CertificateSet => Set<Certificate>();
+
     public IQueryable<User> Users => UserSet;
 
     public IQueryable<PersonalAccessToken> PersonalAccessTokens => PersonalAccessTokenSet;
@@ -134,6 +142,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<ApplicationPreview> ApplicationPreviews => ApplicationPreviewSet;
 
+    public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => ProxyConfigurationVersionSet;
+
+    public IQueryable<Certificate> Certificates => CertificateSet;
+
     public IRepository<User, UserId> UserRepository { get; }
 
     public IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository { get; }
@@ -170,6 +182,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
 
+    public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository { get; }
+
+    public IRepository<Certificate, CertificateId> CertificateRepository { get; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("vessel");
@@ -188,6 +204,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ConfigureAuditLogs(modelBuilder);
         ConfigureSettings(modelBuilder);
         ConfigureWebhooks(modelBuilder);
+        ConfigureProxy(modelBuilder);
+        ConfigureCertificates(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
@@ -427,6 +445,63 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(domain => domain.ApplicationId).HasApplicationIdConversion();
             builder.Property(domain => domain.DomainName).HasConversion(ValueObjectConversions.DomainName)
                 .HasMaxLength(253).IsRequired();
+            builder.Property(domain => domain.TargetPort);
+            builder.Property(domain => domain.TlsEnabled).IsRequired();
+            builder.Property(domain => domain.Canonical).IsRequired();
+            builder.Property(domain => domain.RedirectToCanonical).IsRequired();
+        });
+    }
+
+    private static void ConfigureProxy(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ProxyConfigurationVersion>(builder =>
+        {
+            builder.ToTable("proxy_configuration_versions");
+            builder.HasKey(version => version.Id);
+            builder.Property(version => version.Id).HasProxyConfigurationVersionIdConversion();
+            builder.Property(version => version.ServerId).HasServerIdConversion();
+            builder.Property(version => version.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(version => version.Version).HasMaxLength(80).IsRequired();
+            builder.Property(version => version.ConfigurationHash).HasMaxLength(128).IsRequired();
+            builder.Property(version => version.Configuration).IsRequired();
+            builder.Property(version => version.PreviousVersionId).HasConversion(StronglyTypedIdConversions.ProxyConfigurationVersionId);
+            builder.Property(version => version.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(version => version.ValidationError).HasMaxLength(2000);
+            builder.Property(version => version.ApplyError).HasMaxLength(2000);
+            builder.Property(version => version.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(version => version.DomainEvents);
+            builder.HasIndex(version => new { version.ServerId, version.CreatedAt });
+            builder.HasIndex(version => new { version.ServerId, version.ConfigurationHash });
+            builder.HasOne<Server>()
+                .WithMany()
+                .HasForeignKey(version => version.ServerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureCertificates(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Certificate>(builder =>
+        {
+            builder.ToTable("certificates");
+            builder.HasKey(certificate => certificate.Id);
+            builder.Property(certificate => certificate.Id).HasCertificateIdConversion();
+            builder.Property(certificate => certificate.TeamId).HasTeamIdConversion();
+            builder.Property(certificate => certificate.ApplicationId).HasApplicationIdConversion();
+            builder.Property(certificate => certificate.Host).HasMaxLength(253).IsRequired();
+            builder.Property(certificate => certificate.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(certificate => certificate.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(certificate => certificate.LastError).HasMaxLength(2000);
+            builder.Property(certificate => certificate.CertificateSecretReferenceId).HasConversion(StronglyTypedIdConversions.SecretReferenceId);
+            builder.Property(certificate => certificate.PrivateKeySecretReferenceId).HasConversion(StronglyTypedIdConversions.SecretReferenceId);
+            builder.Property(certificate => certificate.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(certificate => certificate.DomainEvents);
+            builder.HasIndex(certificate => new { certificate.ApplicationId, certificate.Host }).IsUnique();
+            builder.HasIndex(certificate => new { certificate.TeamId, certificate.RenewalDueAt });
+            builder.HasOne<AppEntity>()
+                .WithMany()
+                .HasForeignKey(certificate => certificate.ApplicationId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 

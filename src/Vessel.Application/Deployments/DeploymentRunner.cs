@@ -7,6 +7,7 @@ using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
 using Vessel.Application.Git;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -31,6 +32,7 @@ public sealed class DeploymentRunner(
     ISecretVault secretVault,
     ISecretRedactor redactor,
     IRealtimeNotifier realtime,
+    ProxyConfigurationService proxyConfiguration,
     IAuditWriter auditWriter,
     TimeProvider timeProvider)
     : IDeploymentRunner
@@ -115,6 +117,8 @@ public sealed class DeploymentRunner(
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
             await RunHealthCheckAsync(plan, deploymentId, cancellationToken);
+            await AppendAsync(deploymentId, "system", "Applying reverse proxy routes.", cancellationToken);
+            await proxyConfiguration.ApplyForDeploymentAsync(deployment.ActorUserId ?? UserId.New(), teamId, server.Id, cancellationToken);
             await SucceedAsync(deploymentId, plan.ImageName, cancellationToken);
             finalStatus = DeploymentStatus.Succeeded;
             await auditWriter.RecordAsync(teamId, deployment.ActorUserId, AuditActions.DeploymentFinished,

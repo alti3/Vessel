@@ -1,10 +1,12 @@
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
@@ -64,6 +66,10 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<ApplicationPreview> ApplicationPreviews { get; }
 
+    IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions { get; }
+
+    IQueryable<Certificate> Certificates { get; }
+
     IRepository<User, UserId> UserRepository { get; }
 
     IRepository<Team, TeamId> TeamRepository { get; }
@@ -99,4 +105,8 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId> ApplicationWebhookConfigurationRepository { get; }
 
     IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
+
+    IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository { get; }
+
+    IRepository<Certificate, CertificateId> CertificateRepository { get; }
 }

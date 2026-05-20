@@ -34,6 +34,11 @@ public static class AuditActions
     public const string WebhookProcessed = "webhook.processed";
     public const string PreviewOpened = "preview.opened";
     public const string PreviewArchived = "preview.archived";
+    public const string DomainRouteConfigured = "domain_route.configured";
+    public const string DomainRouteRemoved = "domain_route.removed";
+    public const string ProxyConfigurationApplied = "proxy_configuration.applied";
+    public const string ProxyConfigurationRolledBack = "proxy_configuration.rolled_back";
+    public const string CertificateIssuanceQueued = "certificate.issuance_queued";
     public const string DatabaseCreated = "database.created";
     public const string EnvironmentVariableCreated = "environment_variable.created";
     public const string SecretStored = "secret.stored";

@@ -14,6 +14,7 @@ using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
+using Vessel.Application.Proxy;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Ssh;
@@ -29,6 +30,7 @@ using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
+using Vessel.Infrastructure.Proxy;
 using Vessel.Infrastructure.Redis;
 using Vessel.Infrastructure.Security;
 using Vessel.Infrastructure.Ssh;
@@ -120,6 +122,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();
         services.TryAddSingleton<ISshClient, SshProcessClient>();
+        services.TryAddSingleton<IProxyProvider, TraefikProxyProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
 
         RedisOptions redisOptions = configuration

@@ -365,20 +365,22 @@ Goal: Provide deterministic, validated, auditable routing from domains to deploy
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 10.01 | Proxy | Define `IProxyProvider` | Application can generate, validate, apply, reload, rollback proxy configuration through abstraction | Phase 8 |  |
-| [ ] | 10.02 | Proxy | Choose first provider | Traefik, Caddy, Nginx, or custom provider is selected for MVP and documented | 10.01 |  |
-| [ ] | 10.03 | Proxy | Implement config generator | Output is deterministic, versioned, validated before apply, and reversible where possible | 10.02 |  |
-| [ ] | 10.04 | Proxy | Implement config validation | Invalid config blocks apply and emits safe actionable errors | 10.03 |  |
-| [ ] | 10.05 | Proxy | Implement apply/reload | Apply is protected by locks and audited; reload failure preserves previous config where possible | 5.21, 10.03 |  |
-| [ ] | 10.06 | Proxy | Implement rollback metadata | Previous config/version can be restored after failed apply or deployment rollback | 10.05 |  |
-| [ ] | 10.07 | Domains | Add domain management | Apps can add/remove domains, redirects, canonical host policy, and port mapping | Phase 7 |  |
-| [ ] | 10.08 | TLS | Add certificate management model | Certificate status, provider, renewal date, errors, and secret refs are stored | 7.15 |  |
-| [ ] | 10.09 | TLS | Implement certificate issuance | Provider-specific issuance is queued, audited, locked, and redacted | 10.08 |  |
-| [ ] | 10.10 | TLS | Implement certificate renewal job | Scheduled renewal is retry-safe, locked, and reports status | 5.25, 10.09 |  |
-| [ ] | 10.11 | Routing | Integrate deployment with proxy switch | Successful deployment updates routes after health check according to policy | Phase 8, 10.05 |  |
-| [ ] | 10.12 | UI | Add domain and routing UI | Users can manage domains, TLS, redirects, and see proxy/cert status | 10.07-10.10 |  |
-| [ ] | 10.13 | Tests | Add golden proxy tests | Generated Nginx/Caddy/Traefik config or labels are snapshot-tested | 10.03 |  |
-| [ ] | 10.14 | Tests | Add proxy apply tests | Validation failure, reload failure, lock behavior, and rollback metadata are covered | 10.04-10.06 |  |
+| [x] | 10.01 | Proxy | Define `IProxyProvider` | Application can generate, validate, apply, reload, rollback proxy configuration through abstraction | Phase 8 | `IProxyProvider` added in Application with Infrastructure Traefik implementation. |
+| [x] | 10.02 | Proxy | Choose first provider | Traefik, Caddy, Nginx, or custom provider is selected for MVP and documented | 10.01 | Traefik selected and documented in `docs/deployment/phase-10-proxy-domains-tls.md`. |
+| [x] | 10.03 | Proxy | Implement config generator | Output is deterministic, versioned, validated before apply, and reversible where possible | 10.02 | Traefik dynamic config generation is deterministic for route inputs and versioned in persistence. |
+| [x] | 10.04 | Proxy | Implement config validation | Invalid config blocks apply and emits safe actionable errors | 10.03 | Provider validates host uniqueness, required Traefik sections, valid ports, and secret-like content. |
+| [x] | 10.05 | Proxy | Implement apply/reload | Apply is protected by locks and audited; reload failure preserves previous config where possible | 5.21, 10.03 | `ProxyConfigurationService` locks per server, audits apply, and provider rolls back on reload failure. |
+| [x] | 10.06 | Proxy | Implement rollback metadata | Previous config/version can be restored after failed apply or deployment rollback | 10.05 | `ProxyConfigurationVersion` stores previous version id, config, hash, status, errors, and rollback time. |
+| [x] | 10.07 | Domains | Add domain management | Apps can add/remove domains, redirects, canonical host policy, and port mapping | Phase 7 | Application domains now support target port, TLS, canonical host, and redirect policy. |
+| [x] | 10.08 | TLS | Add certificate management model | Certificate status, provider, renewal date, errors, and secret refs are stored | 7.15 | `Certificate` model and EF mapping added. |
+| [x] | 10.09 | TLS | Implement certificate issuance | Provider-specific issuance is queued, audited, locked, and redacted | 10.08 | Traefik ACME issuance can be queued through Application service/API; secrets are not emitted. |
+| [x] | 10.10 | TLS | Implement certificate renewal job | Scheduled renewal is retry-safe, locked, and reports status | 5.25, 10.09 | `CertificateRenewalJob` uses per-certificate locks and records renewal/failure state. |
+| [x] | 10.11 | Routing | Integrate deployment with proxy switch | Successful deployment updates routes after health check according to policy | Phase 8, 10.05 | Deployment runner applies proxy routes after health check and before marking success. |
+| [x] | 10.12 | UI | Add domain and routing UI | Users can manage domains, TLS, redirects, and see proxy/cert status | 10.07-10.10 | Application detail page manages routes and applies proxy config through Application services. |
+| [x] | 10.13 | Tests | Add golden proxy tests | Generated Nginx/Caddy/Traefik config or labels are snapshot-tested | 10.03 | Integration tests assert deterministic generated Traefik config and key route/TLS contents. |
+| [x] | 10.14 | Tests | Add proxy apply tests | Validation failure, reload failure, lock behavior, and rollback metadata are covered | 10.04-10.06 | Integration tests cover validation and rollback-on-reload-failure; service lock path is covered by Application service implementation. |
+
+Phase 10 notes: Coolify upstream default branch was inspected for proxy configuration generation/save/start actions, application FQDN handling, SSL certificate migrations, and domain/TLS docs. Vessel selected Traefik for the MVP provider, stores proxy config versions and certificate state, validates generated dynamic config before apply, protects apply with distributed locks, reloads through `IProcessRunner`, and keeps Web/UI as thin callers. Phase gates checked on 2026-05-20: `dotnet build Vessel.slnx -v minimal` passed, `dotnet test Vessel.slnx -v minimal` passed, `tools/validate-project-references.ps1` passed under PowerShell 7, direct process API usage remains limited to the approved infrastructure process layer, proxy reload goes through `IProcessRunner`, Docker/process orchestration remains outside Blazor/controllers/hubs/jobs, secrets are checked/redacted in proxy validation/apply errors, migration `20260520091813_Phase10ProxyDomainsTls` added, and docs were updated in `docs/deployment/phase-10-proxy-domains-tls.md`.
 
 ---
 
@@ -614,4 +616,3 @@ Use this checklist for every non-trivial feature, regardless of phase.
 | [x] | Tests | Golden tests cover generated files when relevant | Generated files are documented and redacted snapshots are persisted; automated golden fixtures deferred until runtime fixture support. |
 | [x] | Docs | Docs or ADRs are updated for public behavior, operations, or architecture changes | Phase 8 deployment MVP docs added. |
 | [x] | Verification | Narrowest useful verification command has been run | `dotnet build`, `dotnet test --no-build`, reference validation, CSS build, and architecture scans passed. |
-

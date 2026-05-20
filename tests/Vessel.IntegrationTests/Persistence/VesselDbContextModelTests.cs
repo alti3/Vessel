@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
+using Vessel.Domain.Certificates;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
@@ -53,6 +55,8 @@ public sealed class VesselDbContextModelTests
             migration => migration.EndsWith("Phase8DeploymentMvp", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("Phase9WebhooksAndPreviews", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("Phase10ProxyDomainsTls", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -74,10 +78,26 @@ public sealed class VesselDbContextModelTests
         Assert.Contains("webhook_events", script, StringComparison.Ordinal);
         Assert.Contains("application_webhook_configurations", script, StringComparison.Ordinal);
         Assert.Contains("application_previews", script, StringComparison.Ordinal);
+        Assert.Contains("proxy_configuration_versions", script, StringComparison.Ordinal);
+        Assert.Contains("certificates", script, StringComparison.Ordinal);
         Assert.Contains("ConfigurationSnapshotReference", script, StringComparison.Ordinal);
         Assert.Contains("CancellationRequestedAt", script, StringComparison.Ordinal);
         Assert.Contains("WebhookEventId", script, StringComparison.Ordinal);
         Assert.Contains("PreviewId", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Model_MapsPhase10ProxyAndCertificateTables()
+    {
+        using VesselDbContext context = CreateContext();
+
+        var proxyVersion = context.Model.FindEntityType(typeof(ProxyConfigurationVersion));
+        var certificate = context.Model.FindEntityType(typeof(Certificate));
+
+        Assert.Equal("proxy_configuration_versions", proxyVersion?.GetTableName());
+        Assert.Equal(128, proxyVersion?.FindProperty(nameof(ProxyConfigurationVersion.ConfigurationHash))?.GetMaxLength());
+        Assert.Equal("certificates", certificate?.GetTableName());
+        Assert.Equal(253, certificate?.FindProperty(nameof(Certificate.Host))?.GetMaxLength());
     }
 
     [Fact]
