@@ -7,6 +7,7 @@ using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Common;
+using Vessel.Domain.ValueObjects;
 using AppId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Proxy;
@@ -110,11 +111,13 @@ public sealed class CertificateManagementService(
 
     private static string NormalizeHost(string host)
     {
+        if (string.IsNullOrWhiteSpace(host)) throw new DomainException("Certificate host is required.");
         if (Uri.TryCreate(host, UriKind.Absolute, out Uri? uri))
             host = uri.Host;
         string normalized = host.Trim().TrimEnd('/').ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(normalized)) throw new DomainException("Certificate host is required.");
-        return normalized;
+        if (normalized.Contains('/', StringComparison.Ordinal) || normalized.Contains(':', StringComparison.Ordinal))
+            throw new DomainException("Certificate host must not include a path or port.");
+        return new DomainName(normalized).Value;
     }
 
     private static CertificateSummary ToSummary(Certificate certificate)

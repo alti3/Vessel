@@ -29,6 +29,41 @@ public sealed class TraefikProxyProviderTests
     }
 
     [Fact]
+    public void Generate_WritesHttpRoutesCustomPortsAndCanonicalRedirects()
+    {
+        var provider = CreateProvider();
+        var serverId = ServerId.New();
+        AppId applicationId = AppId.New();
+
+        ProxyConfigurationDocument document = provider.Generate(serverId,
+        [
+            new ProxyRoute(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false),
+            new ProxyRoute(applicationId, serverId, "vessel-app", "www.example.com", 9090, false, false, true)
+        ]);
+
+        Assert.Contains("Host(`app.example.com`)", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("Host(`www.example.com`)", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("- websecure", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("- web", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("url: \"http://vessel-app:9090\"", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("redirectRegex:", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("replacement: \"https://app.example.com$${1}\"", document.Contents, StringComparison.Ordinal);
+        Assert.True(provider.Validate(document).Succeeded);
+    }
+
+    [Fact]
+    public void Generate_RejectsRedirectToCanonicalWithoutCanonicalRoute()
+    {
+        var provider = CreateProvider();
+        var serverId = ServerId.New();
+
+        Assert.Throws<InvalidOperationException>(() => provider.Generate(serverId,
+        [
+            new ProxyRoute(AppId.New(), serverId, "vessel-app", "www.example.com", 8080, true, false, true)
+        ]));
+    }
+
+    [Fact]
     public void Validate_RejectsDuplicateHostsAndSecretLikeContent()
     {
         var provider = CreateProvider();
@@ -48,6 +83,43 @@ public sealed class TraefikProxyProviderTests
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("configured more than once", StringComparison.Ordinal));
         Assert.Contains(result.Errors, error => error.Contains("secret-like", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsMalformedHostsInvalidPortsAndWrongProvider()
+    {
+        var provider = CreateProvider();
+        var serverId = ServerId.New();
+        var document = new ProxyConfigurationDocument(
+            serverId,
+            Vessel.Domain.Proxy.ProxyProviderKind.Caddy,
+            "v1",
+            "http:\n  routers: {}\n  services: {}\n",
+            "hash",
+            [
+                new ProxyRoute(AppId.New(), serverId, "app", "-bad.example.com", 8080, true, false, false),
+                new ProxyRoute(AppId.New(), serverId, "app", "bad.example.com", 70000, true, false, false)
+            ]);
+
+        ProxyValidationResult result = provider.Validate(document);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.Errors, error => error.Contains("Proxy provider must be Traefik", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.Contains("is invalid", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.Contains("invalid target port", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReloadAsync_TreatsMissingProxyContainerAsSuccess()
+    {
+        var provider = new TraefikProxyProvider(
+            new FakeProcessRunner(success: false, exitCode: 1, standardError: "No such container: vessel-proxy"),
+            new PathSafetyService());
+
+        ProxyApplyResult result = await provider.ReloadAsync(ServerId.New());
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("not running", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -80,7 +152,10 @@ public sealed class TraefikProxyProviderTests
         return new TraefikProxyProvider(new FakeProcessRunner(success: true), new PathSafetyService());
     }
 
-    private sealed class FakeProcessRunner(bool success) : IProcessRunner
+    private sealed class FakeProcessRunner(
+        bool success,
+        int? exitCode = null,
+        string? standardError = null) : IProcessRunner
     {
         public int RunCount { get; private set; }
 
@@ -90,12 +165,12 @@ public sealed class TraefikProxyProviderTests
             var now = DateTimeOffset.UtcNow;
             return Task.FromResult(new ProcessResult(
                 command,
-                new ProcessExitInfo(success ? 0 : 2, false, false, null),
+                new ProcessExitInfo(success ? 0 : (exitCode ?? 2), false, false, null),
                 123,
                 now,
                 now,
                 string.Empty,
-                success ? string.Empty : "reload failed"));
+                success ? string.Empty : standardError ?? "reload failed"));
         }
 
         public Task<ProcessBinaryResult> RunBinaryAsync(ProcessCommand command, CancellationToken cancellationToken = default)
@@ -106,7 +181,7 @@ public sealed class TraefikProxyProviderTests
         public Task<ProcessExitInfo> RunAsync(ProcessCommand command, CancellationToken cancellationToken = default)
         {
             RunCount++;
-            return Task.FromResult(new ProcessExitInfo(success ? 0 : 2, false, false, null));
+            return Task.FromResult(new ProcessExitInfo(success ? 0 : (exitCode ?? 2), false, false, null));
         }
 
         public async IAsyncEnumerable<ProcessOutputLine> StreamLinesAsync(
