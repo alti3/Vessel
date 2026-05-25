@@ -63,9 +63,20 @@
         Database = Resources.ListDatabases(user.GetUserId(), user.GetTeamId()).SingleOrDefault(item => item.Id == Id);
     }
 
-    private Task StartAsync() => LifecycleAsync(DatabaseLifecycleAction.Start);
-    private Task StopAsync() => LifecycleAsync(DatabaseLifecycleAction.Stop);
-    private Task RestartAsync() => LifecycleAsync(DatabaseLifecycleAction.Restart);
+    private Task StartAsync()
+    {
+        return LifecycleAsync(DatabaseLifecycleAction.Start);
+    }
+
+    private Task StopAsync()
+    {
+        return LifecycleAsync(DatabaseLifecycleAction.Stop);
+    }
+
+    private Task RestartAsync()
+    {
+        return LifecycleAsync(DatabaseLifecycleAction.Restart);
+    }
 
     private async Task LifecycleAsync(DatabaseLifecycleAction action)
     {
@@ -98,4 +109,5 @@
         public string CronExpression { get; set; } = "0 2 * * *";
         public int RetentionCount { get; set; } = 7;
     }
+
 }

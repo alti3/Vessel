@@ -176,7 +176,8 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         };
 
         if (OperatingSystem.IsWindows())
-            startInfo.KillOnParentExit = (command.TerminationPolicy ?? ProcessTerminationPolicy.Default).KillOnParentExit;
+            startInfo.KillOnParentExit =
+                (command.TerminationPolicy ?? ProcessTerminationPolicy.Default).KillOnParentExit;
 
         foreach (var argument in command.Arguments) startInfo.ArgumentList.Add(argument);
 

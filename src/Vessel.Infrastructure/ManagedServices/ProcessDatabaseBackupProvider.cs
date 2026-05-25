@@ -17,7 +17,7 @@ public sealed class ProcessDatabaseBackupProvider(
         string credentials,
         CancellationToken cancellationToken = default)
     {
-        string content = database.Engine switch
+        var content = database.Engine switch
         {
             DatabaseEngine.PostgreSql => await RunTextAsync("pg_dump", database, credentials, cancellationToken),
             DatabaseEngine.MySql or DatabaseEngine.MariaDb => await RunTextAsync("mysqldump", database, credentials,
@@ -25,10 +25,10 @@ public sealed class ProcessDatabaseBackupProvider(
             DatabaseEngine.Redis => await RunTextAsync("redis-cli", database, credentials, cancellationToken),
             _ => throw new InvalidOperationException("Backup provider supports PostgreSQL, MySQL, MariaDB, and Redis.")
         };
-        byte[] bytes = Encoding.UTF8.GetBytes(redactor.Redact(content, new RedactionContext([credentials])));
-        string sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        var stream = new MemoryStream(bytes, writable: false);
-        string key = $"database/{database.Id.Value:D}/{timeProvider.GetUtcNow():yyyyMMddHHmmss}-{sha[..12]}.dump";
+        var bytes = Encoding.UTF8.GetBytes(redactor.Redact(content, new RedactionContext([credentials])));
+        var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var stream = new MemoryStream(bytes, false);
+        var key = $"database/{database.Id.Value:D}/{timeProvider.GetUtcNow():yyyyMMddHHmmss}-{sha[..12]}.dump";
         return new BackupArtifact("vessel-backups", key, bytes.Length, sha, stream);
     }
 
@@ -45,7 +45,7 @@ public sealed class ProcessDatabaseBackupProvider(
             return "Dry-run restore validation succeeded.";
         }
 
-        string executable = target.Engine switch
+        var executable = target.Engine switch
         {
             DatabaseEngine.PostgreSql => "psql",
             DatabaseEngine.MySql or DatabaseEngine.MariaDb => "mysql",

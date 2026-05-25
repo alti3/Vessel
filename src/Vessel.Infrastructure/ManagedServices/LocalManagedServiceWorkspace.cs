@@ -29,8 +29,8 @@ public sealed class LocalManagedServiceWorkspace(IPathSafetyService paths) : IMa
         bool restrictToOwner,
         CancellationToken cancellationToken = default)
     {
-        string root = paths.EnsureOwnedPath(_root, rootDirectory);
-        string destination = paths.EnsureOwnedRelativePath(root, relativePath);
+        var root = paths.EnsureOwnedPath(_root, rootDirectory);
+        var destination = paths.EnsureOwnedRelativePath(root, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         await File.WriteAllTextAsync(destination, contents, cancellationToken);
         _ = restrictToOwner;
@@ -39,8 +39,8 @@ public sealed class LocalManagedServiceWorkspace(IPathSafetyService paths) : IMa
     private Task<ManagedServiceWorkspace> PrepareAsync(string kind, Guid id, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        string root = Path.Combine(_root, kind, id.ToString("N"));
-        string safeRoot = paths.EnsureOwnedPath(_root, root);
+        var root = Path.Combine(_root, kind, id.ToString("N"));
+        var safeRoot = paths.EnsureOwnedPath(_root, root);
         Directory.CreateDirectory(safeRoot);
         return Task.FromResult(new ManagedServiceWorkspace(
             safeRoot,

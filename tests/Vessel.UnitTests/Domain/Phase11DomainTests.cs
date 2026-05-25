@@ -30,7 +30,7 @@ public sealed class Phase11DomainTests
     {
         DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
 
-        BackupSchedule schedule = BackupSchedule.Create(
+        var schedule = BackupSchedule.Create(
             TeamId.New(),
             DatabaseResourceId.New(),
             new ResourceName("daily"),
@@ -62,7 +62,7 @@ public sealed class Phase11DomainTests
     public void BackupExecution_ProtectsArtifactsAndRequiresValidationBeforeRestore()
     {
         DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
-        BackupExecution execution = BackupExecution.Queue(
+        var execution = BackupExecution.Queue(
             TeamId.New(),
             DatabaseResourceId.New(),
             BackupScheduleId.New(),

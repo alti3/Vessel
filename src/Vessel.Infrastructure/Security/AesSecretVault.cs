@@ -89,7 +89,7 @@ public sealed class AesSecretVault(
         await auditWriter.RecordAsync(teamId, null, AuditActions.SecretRevealed,
             new AuditTarget("secret", secretReferenceId.Value.ToString("D")), null,
             new Dictionary<string, object?>
-            { ["scope"] = reference.Scope.ToString(), ["key"] = reference.Key, ["purpose"] = "deployment" },
+                { ["scope"] = reference.Scope.ToString(), ["key"] = reference.Key, ["purpose"] = "deployment" },
             cancellationToken);
 
         return Decrypt(secretValue);

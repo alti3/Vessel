@@ -13,8 +13,8 @@ namespace Vessel.Web.Controllers.Api.V1;
 [Route("api/v1/databases")]
 public sealed class DatabasesController : ControllerBase
 {
-    private readonly ResourceManagementService _resources;
     private readonly ManagedDatabaseService _managedDatabases;
+    private readonly ResourceManagementService _resources;
 
     public DatabasesController(ResourceManagementService resources, ManagedDatabaseService managedDatabases)
     {

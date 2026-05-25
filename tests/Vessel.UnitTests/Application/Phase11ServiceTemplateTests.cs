@@ -94,7 +94,8 @@ public sealed class Phase11ServiceTemplateTests
     [InlineData("clickhouse", "clickhouse/clickhouse-server:25.11", "8123:8123", "9000:9000", "CLICKHOUSE_PASSWORD")]
     [InlineData("rustfs", "rustfs/rustfs:latest", "9000:9000", "9001:9001", "RUSTFS_SECRET_KEY")]
     [InlineData("postgres-postgis", "postgis/postgis:17-3.5", "5432:5432", "postgis-data", "POSTGRES_PASSWORD")]
-    [InlineData("postgres-timescale", "timescale/timescaledb:latest-pg17", "5432:5432", "timescaledb-data", "POSTGRES_PASSWORD")]
+    [InlineData("postgres-timescale", "timescale/timescaledb:latest-pg17", "5432:5432", "timescaledb-data",
+        "POSTGRES_PASSWORD")]
     public void CreatePlan_EmitsDatabaseAndStorageTemplates(
         string templateKey,
         string image,
@@ -157,22 +158,34 @@ public sealed class Phase11ServiceTemplateTests
     }
 
     [Theory]
-    [InlineData("redis-insight", "redis/redisinsight:latest", "5540:5540", "redis-insight-data:/data", "RI_ENCRYPTION_KEY")]
-    [InlineData("qdrant", "qdrant/qdrant:latest", "6333:6333", "qdrant-storage:/qdrant/storage", "QDRANT__SERVICE__API_KEY")]
+    [InlineData("redis-insight", "redis/redisinsight:latest", "5540:5540", "redis-insight-data:/data",
+        "RI_ENCRYPTION_KEY")]
+    [InlineData("qdrant", "qdrant/qdrant:latest", "6333:6333", "qdrant-storage:/qdrant/storage",
+        "QDRANT__SERVICE__API_KEY")]
     [InlineData("valkey", "valkey/valkey:latest", "6379:6379", "valkey-data:/data", "VALKEY_PASSWORD")]
     [InlineData("keydb", "eqalpha/keydb:latest", "6379:6379", "keydb-data:/data", "KEYDB_PASSWORD")]
-    [InlineData("dragonfly", "docker.dragonflydb.io/dragonflydb/dragonfly:latest", "6379:6379", "dragonfly-data:/data", "DRAGONFLY_PASSWORD")]
-    [InlineData("elasticsearch", "docker.elastic.co/elasticsearch/elasticsearch:8.19.0", "9200:9200", "elasticsearch-data:/usr/share/elasticsearch/data", "ELASTIC_PASSWORD")]
-    [InlineData("rabbitmq", "rabbitmq:4-management", "15672:15672", "rabbitmq-data:/var/lib/rabbitmq", "RABBITMQ_DEFAULT_PASS")]
-    [InlineData("pihole", "pihole/pihole:latest", "53:53/udp", "pihole-etc:/etc/pihole", "FTLCONF_webserver_api_password")]
-    [InlineData("proxyscotch", "hoppscotch/proxyscotch:v0.1.4", "9159:9159", "PROXYSCOTCH_ALLOWED_ORIGINS", "PROXYSCOTCH_TOKEN")]
-    [InlineData("wireguard-easy", "ghcr.io/wg-easy/wg-easy:latest", "51820:51820/udp", "wg-easy-data:/etc/wireguard", "PASSWORD")]
-    [InlineData("tailscale-client", "tailscale/tailscale:latest", "/dev/net/tun:/dev/net/tun", "tailscale-client-data:/var/lib/tailscale", "TS_AUTHKEY")]
-    [InlineData("open-webui", "ghcr.io/open-webui/open-webui:main", "3000:8080", "open-webui-data:/app/backend/data", "OPENAI_API_KEY")]
-    [InlineData("openclaw", "coollabsio/openclaw:2026.2.6", "8083:8080", "openclaw-data:/data", "OPENCLAW_GATEWAY_TOKEN")]
+    [InlineData("dragonfly", "docker.dragonflydb.io/dragonflydb/dragonfly:latest", "6379:6379", "dragonfly-data:/data",
+        "DRAGONFLY_PASSWORD")]
+    [InlineData("elasticsearch", "docker.elastic.co/elasticsearch/elasticsearch:8.19.0", "9200:9200",
+        "elasticsearch-data:/usr/share/elasticsearch/data", "ELASTIC_PASSWORD")]
+    [InlineData("rabbitmq", "rabbitmq:4-management", "15672:15672", "rabbitmq-data:/var/lib/rabbitmq",
+        "RABBITMQ_DEFAULT_PASS")]
+    [InlineData("pihole", "pihole/pihole:latest", "53:53/udp", "pihole-etc:/etc/pihole",
+        "FTLCONF_webserver_api_password")]
+    [InlineData("proxyscotch", "hoppscotch/proxyscotch:v0.1.4", "9159:9159", "PROXYSCOTCH_ALLOWED_ORIGINS",
+        "PROXYSCOTCH_TOKEN")]
+    [InlineData("wireguard-easy", "ghcr.io/wg-easy/wg-easy:latest", "51820:51820/udp", "wg-easy-data:/etc/wireguard",
+        "PASSWORD")]
+    [InlineData("tailscale-client", "tailscale/tailscale:latest", "/dev/net/tun:/dev/net/tun",
+        "tailscale-client-data:/var/lib/tailscale", "TS_AUTHKEY")]
+    [InlineData("open-webui", "ghcr.io/open-webui/open-webui:main", "3000:8080", "open-webui-data:/app/backend/data",
+        "OPENAI_API_KEY")]
+    [InlineData("openclaw", "coollabsio/openclaw:2026.2.6", "8083:8080", "openclaw-data:/data",
+        "OPENCLAW_GATEWAY_TOKEN")]
     [InlineData("n8n", "n8nio/n8n:latest", "5678:5678", "n8n-data:/home/node/.n8n", "N8N_ENCRYPTION_KEY")]
     [InlineData("gitlab", "gitlab/gitlab-ce:latest", "2222:22", "gitlab-data:/var/opt/gitlab", "GITLAB_ROOT_PASSWORD")]
-    [InlineData("grafana", "grafana/grafana-oss:latest", "3004:3000", "grafana-data:/var/lib/grafana", "GF_SECURITY_ADMIN_PASSWORD")]
+    [InlineData("grafana", "grafana/grafana-oss:latest", "3004:3000", "grafana-data:/var/lib/grafana",
+        "GF_SECURITY_ADMIN_PASSWORD")]
     public void CreatePlan_EmitsInfrastructureTemplates(
         string templateKey,
         string image,
@@ -207,7 +220,8 @@ public sealed class Phase11ServiceTemplateTests
     }
 
     [Theory]
-    [InlineData("elasticsearch-kibana", "docker.elastic.co/kibana/kibana:8.19.0", "5601:5601", "kibana-data:/usr/share/kibana/data")]
+    [InlineData("elasticsearch-kibana", "docker.elastic.co/kibana/kibana:8.19.0", "5601:5601",
+        "kibana-data:/usr/share/kibana/data")]
     [InlineData("chromadb", "chromadb/chroma:latest", "8000:8000", "chromadb-data:/data")]
     [InlineData("mediawiki", "mediawiki:latest", "8080:80", "mediawiki-images:/var/www/html/images")]
     [InlineData("qbittorrent", "lscr.io/linuxserver/qbittorrent:latest", "8080:8080", "qbittorrent-config:/config")]
@@ -215,7 +229,8 @@ public sealed class Phase11ServiceTemplateTests
     [InlineData("wordpress-without-database", "wordpress:latest", "8082:80", "wordpress-files:/var/www/html")]
     [InlineData("excalidraw", "excalidraw/excalidraw:latest", "8084:80", "http://localhost")]
     [InlineData("gitea", "gitea/gitea:latest", "3003:3000", "gitea-data:/data")]
-    [InlineData("home-assistant", "ghcr.io/home-assistant/home-assistant:stable", "8123:8123", "homeassistant-config:/config")]
+    [InlineData("home-assistant", "ghcr.io/home-assistant/home-assistant:stable", "8123:8123",
+        "homeassistant-config:/config")]
     public void CreatePlan_EmitsNoSecretApplicationTemplates(
         string templateKey,
         string image,
@@ -238,15 +253,18 @@ public sealed class Phase11ServiceTemplateTests
     }
 
     [Theory]
-    [InlineData("hoppscotch", "hoppscotch/hoppscotch:2026.2.1", "3000:80", "hoppscotch-postgres-data:/var/lib/postgresql/data")]
-    [InlineData("strapi", "elestio/strapi-production:v5.33.4", "1337:1337", "strapi-postgres-data:/var/lib/postgresql/data")]
+    [InlineData("hoppscotch", "hoppscotch/hoppscotch:2026.2.1", "3000:80",
+        "hoppscotch-postgres-data:/var/lib/postgresql/data")]
+    [InlineData("strapi", "elestio/strapi-production:v5.33.4", "1337:1337",
+        "strapi-postgres-data:/var/lib/postgresql/data")]
     [InlineData("supabase", "supabase/studio:latest", "3001:3000", "supabase-db-data:/var/lib/postgresql/data")]
     [InlineData("wordpress-mariadb", "mariadb:11", "8082:80", "mariadb-data:/var/lib/mysql")]
     [InlineData("wordpress-mysql", "mysql:8", "8082:80", "mysql-data:/var/lib/mysql")]
     [InlineData("gitea-mariadb", "mariadb:11", "3003:3000", "gitea-mariadb-data:/var/lib/mysql")]
     [InlineData("gitea-postgres", "postgres:16-alpine", "3003:3000", "gitea-postgresql-data:/var/lib/postgresql/data")]
     [InlineData("gitea-mysql", "mysql:8.0", "3003:3000", "gitea-mysql-data:/var/lib/mysql")]
-    [InlineData("grafana-postgres", "postgres:16-alpine", "3004:3000", "grafana-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("grafana-postgres", "postgres:16-alpine", "3004:3000",
+        "grafana-postgresql-data:/var/lib/postgresql/data")]
     public void CreatePlan_EmitsDatabaseBackedApplicationTemplates(
         string templateKey,
         string image,

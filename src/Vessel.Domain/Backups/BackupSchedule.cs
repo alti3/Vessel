@@ -83,7 +83,7 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
 
     private static string ValidateCron(string cronExpression)
     {
-        string value = DomainValidation.Required(cronExpression, nameof(CronExpression), 120);
+        var value = DomainValidation.Required(cronExpression, nameof(CronExpression), 120);
         if (value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 5)
             throw new DomainException("Backup schedule cron expression must contain at least five fields.");
         return value;

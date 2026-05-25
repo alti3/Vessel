@@ -5,6 +5,7 @@ using Vessel.Application.Authorization;
 using Vessel.Application.Docker;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
+using Vessel.Application.Processes;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Storage;
@@ -13,12 +14,9 @@ using Vessel.Domain.Auditing;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Common;
 using Vessel.Domain.Databases;
-using Vessel.Domain.Projects;
-using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.ValueObjects;
-using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Application.ManagedServices;
 
@@ -52,7 +50,7 @@ public sealed class ManagedDatabaseService(
     {
         Require(actorUserId, teamId, VesselPermissions.ProjectsWrite);
         DatabaseResource database = await GetDatabaseForTeamAsync(teamId, databaseId, cancellationToken);
-        string jobId = jobs.Enqueue<RunDatabaseLifecycleJob>(job =>
+        var jobId = jobs.Enqueue<RunDatabaseLifecycleJob>(job =>
             job.RunAsync(database.Id.Value, action, CancellationToken.None));
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.DatabaseLifecycleActionQueued,
             new AuditTarget("database", database.Id.Value.ToString("D")), null,
@@ -67,11 +65,12 @@ public sealed class ManagedDatabaseService(
         DatabaseLifecycleAction action,
         CancellationToken cancellationToken = default)
     {
-        DatabaseResource database = await dbContext.DatabaseResourceRepository.GetByIdAsync(databaseId, cancellationToken)
-                                    ?? throw new InvalidOperationException("Database was not found.");
+        DatabaseResource database =
+            await dbContext.DatabaseResourceRepository.GetByIdAsync(databaseId, cancellationToken)
+            ?? throw new InvalidOperationException("Database was not found.");
         Server server = dbContext.Servers.Single(server => server.Id == database.ServerId);
         TeamId teamId = ResolveTeam(database.EnvironmentId);
-        string lockKey = $"database:{database.Id.Value:D}";
+        var lockKey = $"database:{database.Id.Value:D}";
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(lockKey, TimeSpan.FromHours(1),
             TimeSpan.Zero, cancellationToken);
         if (handle is null) throw new DomainException("Another database operation is already running.");
@@ -91,7 +90,8 @@ public sealed class ManagedDatabaseService(
                     database.MarkRestarting(timeProvider.GetUtcNow());
                     await dbContext.SaveChangesAsync(cancellationToken);
                     await ComposeAsync(database, server, ["restart"], cancellationToken);
-                    database.MarkRunning(ContainerName(database), SnapshotReference(database), timeProvider.GetUtcNow());
+                    database.MarkRunning(ContainerName(database), SnapshotReference(database),
+                        timeProvider.GetUtcNow());
                     break;
                 case DatabaseLifecycleAction.Delete:
                     await ComposeAsync(database, server, ["down", "--volumes", "--remove-orphans"], cancellationToken);
@@ -107,7 +107,8 @@ public sealed class ManagedDatabaseService(
             await dbContext.SaveChangesAsync(cancellationToken);
             await auditWriter.RecordAsync(teamId, null, AuditActions.DatabaseLifecycleActionCompleted,
                 new AuditTarget("database", database.Id.Value.ToString("D")), null,
-                new Dictionary<string, object?> { ["action"] = action.ToString(), ["state"] = database.LifecycleState.ToString() },
+                new Dictionary<string, object?>
+                    { ["action"] = action.ToString(), ["state"] = database.LifecycleState.ToString() },
                 cancellationToken);
             return new DatabaseLifecycleResult(database.Id.Value, database.LifecycleState, database.HealthState,
                 $"Database {action} completed.");
@@ -138,7 +139,7 @@ public sealed class ManagedDatabaseService(
             template.Key, template.Version, JsonSerializer.Serialize(request.Inputs), timeProvider.GetUtcNow());
         await dbContext.ServiceResourceRepository.AddAsync(service, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        string jobId = jobs.Enqueue<ProvisionServiceTemplateJob>(job =>
+        var jobId = jobs.Enqueue<ProvisionServiceTemplateJob>(job =>
             job.RunAsync(service.Id.Value, CancellationToken.None));
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.ServiceCreated,
             new AuditTarget("service", service.Id.Value.ToString("D")), null,
@@ -206,11 +207,12 @@ public sealed class ManagedDatabaseService(
     {
         Require(actorUserId, teamId, VesselPermissions.ProjectsWrite);
         DatabaseResource database = await GetDatabaseForTeamAsync(teamId, databaseId, cancellationToken);
-        BackupExecution execution = BackupExecution.Queue(teamId, database.Id, null, BackupStorageKind.ObjectStorage,
+        var execution = BackupExecution.Queue(teamId, database.Id, null, BackupStorageKind.ObjectStorage,
             timeProvider.GetUtcNow());
         await dbContext.BackupExecutionRepository.AddAsync(execution, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        string jobId = jobs.Enqueue<RunBackupExecutionJob>(job => job.RunAsync(execution.Id.Value, CancellationToken.None));
+        var jobId = jobs.Enqueue<RunBackupExecutionJob>(job =>
+            job.RunAsync(execution.Id.Value, CancellationToken.None));
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.BackupQueued,
             new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
             new Dictionary<string, object?> { ["jobId"] = jobId }, cancellationToken);
@@ -224,7 +226,7 @@ public sealed class ManagedDatabaseService(
         BackupSchedule schedule = await dbContext.BackupScheduleRepository.GetByIdAsync(scheduleId, cancellationToken)
                                   ?? throw new InvalidOperationException("Backup schedule was not found.");
         if (!schedule.Enabled) throw new DomainException("Backup schedule is disabled.");
-        BackupExecution execution = BackupExecution.Queue(schedule.TeamId, schedule.DatabaseResourceId, schedule.Id,
+        var execution = BackupExecution.Queue(schedule.TeamId, schedule.DatabaseResourceId, schedule.Id,
             schedule.StorageKind, timeProvider.GetUtcNow());
         schedule.RecordRun(timeProvider.GetUtcNow());
         await dbContext.BackupExecutionRepository.AddAsync(execution, cancellationToken);
@@ -250,7 +252,7 @@ public sealed class ManagedDatabaseService(
         await dbContext.SaveChangesAsync(cancellationToken);
         try
         {
-            string credentials = await secretVault.RevealForDeploymentAsync(execution.TeamId,
+            var credentials = await secretVault.RevealForDeploymentAsync(execution.TeamId,
                 database.CredentialsReferenceId, cancellationToken);
             BackupArtifact artifact = await backupProvider.BackupAsync(database, credentials, cancellationToken);
             await objectStorage.PutAsync(new ObjectStoragePutRequest(
@@ -268,7 +270,8 @@ public sealed class ManagedDatabaseService(
             await PruneRetentionAsync(execution.TeamId, database.Id, cancellationToken);
             await auditWriter.RecordAsync(execution.TeamId, null, AuditActions.BackupCompleted,
                 new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
-                new Dictionary<string, object?> { ["databaseId"] = database.Id.Value.ToString("D") }, cancellationToken);
+                new Dictionary<string, object?> { ["databaseId"] = database.Id.Value.ToString("D") },
+                cancellationToken);
             return ToSummary(execution);
         }
         catch (Exception ex)
@@ -302,9 +305,11 @@ public sealed class ManagedDatabaseService(
                 execution.MarkRestoreValidated(timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.RestoreValidated,
             new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
-            new Dictionary<string, object?> { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
+            new Dictionary<string, object?>
+                { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
             cancellationToken);
         return new RestoreValidationResult(execution.Id.Value, target.Id.Value, dryRun,
             dryRun
@@ -333,15 +338,16 @@ public sealed class ManagedDatabaseService(
         {
             await using Stream artifact = await objectStorage.OpenReadAsync(
                 new ObjectStorageKey(execution.ArtifactBucket!, execution.ArtifactKey!), cancellationToken);
-            string credentials = await secretVault.RevealForDeploymentAsync(teamId, target.CredentialsReferenceId,
+            var credentials = await secretVault.RevealForDeploymentAsync(teamId, target.CredentialsReferenceId,
                 cancellationToken);
-            string output = await backupProvider.RestoreAsync(target, credentials, artifact, dryRun, cancellationToken);
+            var output = await backupProvider.RestoreAsync(target, credentials, artifact, dryRun, cancellationToken);
             _ = redactor.Redact(output);
             if (!dryRun) execution.MarkRestoreSucceeded(timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken);
             await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.RestoreCompleted,
                 new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
-                new Dictionary<string, object?> { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
+                new Dictionary<string, object?>
+                    { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
                 cancellationToken);
             return ToSummary(execution);
         }
@@ -357,7 +363,7 @@ public sealed class ManagedDatabaseService(
     {
         database.MarkProvisioning(timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
-        string credentials = await secretVault.RevealForDeploymentAsync(teamId: ResolveTeam(database.EnvironmentId),
+        var credentials = await secretVault.RevealForDeploymentAsync(ResolveTeam(database.EnvironmentId),
             database.CredentialsReferenceId, cancellationToken);
         DatabaseProvisioningPlan plan = CreateDatabasePlan(database, credentials);
         ManagedServiceWorkspace workspace = await workspaces.PrepareDatabaseAsync(database.Id, cancellationToken);
@@ -374,7 +380,7 @@ public sealed class ManagedDatabaseService(
         CancellationToken cancellationToken)
     {
         ManagedServiceWorkspace workspace = await workspaces.PrepareDatabaseAsync(database.Id, cancellationToken);
-        string credentials = await secretVault.RevealForDeploymentAsync(ResolveTeam(database.EnvironmentId),
+        var credentials = await secretVault.RevealForDeploymentAsync(ResolveTeam(database.EnvironmentId),
             database.CredentialsReferenceId, cancellationToken);
         DatabaseProvisioningPlan plan = CreateDatabasePlan(database, credentials);
         await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, false,
@@ -392,10 +398,11 @@ public sealed class ManagedDatabaseService(
         var target = new ContainerRuntimeTarget(server.Runtime == ContainerRuntimeKind.Podman
             ? ContainerRuntimeProvider.Podman
             : ContainerRuntimeProvider.Docker);
-        var commandArgs = new List<string> { "--project-name", projectName, "--project-directory", workspace.RootDirectory };
+        var commandArgs = new List<string>
+            { "--project-name", projectName, "--project-directory", workspace.RootDirectory };
         commandArgs.AddRange(args);
-        await foreach (var _ in runtime.RunComposeAsync(target,
-                               new ComposeCommand(workspace.RootDirectory, [workspace.ComposeFilePath], commandArgs,
+        await foreach (ProcessOutputLine _ in runtime.RunComposeAsync(target,
+                           new ComposeCommand(workspace.RootDirectory, [workspace.ComposeFilePath], commandArgs,
                                workspace.EnvironmentFilePath, TimeSpan.FromMinutes(20)), cancellationToken))
         {
         }
@@ -403,19 +410,20 @@ public sealed class ManagedDatabaseService(
 
     private DatabaseProvisioningPlan CreateDatabasePlan(DatabaseResource database, string credentials)
     {
-        string service = Slug(database.Name.Value);
-        string containerName = ContainerName(database);
-        string image = database.Engine switch
+        var service = Slug(database.Name.Value);
+        var containerName = ContainerName(database);
+        var image = database.Engine switch
         {
             DatabaseEngine.PostgreSql => $"postgres:{database.Version.Value}",
             DatabaseEngine.MySql => $"mysql:{database.Version.Value}",
             DatabaseEngine.MariaDb => $"mariadb:{database.Version.Value}",
             DatabaseEngine.Redis => $"redis:{database.Version.Value}",
-            _ => throw new DomainException("Managed database provisioning currently supports PostgreSQL, MySQL, MariaDB, and Redis.")
+            _ => throw new DomainException(
+                "Managed database provisioning currently supports PostgreSQL, MySQL, MariaDB, and Redis.")
         };
-        string passwordKey = database.Engine == DatabaseEngine.Redis ? "REDIS_PASSWORD" :
+        var passwordKey = database.Engine == DatabaseEngine.Redis ? "REDIS_PASSWORD" :
             database.Engine == DatabaseEngine.PostgreSql ? "POSTGRES_PASSWORD" : "MYSQL_ROOT_PASSWORD";
-        string mountPath = database.Storage.MountPath;
+        var mountPath = database.Storage.MountPath;
         var builder = new StringBuilder();
         builder.AppendLine("services:");
         builder.AppendLine($"  {service}:");
@@ -463,7 +471,7 @@ public sealed class ManagedDatabaseService(
             .Where(item => item.TeamId == teamId && item.DatabaseResourceId == databaseId && item.Enabled)
             .OrderByDescending(item => item.CreatedAt)
             .FirstOrDefault();
-        int retention = schedule?.RetentionCount ?? 10;
+        var retention = schedule?.RetentionCount ?? 10;
         BackupExecution[] stale = dbContext.BackupExecutions
             .Where(item => item.TeamId == teamId
                            && item.DatabaseResourceId == databaseId
@@ -489,8 +497,9 @@ public sealed class ManagedDatabaseService(
     private async Task<DatabaseResource> GetDatabaseForTeamAsync(TeamId teamId, DatabaseResourceId databaseId,
         CancellationToken cancellationToken)
     {
-        DatabaseResource database = await dbContext.DatabaseResourceRepository.GetByIdAsync(databaseId, cancellationToken)
-                                    ?? throw new InvalidOperationException("Database was not found.");
+        DatabaseResource database =
+            await dbContext.DatabaseResourceRepository.GetByIdAsync(databaseId, cancellationToken)
+            ?? throw new InvalidOperationException("Database was not found.");
         if (ResolveTeam(database.EnvironmentId) != teamId)
             throw new UnauthorizedAccessException("Database is outside the active team.");
         return database;
@@ -499,8 +508,9 @@ public sealed class ManagedDatabaseService(
     private async Task<BackupExecution> GetBackupForTeamAsync(TeamId teamId, BackupExecutionId executionId,
         CancellationToken cancellationToken)
     {
-        BackupExecution execution = await dbContext.BackupExecutionRepository.GetByIdAsync(executionId, cancellationToken)
-                                    ?? throw new InvalidOperationException("Backup execution was not found.");
+        BackupExecution execution =
+            await dbContext.BackupExecutionRepository.GetByIdAsync(executionId, cancellationToken)
+            ?? throw new InvalidOperationException("Backup execution was not found.");
         if (execution.TeamId != teamId)
             throw new UnauthorizedAccessException("Backup is outside the active team.");
         return execution;
@@ -535,7 +545,8 @@ public sealed class ManagedDatabaseService(
 
     private void EnsureEnvironmentBelongsToProject(EnvironmentId environmentId, ProjectId projectId)
     {
-        if (!dbContext.Environments.Any(environment => environment.Id == environmentId && environment.ProjectId == projectId))
+        if (!dbContext.Environments.Any(environment =>
+                environment.Id == environmentId && environment.ProjectId == projectId))
             throw new DomainException("Environment does not belong to the selected project.");
     }
 

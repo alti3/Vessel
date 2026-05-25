@@ -210,8 +210,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
     public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
-        ApplicationWebhookConfigurationRepository
-    { get; }
+        ApplicationWebhookConfigurationRepository { get; }
 
     public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
 
@@ -664,7 +663,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(schedule => schedule.StorageKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(schedule => schedule.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(schedule => schedule.DomainEvents);
-            builder.HasIndex(schedule => new { schedule.TeamId, schedule.DatabaseResourceId, schedule.Name }).IsUnique();
+            builder.HasIndex(schedule => new { schedule.TeamId, schedule.DatabaseResourceId, schedule.Name })
+                .IsUnique();
             builder.HasOne<Team>()
                 .WithMany()
                 .HasForeignKey(schedule => schedule.TeamId)

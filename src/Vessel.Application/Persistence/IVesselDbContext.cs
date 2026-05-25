@@ -120,8 +120,7 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
     IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
-        ApplicationWebhookConfigurationRepository
-    { get; }
+        ApplicationWebhookConfigurationRepository { get; }
 
     IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
 

@@ -83,7 +83,7 @@ public sealed class ApplicationWebhookConfigurationService(
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.WebhookConfigured,
             new AuditTarget("application", applicationId.Value.ToString("D")), null,
             new Dictionary<string, object?>
-            { ["provider"] = request.Provider.ToString(), ["enabled"] = request.Enabled },
+                { ["provider"] = request.Provider.ToString(), ["enabled"] = request.Enabled },
             cancellationToken);
 
         return new ApplicationWebhookConfigurationSummary(
