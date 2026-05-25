@@ -265,7 +265,7 @@ public sealed class DeploymentRunner(
         var imageName = $"vessel/{application.Id.Value:N}:{deploymentId.Value:N}";
         var networkName = $"vessel-{server.Id.Value:N}"[..39];
         var port = application.RuntimeConfiguration.ExposedPort?.Value ?? 8080;
-        var healthPath = application.RuntimeConfiguration.HealthCheckPath.StartsWith("/", StringComparison.Ordinal)
+        var healthPath = application.RuntimeConfiguration.HealthCheckPath.StartsWith('/')
             ? application.RuntimeConfiguration.HealthCheckPath
             : "/" + application.RuntimeConfiguration.HealthCheckPath;
         var healthUrl = $"http://localhost:{port}{healthPath}";

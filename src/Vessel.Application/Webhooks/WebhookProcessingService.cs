@@ -140,7 +140,7 @@ public sealed class WebhookProcessingService(
                 await auditWriter.RecordAsync(teamId, null, AuditActions.PreviewArchived,
                     new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
                     new Dictionary<string, object?>
-                        { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
+                    { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
                     cancellationToken);
                 return Result(webhookEvent, "Preview archived.");
             }
@@ -171,7 +171,7 @@ public sealed class WebhookProcessingService(
             await auditWriter.RecordAsync(teamId, null, AuditActions.PreviewOpened,
                 new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
                 new Dictionary<string, object?>
-                    { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
+                { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
                 cancellationToken);
             await AuditProcessedAsync(teamId, application.Id, webhookEvent, deployment.Id, preview.Id,
                 cancellationToken);

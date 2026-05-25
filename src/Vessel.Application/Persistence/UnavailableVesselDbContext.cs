@@ -107,14 +107,16 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
         new UnavailableRepository<WebhookEvent, WebhookEventId>();
 
     public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
-        ApplicationWebhookConfigurationRepository { get; } =
+        ApplicationWebhookConfigurationRepository
+    { get; } =
         new UnavailableRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>();
 
     public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; } =
         new UnavailableRepository<ApplicationPreview, ApplicationPreviewId>();
 
     public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>
-        ProxyConfigurationVersionRepository { get; } =
+        ProxyConfigurationVersionRepository
+    { get; } =
         new UnavailableRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>();
 
     public IRepository<Certificate, CertificateId> CertificateRepository { get; } =

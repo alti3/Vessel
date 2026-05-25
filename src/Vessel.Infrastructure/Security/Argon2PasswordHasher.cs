@@ -13,6 +13,12 @@ internal sealed class Argon2PasswordHasher : IPasswordHasher
 {
     private const int HashSizeInBytes = 32;
     private const int SaltSizeInBytes = 16;
+    private static readonly Action<ILogger, Exception?> LogPasswordHashParseFailure =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(1, nameof(LogPasswordHashParseFailure)),
+            "Password verification failed because the stored hash could not be parsed.");
+
     private readonly int _degreeOfParallelism;
     private readonly int _iterations;
     private readonly ILogger<Argon2PasswordHasher> _logger;
@@ -61,7 +67,7 @@ internal sealed class Argon2PasswordHasher : IPasswordHasher
         }
         catch (Exception exception) when (exception is FormatException or ArgumentException or KeyNotFoundException)
         {
-            _logger.LogWarning("Password verification failed because the stored hash could not be parsed.");
+            LogPasswordHashParseFailure(_logger, null);
             return false;
         }
     }
