@@ -37,7 +37,7 @@ public sealed class TeamsController : ControllerBase
         var selectedTeamId = new TeamId(teamId);
         if (!_teamService.IsTeamMember(User.GetUserId(), selectedTeamId)) return Forbid();
 
-        List<Claim> claims = User.Claims
+        var claims = User.Claims
             .Where(claim => claim.Type != VesselClaimTypes.TeamId)
             .Append(new Claim(VesselClaimTypes.TeamId, selectedTeamId.Value.ToString("D")))
             .ToList();
@@ -71,7 +71,7 @@ public sealed class TeamsController : ControllerBase
         AcceptInvitationRequest request,
         CancellationToken cancellationToken)
     {
-        bool accepted = await _teamService.AcceptInvitationAsync(
+        var accepted = await _teamService.AcceptInvitationAsync(
             User.GetUserId(),
             request.Token,
             CorrelationIdMiddleware.GetCorrelationId(HttpContext),

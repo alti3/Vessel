@@ -10,7 +10,7 @@
             </div>
         </div>
         <button class="command-button" type="button" aria-label="Open command center">
-            <Icon Name="search" CssClass="size-4" />
+            <Icon Name="search" CssClass="size-4"/>
             <span>Command Center</span>
             <kbd>/</kbd>
         </button>
@@ -19,26 +19,26 @@
             <strong>Personal</strong>
         </div>
         <nav class="nav-list" aria-label="Primary">
-            <NavItem Href="/" IconName="home" Label="Dashboard" Match="NavLinkMatch.All" />
-            <NavItem Href="/projects" IconName="folder" Label="Projects" />
-            <NavItem Href="/servers" IconName="server" Label="Servers" />
-            <NavItem Href="/sources" IconName="key" Label="Sources" />
-            <NavItem Href="/destinations" IconName="server" Label="Destinations" />
-            <NavItem Href="/storages" IconName="database" Label="S3 Storages" />
-            <NavItem Href="/shared-variables" IconName="settings" Label="Shared Variables" />
-            <NavItem Href="/notifications" IconName="bell" Label="Notifications" />
-            <NavItem Href="/security/keys" IconName="shield" Label="Keys & Tokens" />
-            <NavItem Href="/tags" IconName="tag" Label="Tags" />
-            <NavItem Href="/terminal" IconName="terminal" Label="Terminal" />
-            <NavItem Href="/deployments" IconName="terminal" Label="Deployments" />
+            <NavItem Href="/" IconName="home" Label="Dashboard" Match="NavLinkMatch.All"/>
+            <NavItem Href="/projects" IconName="folder" Label="Projects"/>
+            <NavItem Href="/servers" IconName="server" Label="Servers"/>
+            <NavItem Href="/sources" IconName="key" Label="Sources"/>
+            <NavItem Href="/destinations" IconName="server" Label="Destinations"/>
+            <NavItem Href="/storages" IconName="database" Label="S3 Storages"/>
+            <NavItem Href="/shared-variables" IconName="settings" Label="Shared Variables"/>
+            <NavItem Href="/notifications" IconName="bell" Label="Notifications"/>
+            <NavItem Href="/security/keys" IconName="shield" Label="Keys & Tokens"/>
+            <NavItem Href="/tags" IconName="tag" Label="Tags"/>
+            <NavItem Href="/terminal" IconName="terminal" Label="Terminal"/>
+            <NavItem Href="/deployments" IconName="terminal" Label="Deployments"/>
         </nav>
         <nav class="nav-list nav-list-secondary" aria-label="Account">
-            <NavItem Href="/teams" IconName="users" Label="Teams" />
-            <NavItem Href="/profile" IconName="key" Label="Profile" />
-            <NavItem Href="/settings" IconName="settings" Label="Settings" />
+            <NavItem Href="/teams" IconName="users" Label="Teams"/>
+            <NavItem Href="/profile" IconName="key" Label="Profile"/>
+            <NavItem Href="/settings" IconName="settings" Label="Settings"/>
         </nav>
         <div class="sidebar-footer">
-            <StatusBadge Text="Host-native" Tone="info" />
+            <StatusBadge Text="Host-native" Tone="info"/>
             <form method="post" action="/api/auth/logout">
                 <button class="button button-secondary button-full" type="submit">Logout</button>
             </form>
@@ -53,16 +53,16 @@
     <div class="content-shell">
         <header class="topbar">
             <button class="icon-button mobile-menu" type="button" @onclick="ToggleSidebar" aria-label="Open navigation">
-                <Icon Name="menu" />
+                <Icon Name="menu"/>
             </button>
             <a class="mobile-brand" href="/">Vessel</a>
             <div class="topbar-actions">
                 <button class="command-button command-button-top" type="button" aria-label="Open command center">
-                    <Icon Name="search" CssClass="size-4" />
+                    <Icon Name="search" CssClass="size-4"/>
                     <span>Search resources</span>
                     <kbd>/</kbd>
                 </button>
-                <StatusBadge Text="Alpha" Tone="warning" />
+                <StatusBadge Text="Alpha" Tone="warning"/>
             </div>
         </header>
         <main class="page-shell">
@@ -80,4 +80,5 @@
     {
         SidebarOpen = !SidebarOpen;
     }
+
 }

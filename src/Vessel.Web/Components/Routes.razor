@@ -3,7 +3,7 @@
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
                 <NotAuthorized>
-                    <RedirectToLogin />
+                    <RedirectToLogin/>
                 </NotAuthorized>
                 <Authorizing>
                     <div class="auth-shell">
@@ -11,11 +11,12 @@
                     </div>
                 </Authorizing>
             </AuthorizeRouteView>
-            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            <FocusOnNavigate RouteData="@routeData" Selector="h1"/>
         </Found>
         <NotFound>
             <LayoutView Layout="@typeof(MainLayout)">
-                <EmptyState Title="Page not found" Description="The requested Vessel screen does not exist." ActionHref="/" ActionText="Open dashboard" />
+                <EmptyState Title="Page not found" Description="The requested Vessel screen does not exist."
+                            ActionHref="/" ActionText="Open dashboard"/>
             </LayoutView>
         </NotFound>
     </Router>

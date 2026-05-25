@@ -9,11 +9,12 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
 {
     private readonly string _root = Path.Combine(AppContext.BaseDirectory, "storage", "deployments");
 
-    public Task<DeploymentWorkspace> PrepareAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
+    public Task<DeploymentWorkspace> PrepareAsync(DeploymentId deploymentId,
+        CancellationToken cancellationToken = default)
     {
-        string root = paths.EnsureOwnedPath(_root, Path.Combine(_root, deploymentId.Value.ToString("D")));
+        var root = paths.EnsureOwnedPath(_root, Path.Combine(_root, deploymentId.Value.ToString("D")));
         Directory.CreateDirectory(root);
-        string repository = paths.EnsureOwnedPath(root, Path.Combine(root, "repository"));
+        var repository = paths.EnsureOwnedPath(root, Path.Combine(root, "repository"));
         Directory.CreateDirectory(repository);
 
         return Task.FromResult(new DeploymentWorkspace(
@@ -30,12 +31,11 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
         bool restrictToOwner,
         CancellationToken cancellationToken = default)
     {
-        string path = paths.EnsureOwnedRelativePath(rootDirectory, relativePath);
+        var path = paths.EnsureOwnedRelativePath(rootDirectory, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await File.WriteAllTextAsync(path, contents, new UTF8Encoding(false), cancellationToken);
 
         if (restrictToOwner && !OperatingSystem.IsWindows())
-        {
             try
             {
                 File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
@@ -43,7 +43,6 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
             catch (PlatformNotSupportedException)
             {
             }
-        }
     }
 
     public Task<string> ReadTextAsync(
@@ -51,16 +50,16 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
         string relativePath,
         CancellationToken cancellationToken = default)
     {
-        string path = paths.EnsureOwnedRelativePath(rootDirectory, relativePath);
+        var path = paths.EnsureOwnedRelativePath(rootDirectory, relativePath);
         return File.ReadAllTextAsync(path, cancellationToken);
     }
 
     public Task CleanupAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
     {
-        string root = paths.EnsureOwnedPath(_root, Path.Combine(_root, deploymentId.Value.ToString("D")));
-        string repository = Path.Combine(root, "repository");
+        var root = paths.EnsureOwnedPath(_root, Path.Combine(_root, deploymentId.Value.ToString("D")));
+        var repository = Path.Combine(root, "repository");
         if (Directory.Exists(repository))
-            Directory.Delete(repository, recursive: true);
+            Directory.Delete(repository, true);
 
         return Task.CompletedTask;
     }

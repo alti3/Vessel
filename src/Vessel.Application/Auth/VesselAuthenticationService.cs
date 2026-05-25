@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Options;
 using Vessel.Application.Auditing;
 using Vessel.Application.Persistence;
@@ -49,9 +50,9 @@ public sealed class VesselAuthenticationService
             throw new InvalidOperationException("A user with this email already exists.");
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        User user = User.Create(new DisplayName(name), emailAddress, now);
-        user.SetPasswordHash(_passwordHasher.HashPassword(password), forcePasswordReset: false, now);
-        Team team = Team.Create(new DisplayName($"{user.Name.Value}'s Team"), user.Id, isPersonal: true, now);
+        var user = User.Create(new DisplayName(name), emailAddress, now);
+        user.SetPasswordHash(_passwordHasher.HashPassword(password), false, now);
+        var team = Team.Create(new DisplayName($"{user.Name.Value}'s Team"), user.Id, true, now);
 
         await _unitOfWork.UserRepository.AddAsync(user, cancellationToken);
         await _unitOfWork.TeamRepository.AddAsync(team, cancellationToken);
@@ -66,7 +67,7 @@ public sealed class VesselAuthenticationService
             new Dictionary<string, object?> { ["email"] = user.Email.Value },
             cancellationToken);
 
-        return new AuthenticatedUser(user.Id, team.Id, user.Name.Value, user.Email.Value, TwoFactorRequired: false);
+        return new AuthenticatedUser(user.Id, team.Id, user.Name.Value, user.Email.Value, false);
     }
 
     public async Task<AuthenticatedUser?> LoginAsync(
@@ -105,12 +106,10 @@ public sealed class VesselAuthenticationService
         if (user.TwoFactorConfirmedAt.HasValue)
         {
             if (string.IsNullOrWhiteSpace(twoFactorCode))
-            {
-                return new AuthenticatedUser(user.Id, default, user.Name.Value, user.Email.Value, TwoFactorRequired: true);
-            }
+                return new AuthenticatedUser(user.Id, default, user.Name.Value, user.Email.Value, true);
 
-            bool validTotp = _totpService.VerifyCode(user.TwoFactorSecret!, twoFactorCode, now);
-            bool validRecoveryCode = validTotp || VerifyAndConsumeRecoveryCode(user, twoFactorCode, now);
+            var validTotp = _totpService.VerifyCode(user.TwoFactorSecret!, twoFactorCode, now);
+            var validRecoveryCode = validTotp || VerifyAndConsumeRecoveryCode(user, twoFactorCode, now);
             if (!validRecoveryCode)
             {
                 await AuditFailedLoginAsync(emailAddress.Value, correlationId, cancellationToken);
@@ -131,7 +130,7 @@ public sealed class VesselAuthenticationService
             new Dictionary<string, object?> { ["email"] = user.Email.Value },
             cancellationToken);
 
-        return new AuthenticatedUser(user.Id, team.Id, user.Name.Value, user.Email.Value, TwoFactorRequired: false);
+        return new AuthenticatedUser(user.Id, team.Id, user.Name.Value, user.Email.Value, false);
     }
 
     public async Task RequestPasswordResetAsync(
@@ -144,7 +143,7 @@ public sealed class VesselAuthenticationService
         User? user = _unitOfWork.Users.SingleOrDefault(candidate => candidate.Email == emailAddress);
         if (user is not null)
         {
-            string token = _tokenGenerator.GenerateUrlSafeToken();
+            var token = _tokenGenerator.GenerateUrlSafeToken();
             user.StartPasswordReset(
                 TokenHashing.Sha256(token),
                 now.AddMinutes(Math.Max(5, _options.PasswordResetTokenMinutes)),
@@ -173,7 +172,7 @@ public sealed class VesselAuthenticationService
         PasswordPolicy.Validate(newPassword);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         var emailAddress = new EmailAddress(email);
-        string tokenHash = TokenHashing.Sha256(token);
+        var tokenHash = TokenHashing.Sha256(token);
         User? user = _unitOfWork.Users.SingleOrDefault(candidate => candidate.Email == emailAddress);
         if (user?.PasswordResetTokenHash is null
             || user.PasswordResetTokenExpiresAt is null
@@ -181,7 +180,7 @@ public sealed class VesselAuthenticationService
             || !FixedTimeEquals(user.PasswordResetTokenHash, tokenHash))
             return false;
 
-        user.SetPasswordHash(_passwordHasher.HashPassword(newPassword), forcePasswordReset: false, now);
+        user.SetPasswordHash(_passwordHasher.HashPassword(newPassword), false, now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditWriter.RecordAsync(
@@ -203,7 +202,7 @@ public sealed class VesselAuthenticationService
     {
         User user = await GetUserAsync(userId, cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        string secret = _totpService.GenerateSecret();
+        var secret = _totpService.GenerateSecret();
         user.StageTwoFactorSecret(secret, now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -276,7 +275,7 @@ public sealed class VesselAuthenticationService
         if (personalTeam is not null) return personalTeam;
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        Team team = Team.Create(new DisplayName($"{user.Name.Value}'s Team"), user.Id, isPersonal: true, now);
+        var team = Team.Create(new DisplayName($"{user.Name.Value}'s Team"), user.Id, true, now);
         _unitOfWork.TeamRepository.AddAsync(team).GetAwaiter().GetResult();
         return team;
     }
@@ -306,13 +305,13 @@ public sealed class VesselAuthenticationService
     {
         if (string.IsNullOrWhiteSpace(user.TwoFactorRecoveryCodeHashes)) return false;
 
-        string hash = TokenHashing.Sha256(recoveryCode);
-        string[] hashes = user.TwoFactorRecoveryCodeHashes
+        var hash = TokenHashing.Sha256(recoveryCode);
+        var hashes = user.TwoFactorRecoveryCodeHashes
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         if (!hashes.Any(candidate => FixedTimeEquals(candidate, hash))) return false;
 
-        string updated = string.Join('\n', hashes.Where(candidate => !FixedTimeEquals(candidate, hash)));
+        var updated = string.Join('\n', hashes.Where(candidate => !FixedTimeEquals(candidate, hash)));
         user.ReplaceTwoFactorRecoveryCodeHashes(updated, now);
         return true;
     }
@@ -325,7 +324,7 @@ public sealed class VesselAuthenticationService
     private static bool FixedTimeEquals(string left, string right)
     {
         return CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.ASCII.GetBytes(left),
-            System.Text.Encoding.ASCII.GetBytes(right));
+            Encoding.ASCII.GetBytes(left),
+            Encoding.ASCII.GetBytes(right));
     }
 }

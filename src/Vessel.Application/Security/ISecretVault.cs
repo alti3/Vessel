@@ -1,5 +1,6 @@
 using Vessel.Domain;
 using Vessel.Domain.Secrets;
+using ApplicationId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Security;
 
@@ -35,5 +36,5 @@ public sealed record SecretTarget(
     ProjectId? ProjectId = null,
     EnvironmentId? EnvironmentId = null,
     ServerId? ServerId = null,
-    Vessel.Domain.ApplicationId? ApplicationId = null,
+    ApplicationId? ApplicationId = null,
     DatabaseResourceId? DatabaseResourceId = null);

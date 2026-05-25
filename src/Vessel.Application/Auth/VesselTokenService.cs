@@ -34,8 +34,8 @@ public sealed class VesselTokenService
         CancellationToken cancellationToken = default)
     {
         EnsureTeamMember(userId, teamId);
-        string serializedScopes = TokenScopeMapper.Serialize(scopes);
-        string plainTextToken = _tokenGenerator.GenerateUrlSafeToken(30);
+        var serializedScopes = TokenScopeMapper.Serialize(scopes);
+        var plainTextToken = _tokenGenerator.GenerateUrlSafeToken(30);
         var token = PersonalAccessToken.Create(
             userId,
             teamId,
@@ -111,7 +111,7 @@ public sealed class VesselTokenService
         string presentedToken,
         CancellationToken cancellationToken = default)
     {
-        string[] parts = presentedToken.Split('|', 2, StringSplitOptions.TrimEntries);
+        var parts = presentedToken.Split('|', 2, StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || !Guid.TryParse(parts[0], out Guid tokenGuid))
             return Failed();
 
@@ -121,7 +121,7 @@ public sealed class VesselTokenService
             cancellationToken);
         if (token is null || !token.IsActive(DateTimeOffset.UtcNow)) return Failed();
 
-        string hash = TokenHashing.Sha256(parts[1]);
+        var hash = TokenHashing.Sha256(parts[1]);
         if (!string.Equals(token.TokenHash, hash, StringComparison.Ordinal)) return Failed();
 
         User? user = await _unitOfWork.UserRepository.GetByIdAsync(token.UserId, cancellationToken);

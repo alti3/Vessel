@@ -13,6 +13,7 @@ using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.ValueObjects;
+using ApplicationId = Vessel.Domain.ApplicationId;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Application.Resources;
@@ -67,7 +68,8 @@ public sealed class ResourceManagementService(
         await dbContext.ProjectRepository.AddAsync(project, cancellationToken);
         await dbContext.EnvironmentRepository.AddAsync(production, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.ProjectCreated, "project", project.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.ProjectCreated, "project", project.Id.Value,
+            cancellationToken);
 
         return GetProject(actorUserId, teamId, project.Id);
     }
@@ -83,7 +85,8 @@ public sealed class ResourceManagementService(
         Project project = await GetRequiredAsync(dbContext.ProjectRepository, projectId, cancellationToken);
         project.UpdateDetails(new ResourceName(request.Name), ToDescription(request.Description), Now());
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.ProjectUpdated, "project", project.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.ProjectUpdated, "project", project.Id.Value,
+            cancellationToken);
 
         return GetProject(actorUserId, teamId, projectId);
     }
@@ -98,7 +101,8 @@ public sealed class ResourceManagementService(
         Project project = await GetRequiredAsync(dbContext.ProjectRepository, projectId, cancellationToken);
         project.Archive(Now());
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.ProjectArchived, "project", project.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.ProjectArchived, "project", project.Id.Value,
+            cancellationToken);
     }
 
     public IReadOnlyList<EnvironmentSummary> ListEnvironments(UserId actorUserId, TeamId teamId, ProjectId projectId)
@@ -130,7 +134,8 @@ public sealed class ResourceManagementService(
         environment.Update(new Slug(request.Name), request.Kind, ToDescription(request.Description), Now());
         await dbContext.EnvironmentRepository.AddAsync(environment, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentCreated, "environment", environment.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentCreated, "environment", environment.Id.Value,
+            cancellationToken);
 
         return ToSummary(environment);
     }
@@ -142,11 +147,13 @@ public sealed class ResourceManagementService(
         UpdateEnvironmentRequest request,
         CancellationToken cancellationToken = default)
     {
-        EnvironmentEntity environment = await GetRequiredAsync(dbContext.EnvironmentRepository, environmentId, cancellationToken);
+        EnvironmentEntity environment =
+            await GetRequiredAsync(dbContext.EnvironmentRepository, environmentId, cancellationToken);
         RequireProject(actorUserId, teamId, environment.ProjectId, VesselPermissions.ProjectsWrite);
         environment.Update(new Slug(request.Name), request.Kind, ToDescription(request.Description), Now());
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentUpdated, "environment", environment.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentUpdated, "environment", environment.Id.Value,
+            cancellationToken);
 
         return ToSummary(environment);
     }
@@ -157,7 +164,8 @@ public sealed class ResourceManagementService(
         EnvironmentId environmentId,
         CancellationToken cancellationToken = default)
     {
-        EnvironmentEntity environment = await GetRequiredAsync(dbContext.EnvironmentRepository, environmentId, cancellationToken);
+        EnvironmentEntity environment =
+            await GetRequiredAsync(dbContext.EnvironmentRepository, environmentId, cancellationToken);
         RequireProject(actorUserId, teamId, environment.ProjectId, VesselPermissions.ProjectsWrite);
         if (environment.Kind == EnvironmentKind.Production)
             throw new InvalidOperationException("Production environments cannot be deleted.");
@@ -167,7 +175,8 @@ public sealed class ResourceManagementService(
 
         dbContext.EnvironmentRepository.Remove(environment);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentDeleted, "environment", environment.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentDeleted, "environment", environment.Id.Value,
+            cancellationToken);
     }
 
     public IReadOnlyList<ServerSummary> ListServers(UserId actorUserId, TeamId teamId)
@@ -189,9 +198,11 @@ public sealed class ResourceManagementService(
     {
         Require(actorUserId, teamId, VesselPermissions.ServersWrite);
         DateTimeOffset now = Now();
-        var server = Server.Create(teamId, new ResourceName(request.Name), ToServerAddress(request.Host, request.Port, request.User),
+        var server = Server.Create(teamId, new ResourceName(request.Name),
+            ToServerAddress(request.Host, request.Port, request.User),
             request.ConnectionType, request.Runtime, now, ToDescription(request.Description));
-        server.UpdateSettings(server.Name, server.Description, server.Address, request.ConnectionType, request.Runtime, request.Labels, now);
+        server.UpdateSettings(server.Name, server.Description, server.Address, request.ConnectionType, request.Runtime,
+            request.Labels, now);
         await dbContext.ServerRepository.AddAsync(server, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.ServerCreated, "server", server.Id.Value, cancellationToken);
@@ -212,12 +223,15 @@ public sealed class ResourceManagementService(
         var snapshot = ServerStatusSnapshot.Create(server.Id, server.Status, null, null, null, 0, true, true, now);
         await dbContext.ServerStatusSnapshotRepository.AddAsync(snapshot, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.ServerConnectivityChecked, "server", server.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.ServerConnectivityChecked, "server", server.Id.Value,
+            cancellationToken);
 
-        return new ServerConnectivityResult(server.Id.Value, true, server.Runtime, "Server record is valid. Runtime probing is deferred to deployment/runtime phases.", now);
+        return new ServerConnectivityResult(server.Id.Value, true, server.Runtime,
+            "Server record is valid. Runtime probing is deferred to deployment/runtime phases.", now);
     }
 
-    public IReadOnlyList<ServerStatusSnapshotSummary> ListServerSnapshots(UserId actorUserId, TeamId teamId, ServerId serverId)
+    public IReadOnlyList<ServerStatusSnapshotSummary> ListServerSnapshots(UserId actorUserId, TeamId teamId,
+        ServerId serverId)
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersRead);
 
@@ -225,7 +239,8 @@ public sealed class ResourceManagementService(
             .Where(snapshot => snapshot.ServerId == serverId)
             .OrderByDescending(snapshot => snapshot.CreatedAt)
             .Take(20)
-            .Select(snapshot => new ServerStatusSnapshotSummary(snapshot.Id.Value, snapshot.ServerId.Value, snapshot.Status,
+            .Select(snapshot => new ServerStatusSnapshotSummary(snapshot.Id.Value, snapshot.ServerId.Value,
+                snapshot.Status,
                 snapshot.CpuLoadPercent, snapshot.MemoryUsedBytes, snapshot.DiskUsedBytes, snapshot.RunningContainers,
                 snapshot.ProxyHealthy, snapshot.CertificatesHealthy, snapshot.CreatedAt))
             .ToArray();
@@ -251,17 +266,19 @@ public sealed class ResourceManagementService(
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
 
         DateTimeOffset now = Now();
-        var application = Domain.Applications.Application.Create(environmentId, serverId, new ResourceName(request.Name),
+        var application = Domain.Applications.Application.Create(environmentId, serverId,
+            new ResourceName(request.Name),
             new GitSource(new RepositoryUrl(request.RepositoryUrl), request.Branch),
             BuildConfig(request.BuildPack, request.BaseDirectory, request.DockerfilePath), now);
         application.UpdateSettings(application.Name, ToDescription(request.Description), application.GitSource,
             application.BuildConfiguration, RuntimeConfig(request.ExposedPort), DeploymentSettings.Default, now);
-        foreach (string domain in request.Domains.Where(domain => !string.IsNullOrWhiteSpace(domain)))
+        foreach (var domain in request.Domains.Where(domain => !string.IsNullOrWhiteSpace(domain)))
             application.AddDomain(new DomainName(domain), now);
 
         await dbContext.ApplicationRepository.AddAsync(application, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.ApplicationCreated, "application", application.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.ApplicationCreated, "application", application.Id.Value,
+            cancellationToken);
 
         return ToSummary(application);
     }
@@ -284,13 +301,17 @@ public sealed class ResourceManagementService(
         RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsWrite);
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ProjectsWrite);
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
-        SecretReference secret = await secretVault.StoreAsync(teamId, SecretScope.Database, $"{request.Name}:credentials",
-            request.Credentials, SecretPolicy.Default, new SecretTarget(projectId, environmentId, serverId), cancellationToken);
+        SecretReference secret = await secretVault.StoreAsync(teamId, SecretScope.Database,
+            $"{request.Name}:credentials",
+            request.Credentials, SecretPolicy.Default, new SecretTarget(projectId, environmentId, serverId),
+            cancellationToken);
         var database = DatabaseResource.Create(environmentId, serverId, new ResourceName(request.Name), request.Engine,
-            new VersionLabel(request.Version), new StorageConfiguration(request.VolumeName, request.MountPath), secret.Id, Now());
+            new VersionLabel(request.Version), new StorageConfiguration(request.VolumeName, request.MountPath),
+            secret.Id, Now());
         await dbContext.DatabaseResourceRepository.AddAsync(database, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.DatabaseCreated, "database", database.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.DatabaseCreated, "database", database.Id.Value,
+            cancellationToken);
 
         return ToSummary(database);
     }
@@ -298,7 +319,7 @@ public sealed class ResourceManagementService(
     public IReadOnlyList<EnvironmentVariableSummary> ListEnvironmentVariables(UserId actorUserId, TeamId teamId)
     {
         Require(actorUserId, teamId, VesselPermissions.ProjectsRead);
-        bool canReveal = authorization.HasPermission(actorUserId, teamId, VesselPermissions.SecretsRead);
+        var canReveal = authorization.HasPermission(actorUserId, teamId, VesselPermissions.SecretsRead);
 
         return dbContext.EnvironmentVariables
             .Where(variable => variable.TeamId == teamId)
@@ -309,7 +330,9 @@ public sealed class ResourceManagementService(
                 variable.TargetType,
                 variable.Key.Value,
                 variable.ValueKind,
-                variable.ValueKind == EnvironmentVariableValueKind.Secret ? "********" : variable.PlainValue ?? string.Empty,
+                variable.ValueKind == EnvironmentVariableValueKind.Secret
+                    ? "********"
+                    : variable.PlainValue ?? string.Empty,
                 canReveal && variable.ValueKind == EnvironmentVariableValueKind.Secret,
                 variable.IsBuildTime,
                 variable.IsRuntime,
@@ -328,12 +351,14 @@ public sealed class ResourceManagementService(
     {
         Require(actorUserId, teamId, VesselPermissions.SecretsWrite);
         SecretReferenceId? secretReferenceId = null;
-        string? plainValue = request.Value;
+        var plainValue = request.Value;
         SecretTarget target = ResolveTarget(teamId, request);
         if (request.ValueKind == EnvironmentVariableValueKind.Secret)
         {
-            SecretReference secret = await secretVault.StoreAsync(teamId, ToSecretScope(request.TargetType), request.Key,
-                request.Value, new SecretPolicy(false, request.IsBuildTime, request.IsRuntime), target, cancellationToken);
+            SecretReference secret = await secretVault.StoreAsync(teamId, ToSecretScope(request.TargetType),
+                request.Key,
+                request.Value, new SecretPolicy(false, request.IsBuildTime, request.IsRuntime), target,
+                cancellationToken);
             secretReferenceId = secret.Id;
             plainValue = null;
         }
@@ -344,7 +369,8 @@ public sealed class ResourceManagementService(
         ApplyTarget(variable, request, target);
         await dbContext.EnvironmentVariableRepository.AddAsync(variable, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentVariableCreated, "environment-variable", variable.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentVariableCreated, "environment-variable",
+            variable.Id.Value, cancellationToken);
 
         return ListEnvironmentVariables(actorUserId, teamId).Single(item => item.Id == variable.Id.Value);
     }
@@ -356,8 +382,10 @@ public sealed class ResourceManagementService(
         CancellationToken cancellationToken = default)
     {
         Require(actorUserId, teamId, VesselPermissions.SecretsRead);
-        EnvironmentVariable variable = await GetRequiredAsync(dbContext.EnvironmentVariableRepository, variableId, cancellationToken);
-        if (variable.TeamId != teamId) throw new UnauthorizedAccessException("Environment variable is outside the active team.");
+        EnvironmentVariable variable =
+            await GetRequiredAsync(dbContext.EnvironmentVariableRepository, variableId, cancellationToken);
+        if (variable.TeamId != teamId)
+            throw new UnauthorizedAccessException("Environment variable is outside the active team.");
         if (variable.ValueKind != EnvironmentVariableValueKind.Secret || !variable.SecretReferenceId.HasValue)
             return variable.PlainValue ?? string.Empty;
 
@@ -371,13 +399,15 @@ public sealed class ResourceManagementService(
         CancellationToken cancellationToken = default)
     {
         Require(actorUserId, teamId, VesselPermissions.SecretsWrite);
-        SecretReference secret = await secretVault.StoreAsync(teamId, SecretScope.Team, $"{request.Registry}:{request.Username}",
+        SecretReference secret = await secretVault.StoreAsync(teamId, SecretScope.Team,
+            $"{request.Registry}:{request.Username}",
             request.Password, SecretPolicy.Default, new SecretTarget(), cancellationToken);
         var credential = RegistryCredential.Create(teamId, new ResourceName(request.Name), request.Registry,
             request.Username, secret.Id, Now());
         await dbContext.RegistryCredentialRepository.AddAsync(credential, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditAsync(teamId, actorUserId, AuditActions.RegistryCredentialCreated, "registry-credential", credential.Id.Value, cancellationToken);
+        await AuditAsync(teamId, actorUserId, AuditActions.RegistryCredentialCreated, "registry-credential",
+            credential.Id.Value, cancellationToken);
 
         return new RegistryCredentialSummary(credential.Id.Value, credential.Name.Value, credential.Registry,
             credential.Username, credential.PasswordReferenceId.Value);
@@ -403,7 +433,10 @@ public sealed class ResourceManagementService(
             throw new UnauthorizedAccessException("Server is outside the active team.");
     }
 
-    private DateTimeOffset Now() => timeProvider.GetUtcNow();
+    private DateTimeOffset Now()
+    {
+        return timeProvider.GetUtcNow();
+    }
 
     private async Task AuditAsync(
         TeamId teamId,
@@ -419,23 +452,29 @@ public sealed class ResourceManagementService(
 
     private void EnsureEnvironmentBelongsToProject(EnvironmentId environmentId, ProjectId projectId)
     {
-        if (!dbContext.Environments.Any(environment => environment.Id == environmentId && environment.ProjectId == projectId))
+        if (!dbContext.Environments.Any(environment =>
+                environment.Id == environmentId && environment.ProjectId == projectId))
             throw new DomainException("Environment does not belong to the selected project.");
     }
 
     private SecretTarget ResolveTarget(TeamId teamId, CreateEnvironmentVariableRequest request)
     {
-        var projectId = request.ProjectId.HasValue ? new ProjectId(request.ProjectId.Value) : (ProjectId?)null;
-        var environmentId = request.EnvironmentId.HasValue ? new EnvironmentId(request.EnvironmentId.Value) : (EnvironmentId?)null;
-        var serverId = request.ServerId.HasValue ? new ServerId(request.ServerId.Value) : (ServerId?)null;
-        var applicationId = request.ApplicationId.HasValue ? new Vessel.Domain.ApplicationId(request.ApplicationId.Value) : (Vessel.Domain.ApplicationId?)null;
-        var databaseId = request.DatabaseResourceId.HasValue ? new DatabaseResourceId(request.DatabaseResourceId.Value) : (DatabaseResourceId?)null;
+        ProjectId? projectId = request.ProjectId.HasValue ? new ProjectId(request.ProjectId.Value) : null;
+        EnvironmentId? environmentId =
+            request.EnvironmentId.HasValue ? new EnvironmentId(request.EnvironmentId.Value) : null;
+        ServerId? serverId = request.ServerId.HasValue ? new ServerId(request.ServerId.Value) : null;
+        ApplicationId? applicationId =
+            request.ApplicationId.HasValue ? new ApplicationId(request.ApplicationId.Value) : null;
+        DatabaseResourceId? databaseId = request.DatabaseResourceId.HasValue
+            ? new DatabaseResourceId(request.DatabaseResourceId.Value)
+            : null;
 
         _ = teamId;
         return new SecretTarget(projectId, environmentId, serverId, applicationId, databaseId);
     }
 
-    private static void ApplyTarget(EnvironmentVariable variable, CreateEnvironmentVariableRequest request, SecretTarget target)
+    private static void ApplyTarget(EnvironmentVariable variable, CreateEnvironmentVariableRequest request,
+        SecretTarget target)
     {
         switch (request.TargetType)
         {
@@ -469,18 +508,22 @@ public sealed class ResourceManagementService(
         }
     }
 
-    private static SecretScope ToSecretScope(EnvironmentVariableTargetType targetType) => targetType switch
+    private static SecretScope ToSecretScope(EnvironmentVariableTargetType targetType)
     {
-        EnvironmentVariableTargetType.Team => SecretScope.Team,
-        EnvironmentVariableTargetType.Project => SecretScope.Project,
-        EnvironmentVariableTargetType.Environment => SecretScope.Environment,
-        EnvironmentVariableTargetType.Server => SecretScope.Server,
-        EnvironmentVariableTargetType.Application => SecretScope.Application,
-        EnvironmentVariableTargetType.Database => SecretScope.Database,
-        _ => SecretScope.Team
-    };
+        return targetType switch
+        {
+            EnvironmentVariableTargetType.Team => SecretScope.Team,
+            EnvironmentVariableTargetType.Project => SecretScope.Project,
+            EnvironmentVariableTargetType.Environment => SecretScope.Environment,
+            EnvironmentVariableTargetType.Server => SecretScope.Server,
+            EnvironmentVariableTargetType.Application => SecretScope.Application,
+            EnvironmentVariableTargetType.Database => SecretScope.Database,
+            _ => SecretScope.Team
+        };
+    }
 
-    private static BuildConfiguration BuildConfig(ApplicationBuildPack buildPack, string baseDirectory, string? dockerfilePath)
+    private static BuildConfiguration BuildConfig(ApplicationBuildPack buildPack, string baseDirectory,
+        string? dockerfilePath)
     {
         return new BuildConfiguration(buildPack, string.IsNullOrWhiteSpace(baseDirectory) ? "/" : baseDirectory,
             dockerfilePath, null, null, null, null);

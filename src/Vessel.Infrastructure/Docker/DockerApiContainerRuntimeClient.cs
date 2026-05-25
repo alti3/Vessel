@@ -1,3 +1,6 @@
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Threading.Channels;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using Vessel.Application.Docker;
@@ -5,9 +8,11 @@ using Vessel.Application.Processes;
 
 namespace Vessel.Infrastructure.Docker;
 
-public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeClient cliFallback) : IContainerRuntimeClient
+public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeClient cliFallback)
+    : IContainerRuntimeClient
 {
-    public async Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default)
+    public async Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
     {
         using DockerClient client = CreateClient(target);
         SystemInfoResponse info = await client.System.GetSystemInfoAsync(cancellationToken);
@@ -45,8 +50,9 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         CancellationToken cancellationToken = default)
     {
         using DockerClient client = CreateClient(target);
-        ContainerInspectResponse container = await client.Containers.InspectContainerAsync(containerId, cancellationToken);
-        return System.Text.Json.JsonSerializer.Serialize(container);
+        ContainerInspectResponse container =
+            await client.Containers.InspectContainerAsync(containerId, cancellationToken);
+        return JsonSerializer.Serialize(container);
     }
 
     public async Task<IReadOnlyList<ImageSummary>> ListImagesAsync(
@@ -94,28 +100,29 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         string name,
         IReadOnlyDictionary<string, string> labels,
-        CancellationToken cancellationToken = default) =>
-        cliFallback.EnsureNetworkAsync(target, name, labels, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.EnsureNetworkAsync(target, name, labels, cancellationToken);
+    }
 
     public IAsyncEnumerable<ProcessOutputLine> BuildImageAsync(
         ContainerRuntimeTarget target,
         DockerBuildCommand command,
-        CancellationToken cancellationToken = default) =>
-        cliFallback.BuildImageAsync(target, command, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.BuildImageAsync(target, command, cancellationToken);
+    }
 
     public async IAsyncEnumerable<ContainerEvent> StreamEventsAsync(
         ContainerRuntimeTarget target,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using DockerClient client = CreateClient(target);
         var progress = new DockerEventProgress();
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task monitor = client.System.MonitorEventsAsync(new ContainerEventsParameters(), progress, linked.Token);
 
-        await foreach (ContainerEvent item in progress.ReadAllAsync(cancellationToken))
-        {
-            yield return item;
-        }
+        await foreach (ContainerEvent item in progress.ReadAllAsync(cancellationToken)) yield return item;
 
         await monitor;
     }
@@ -123,8 +130,10 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
     public IAsyncEnumerable<ProcessOutputLine> RunComposeAsync(
         ContainerRuntimeTarget target,
         ComposeCommand command,
-        CancellationToken cancellationToken = default) =>
-        cliFallback.RunComposeAsync(target, command, cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.RunComposeAsync(target, command, cancellationToken);
+    }
 
     private static DockerClient CreateClient(ContainerRuntimeTarget target)
     {
@@ -140,8 +149,8 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
 
     private sealed class DockerEventProgress : IProgress<Message>
     {
-        private readonly System.Threading.Channels.Channel<ContainerEvent> _channel =
-            System.Threading.Channels.Channel.CreateUnbounded<ContainerEvent>();
+        private readonly Channel<ContainerEvent> _channel =
+            Channel.CreateUnbounded<ContainerEvent>();
 
         public void Report(Message value)
         {
@@ -152,7 +161,9 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
                 DateTimeOffset.FromUnixTimeSeconds(value.Time)));
         }
 
-        public IAsyncEnumerable<ContainerEvent> ReadAllAsync(CancellationToken cancellationToken) =>
-            _channel.Reader.ReadAllAsync(cancellationToken);
+        public IAsyncEnumerable<ContainerEvent> ReadAllAsync(CancellationToken cancellationToken)
+        {
+            return _channel.Reader.ReadAllAsync(cancellationToken);
+        }
     }
 }

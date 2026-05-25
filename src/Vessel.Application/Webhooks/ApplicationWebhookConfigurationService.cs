@@ -9,6 +9,7 @@ using Vessel.Domain.Common;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Webhooks;
 using AppId = Vessel.Domain.ApplicationId;
+using Environment = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Application.Webhooks;
 
@@ -51,9 +52,10 @@ public sealed class ApplicationWebhookConfigurationService(
         if (string.IsNullOrWhiteSpace(request.Secret) || request.Secret.Length > 512)
             throw new DomainException("Webhook secret is required and cannot exceed 512 characters.");
 
-        var (projectId, environmentId) = ApplicationProject(applicationId);
+        (ProjectId projectId, EnvironmentId environmentId) = ApplicationProject(applicationId);
         ApplicationWebhookConfiguration? existing = dbContext.ApplicationWebhookConfigurations
-            .SingleOrDefault(configuration => configuration.ApplicationId == applicationId && configuration.Provider == request.Provider);
+            .SingleOrDefault(configuration =>
+                configuration.ApplicationId == applicationId && configuration.Provider == request.Provider);
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         if (existing is null)
@@ -63,7 +65,7 @@ public sealed class ApplicationWebhookConfigurationService(
                 SecretScope.Application,
                 $"webhook:{request.Provider.ToString().ToLowerInvariant()}",
                 request.Secret,
-                new SecretPolicy(ShowOnce: false, AvailableAtBuild: false, AvailableAtRuntime: false),
+                new SecretPolicy(false, false, false),
                 new SecretTarget(projectId, environmentId, ApplicationId: applicationId),
                 cancellationToken);
             existing = ApplicationWebhookConfiguration.Create(applicationId, request.Provider, reference.Id, now);
@@ -80,7 +82,8 @@ public sealed class ApplicationWebhookConfigurationService(
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.WebhookConfigured,
             new AuditTarget("application", applicationId.Value.ToString("D")), null,
-            new Dictionary<string, object?> { ["provider"] = request.Provider.ToString(), ["enabled"] = request.Enabled },
+            new Dictionary<string, object?>
+            { ["provider"] = request.Provider.ToString(), ["enabled"] = request.Enabled },
             cancellationToken);
 
         return new ApplicationWebhookConfigurationSummary(
@@ -100,8 +103,10 @@ public sealed class ApplicationWebhookConfigurationService(
         CancellationToken cancellationToken = default)
     {
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsRead);
-        var application = dbContext.Applications.Single(application => application.Id == applicationId);
-        IReadOnlyList<GitRepositoryRef> refs = await git.ListRefsAsync(new Uri(application.GitSource.RepositoryUrl.Value), cancellationToken);
+        Domain.Applications.Application application =
+            dbContext.Applications.Single(application => application.Id == applicationId);
+        IReadOnlyList<GitRepositoryRef> refs =
+            await git.ListRefsAsync(new Uri(application.GitSource.RepositoryUrl.Value), cancellationToken);
         return refs.Select(item => new GitRepositoryRefSummary(item.Name, item.Sha, item.IsTag)).ToArray();
     }
 
@@ -115,8 +120,10 @@ public sealed class ApplicationWebhookConfigurationService(
 
     private (ProjectId ProjectId, EnvironmentId EnvironmentId) ApplicationProject(AppId applicationId)
     {
-        var application = dbContext.Applications.Single(application => application.Id == applicationId);
-        var environment = dbContext.Environments.Single(environment => environment.Id == application.EnvironmentId);
+        Domain.Applications.Application application =
+            dbContext.Applications.Single(application => application.Id == applicationId);
+        Environment environment =
+            dbContext.Environments.Single(environment => environment.Id == application.EnvironmentId);
         return (environment.ProjectId, environment.Id);
     }
 }

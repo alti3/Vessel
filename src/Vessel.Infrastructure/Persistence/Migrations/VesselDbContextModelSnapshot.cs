@@ -92,8 +92,20 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                         .HasMaxLength(253)
                         .HasColumnType("character varying(253)");
 
+                    b.Property<bool>("Canonical")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("RedirectToCanonical")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("TargetPort")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("TlsEnabled")
+                        .HasColumnType("boolean");
 
                     b.HasKey("ApplicationId", "DomainName");
 
@@ -145,6 +157,78 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                     b.HasIndex("TeamId", "CreatedAt");
 
                     b.ToTable("audit_logs", "vessel");
+                });
+
+            modelBuilder.Entity("Vessel.Domain.Certificates.Certificate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CertificateSecretReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)");
+
+                    b.Property<DateTimeOffset?>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid?>("PrivateKeySecretReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("RenewalDueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CertificateSecretReferenceId");
+
+                    b.HasIndex("PrivateKeySecretReferenceId");
+
+                    b.HasIndex("ApplicationId", "Host")
+                        .IsUnique();
+
+                    b.HasIndex("TeamId", "RenewalDueAt");
+
+                    b.ToTable("certificates", "vessel");
                 });
 
             modelBuilder.Entity("Vessel.Domain.Databases.BackupPolicy", b =>
@@ -551,6 +635,79 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("projects", "vessel");
+                });
+
+            modelBuilder.Entity("Vessel.Domain.Proxy.ProxyConfigurationVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ApplyError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Configuration")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ConfigurationHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PreviousVersionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("RolledBackAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ServerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ValidatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ValidationError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreviousVersionId");
+
+                    b.HasIndex("ServerId", "ConfigurationHash");
+
+                    b.HasIndex("ServerId", "CreatedAt");
+
+                    b.ToTable("proxy_configuration_versions", "vessel");
                 });
 
             modelBuilder.Entity("Vessel.Domain.Registries.RegistryCredential", b =>
@@ -1362,6 +1519,25 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 
+            modelBuilder.Entity("Vessel.Domain.Certificates.Certificate", b =>
+                {
+                    b.HasOne("Vessel.Domain.Applications.Application", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Vessel.Domain.Secrets.SecretReference", null)
+                        .WithMany()
+                        .HasForeignKey("CertificateSecretReferenceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Vessel.Domain.Secrets.SecretReference", null)
+                        .WithMany()
+                        .HasForeignKey("PrivateKeySecretReferenceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("Vessel.Domain.Databases.BackupPolicy", b =>
                 {
                     b.HasOne("Vessel.Domain.Databases.DatabaseResource", null)
@@ -1473,6 +1649,20 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                     b.HasOne("Vessel.Domain.Teams.Team", null)
                         .WithMany()
                         .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vessel.Domain.Proxy.ProxyConfigurationVersion", b =>
+                {
+                    b.HasOne("Vessel.Domain.Proxy.ProxyConfigurationVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PreviousVersionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Vessel.Domain.Servers.Server", null)
+                        .WithMany()
+                        .HasForeignKey("ServerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

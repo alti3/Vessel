@@ -16,6 +16,7 @@ public sealed class RegistryCredentialsController(ResourceManagementService reso
         CreateRegistryCredentialRequest request,
         CancellationToken cancellationToken)
     {
-        return Ok(await resources.CreateRegistryCredentialAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken));
+        return Ok(await resources.CreateRegistryCredentialAsync(User.GetUserId(), User.GetTeamId(), request,
+            cancellationToken));
     }
 }

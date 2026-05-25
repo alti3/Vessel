@@ -26,8 +26,10 @@ public sealed class ApplicationsController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
-    public async Task<ActionResult<ApplicationSummary>> Create(CreateApplicationRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApplicationSummary>> Create(CreateApplicationRequest request,
+        CancellationToken cancellationToken)
     {
-        return Ok(await _resources.CreateApplicationAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken));
+        return Ok(await _resources.CreateApplicationAsync(User.GetUserId(), User.GetTeamId(), request,
+            cancellationToken));
     }
 }

@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using Serilog;
+using Vessel.Application.Jobs;
+using Vessel.Application.Proxy;
 using Vessel.Web.Middleware;
 
 namespace Vessel.Web.Extensions;
@@ -28,6 +30,14 @@ public static class WebApplicationExtensions
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
+
+        return app;
+    }
+
+    public static WebApplication ScheduleVesselRecurringJobs(this WebApplication app)
+    {
+        IRecurringJobScheduler scheduler = app.Services.GetRequiredService<IRecurringJobScheduler>();
+        CertificateRecurringJobs.Register(scheduler);
 
         return app;
     }

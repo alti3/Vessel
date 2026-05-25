@@ -2,21 +2,29 @@
 @attribute [Authorize]
 
 <PageTitle>Project | Vessel</PageTitle>
-<PageHeader Kicker="Project" Title="Project overview" Description="@($"Project {Id} resources, environments, and settings.")">
-    <a class="button button-primary" href="/applications/new"><Icon Name="plus" CssClass="size-4" />Add resource</a>
+<PageHeader Kicker="Project" Title="Project overview"
+            Description="@($"Project {Id} resources, environments, and settings.")">
+    <a class="button button-primary" href="/applications/new">
+        <Icon Name="plus" CssClass="size-4"/>
+        Add resource</a>
 </PageHeader>
 
 <section class="dashboard-grid">
-    <SettingsPanel Title="Environments" Description="Production, staging, preview, and custom environments live inside projects.">
+    <SettingsPanel Title="Environments"
+                   Description="Production, staging, preview, and custom environments live inside projects.">
         <div class="resource-grid">
-            <ResourceCard Href="#" IconName="folder" Title="production" Description="Default environment for production resources." Meta="0 resources" />
-            <ResourceCard Href="#" IconName="folder" Title="staging" Description="Pre-production validation environment." Meta="0 resources" />
+            <ResourceCard Href="#" IconName="folder" Title="production"
+                          Description="Default environment for production resources." Meta="0 resources"/>
+            <ResourceCard Href="#" IconName="folder" Title="staging"
+                          Description="Pre-production validation environment." Meta="0 resources"/>
         </div>
     </SettingsPanel>
     <SettingsPanel Title="Settings" Description="Project-level configuration and shared variables.">
         <form class="form-stack">
-            <FormField Label="Project name" Name="name" Placeholder="project-name" />
-            <label>Project variables<SecretInput Name="project-secret" Placeholder="PROJECT_SECRET" /></label>
+            <FormField Label="Project name" Name="name" Placeholder="project-name"/>
+            <label>Project variables
+                <SecretInput Name="project-secret" Placeholder="PROJECT_SECRET"/>
+            </label>
             <button class="button button-secondary" type="button">Save settings</button>
         </form>
     </SettingsPanel>

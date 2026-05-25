@@ -48,7 +48,7 @@ public sealed class VesselTeamService
         CancellationToken cancellationToken = default)
     {
         EnsureCanManageTeam(actorUserId, teamId);
-        string plainTextToken = _tokenGenerator.GenerateUrlSafeToken();
+        var plainTextToken = _tokenGenerator.GenerateUrlSafeToken();
         var invitation = TeamInvitation.Create(
             teamId,
             new EmailAddress(email),
@@ -73,7 +73,8 @@ public sealed class VesselTeamService
             },
             cancellationToken);
 
-        return new TeamInvitationResult(invitation.Id, $"{invitation.Id.Value:N}|{plainTextToken}", invitation.ExpiresAt);
+        return new TeamInvitationResult(invitation.Id, $"{invitation.Id.Value:N}|{plainTextToken}",
+            invitation.ExpiresAt);
     }
 
     public async Task<bool> AcceptInvitationAsync(
@@ -82,7 +83,7 @@ public sealed class VesselTeamService
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
-        string[] parts = presentedToken.Split('|', 2, StringSplitOptions.TrimEntries);
+        var parts = presentedToken.Split('|', 2, StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || !Guid.TryParse(parts[0], out Guid invitationGuid)) return false;
 
         TeamInvitation? invitation = await _unitOfWork.TeamInvitationRepository.GetByIdAsync(
@@ -162,7 +163,8 @@ public sealed class VesselTeamService
 
     public bool IsTeamMember(UserId userId, TeamId teamId)
     {
-        return _unitOfWork.TeamMemberships.Any(membership => membership.UserId == userId && membership.TeamId == teamId);
+        return _unitOfWork.TeamMemberships.Any(membership =>
+            membership.UserId == userId && membership.TeamId == teamId);
     }
 
     private void EnsureCanManageTeam(UserId userId, TeamId teamId)

@@ -8,9 +8,9 @@ public sealed class PathSafetyServiceTests
     public void EnsureOwnedRelativePath_AllowsPathInsideRoot()
     {
         var service = new PathSafetyService();
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
 
-        string path = service.EnsureOwnedRelativePath(root, "deployments/app/config.yml");
+        var path = service.EnsureOwnedRelativePath(root, "deployments/app/config.yml");
 
         Assert.StartsWith(Path.GetFullPath(root), path, StringComparison.OrdinalIgnoreCase);
     }
@@ -19,8 +19,11 @@ public sealed class PathSafetyServiceTests
     public void EnsureOwnedRelativePath_RejectsTraversal()
     {
         var service = new PathSafetyService();
-        string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
 
+        Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "../outside.txt"));
         Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "..\\outside.txt"));
+        Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "\\outside.txt"));
+        Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "C:\\outside.txt"));
     }
 }

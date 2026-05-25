@@ -1,10 +1,10 @@
+using Hangfire;
+using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using Hangfire;
-using Hangfire.PostgreSql;
 using Vessel.Application.Auditing;
 using Vessel.Application.Dashboard;
 using Vessel.Application.Deployments;
@@ -14,6 +14,7 @@ using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
+using Vessel.Application.Proxy;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Ssh;
@@ -29,6 +30,7 @@ using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
+using Vessel.Infrastructure.Proxy;
 using Vessel.Infrastructure.Redis;
 using Vessel.Infrastructure.Security;
 using Vessel.Infrastructure.Ssh;
@@ -104,7 +106,8 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddScoped<IApplicationCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<IDeploymentCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<IDatabaseCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
-            services.AddScoped<INotificationCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<INotificationCatalogQuery>(provider =>
+                provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<ISettingsCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
         }
 
@@ -120,6 +123,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();
         services.TryAddSingleton<ISshClient, SshProcessClient>();
+        services.TryAddSingleton<IProxyProvider, TraefikProxyProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
 
         RedisOptions redisOptions = configuration
@@ -138,18 +142,14 @@ public static class InfrastructureServiceCollectionExtensions
         if (objectStorageOptions.Enabled)
         {
             if (string.Equals(objectStorageOptions.Provider, "Local", StringComparison.OrdinalIgnoreCase))
-            {
                 services.TryAddSingleton<IObjectStorage>(provider =>
                 {
-                    string root = objectStorageOptions.LocalRootDirectory
-                                  ?? Path.Combine(AppContext.BaseDirectory, "storage", "objects");
+                    var root = objectStorageOptions.LocalRootDirectory
+                               ?? Path.Combine(AppContext.BaseDirectory, "storage", "objects");
                     return new LocalObjectStorage(root, provider.GetRequiredService<IPathSafetyService>());
                 });
-            }
             else
-            {
                 services.TryAddSingleton<IObjectStorage, S3ObjectStorage>();
-            }
         }
 
         HangfireStorageOptions hangfireOptions = configuration
@@ -168,6 +168,7 @@ public static class InfrastructureServiceCollectionExtensions
                 options.WorkerCount = Math.Max(1, Environment.ProcessorCount);
             });
             services.AddSingleton<IBackgroundJobDispatcher, HangfireBackgroundJobDispatcher>();
+            services.AddSingleton<IRecurringJobScheduler, HangfireRecurringJobScheduler>();
         }
 
         return services;

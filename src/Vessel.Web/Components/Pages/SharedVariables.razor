@@ -4,18 +4,39 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Shared Variables | Vessel</PageTitle>
-<PageHeader Kicker="Configuration" Title="Shared Variables" Description="Environment variables shared across team, project, environment, and server scopes." />
+<PageHeader Kicker="Configuration" Title="Shared Variables"
+            Description="Environment variables shared across team, project, environment, and server scopes."/>
 
 <SettingsPanel Title="Add variable" Description="Secret values are encrypted at rest and masked after save.">
     <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-variable">
         <div class="form-grid">
-            <label>Key<InputText @bind-Value="Model.Key" name="key" placeholder="DATABASE_URL" /></label>
-            <label>Value<InputText @bind-Value="Model.Value" name="value" placeholder="value or secret" /></label>
-            <label>Target<select @bind="Model.TargetType" name="target"><option value="@EnvironmentVariableTargetType.Team">Team</option><option value="@EnvironmentVariableTargetType.Project">Project</option><option value="@EnvironmentVariableTargetType.Environment">Environment</option><option value="@EnvironmentVariableTargetType.Server">Server</option><option value="@EnvironmentVariableTargetType.Application">Application</option><option value="@EnvironmentVariableTargetType.Database">Database</option></select></label>
-            <label>Kind<select @bind="Model.ValueKind" name="kind"><option value="@EnvironmentVariableValueKind.Plain">Plain</option><option value="@EnvironmentVariableValueKind.Secret">Secret</option></select></label>
-            <label><InputCheckbox @bind-Value="Model.IsBuildTime" /> Build time</label>
-            <label><InputCheckbox @bind-Value="Model.IsRuntime" /> Runtime</label>
-            <label><InputCheckbox @bind-Value="Model.IsPreview" /> Preview override</label>
+            <label>Key
+                <InputText @bind-Value="Model.Key" name="key" placeholder="DATABASE_URL"/>
+            </label>
+            <label>Value
+                <InputText @bind-Value="Model.Value" name="value" placeholder="value or secret"/>
+            </label>
+            <label>Target<select @bind="Model.TargetType" name="target">
+                    <option value="@EnvironmentVariableTargetType.Team">Team</option>
+                    <option value="@EnvironmentVariableTargetType.Project">Project</option>
+                    <option value="@EnvironmentVariableTargetType.Environment">Environment</option>
+                    <option value="@EnvironmentVariableTargetType.Server">Server</option>
+                    <option value="@EnvironmentVariableTargetType.Application">Application</option>
+                    <option value="@EnvironmentVariableTargetType.Database">Database</option>
+                </select></label>
+            <label>Kind<select @bind="Model.ValueKind" name="kind">
+                    <option value="@EnvironmentVariableValueKind.Plain">Plain</option>
+                    <option value="@EnvironmentVariableValueKind.Secret">Secret</option>
+                </select></label>
+            <label>
+                <InputCheckbox @bind-Value="Model.IsBuildTime"/>
+                Build time</label>
+            <label>
+                <InputCheckbox @bind-Value="Model.IsRuntime"/>
+                Runtime</label>
+            <label>
+                <InputCheckbox @bind-Value="Model.IsPreview"/>
+                Preview override</label>
             @if (!string.IsNullOrWhiteSpace(Error))
             {
                 <div class="form-alert form-wide">@Error</div>
@@ -27,24 +48,32 @@
 
 @if (Items.Count == 0)
 {
-    <EmptyState Title="No shared variables found" Description="Add plain or secret variables for the active team." />
+    <EmptyState Title="No shared variables found" Description="Add plain or secret variables for the active team."/>
 }
 else
 {
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Key</th><th>Target</th><th>Kind</th><th>Value</th><th>Use</th></tr></thead>
+            <thead>
+            <tr>
+                <th>Key</th>
+                <th>Target</th>
+                <th>Kind</th>
+                <th>Value</th>
+                <th>Use</th>
+            </tr>
+            </thead>
             <tbody>
-                @foreach (var item in Items)
-                {
-                    <tr>
-                        <td>@item.Key</td>
-                        <td>@item.TargetType</td>
-                        <td>@item.ValueKind</td>
-                        <td>@item.DisplayValue</td>
-                        <td>@(item.IsBuildTime ? "Build " : "")@(item.IsRuntime ? "Runtime " : "")@(item.IsPreview ? "Preview" : "")</td>
-                    </tr>
-                }
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>@item.Key</td>
+                    <td>@item.TargetType</td>
+                    <td>@item.ValueKind</td>
+                    <td>@item.DisplayValue</td>
+                    <td>@(item.IsBuildTime ? "Build " : "")@(item.IsRuntime ? "Runtime " : "")@(item.IsPreview ? "Preview" : "")</td>
+                </tr>
+            }
             </tbody>
         </table>
     </div>
@@ -94,4 +123,5 @@ else
         public bool IsRuntime { get; set; } = true;
         public bool IsPreview { get; set; }
     }
+
 }

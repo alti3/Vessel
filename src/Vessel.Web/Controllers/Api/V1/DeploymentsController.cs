@@ -14,8 +14,8 @@ namespace Vessel.Web.Controllers.Api.V1;
 public sealed class DeploymentsController : ControllerBase
 {
     private readonly IDeploymentCatalogQuery _deployments;
-    private readonly StartDeploymentService _starter;
     private readonly DeploymentQueryService _details;
+    private readonly StartDeploymentService _starter;
 
     public DeploymentsController(
         IDeploymentCatalogQuery deployments,
@@ -59,7 +59,8 @@ public sealed class DeploymentsController : ControllerBase
     [Authorize(Policy = VesselPermissions.DeploymentsCancel)]
     public async Task<IActionResult> Cancel(Guid deploymentId, CancellationToken cancellationToken)
     {
-        await _starter.CancelAsync(User.GetUserId(), User.GetTeamId(), new DeploymentId(deploymentId), cancellationToken);
+        await _starter.CancelAsync(User.GetUserId(), User.GetTeamId(), new DeploymentId(deploymentId),
+            cancellationToken);
         return Accepted();
     }
 }

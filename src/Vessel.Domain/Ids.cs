@@ -145,6 +145,32 @@ public readonly record struct ApplicationPreviewId(Guid Value) : IStronglyTypedI
     }
 }
 
+public readonly record struct ProxyConfigurationVersionId(Guid Value) : IStronglyTypedId
+{
+    public static ProxyConfigurationVersionId New()
+    {
+        return new ProxyConfigurationVersionId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct CertificateId(Guid Value) : IStronglyTypedId
+{
+    public static CertificateId New()
+    {
+        return new CertificateId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct SecretReferenceId(Guid Value) : IStronglyTypedId
 {
     public static SecretReferenceId New()

@@ -4,6 +4,7 @@ using Vessel.Application.Authorization;
 using Vessel.Application.Realtime;
 using Vessel.Domain;
 using Vessel.Web.Security;
+using ApplicationId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Web.Hubs;
 
@@ -47,7 +48,7 @@ public abstract class AuthorizedResourceHub : Hub
         return true;
     }
 
-    protected async Task<bool> JoinApplicationGroupAsync(Vessel.Domain.ApplicationId applicationId)
+    protected async Task<bool> JoinApplicationGroupAsync(ApplicationId applicationId)
     {
         if (!_authorizationService.CanAccessApplication(Context.User!.GetUserId(), applicationId)) return false;
 

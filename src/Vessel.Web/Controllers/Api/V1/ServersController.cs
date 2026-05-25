@@ -27,7 +27,8 @@ public sealed class ServersController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = VesselPermissions.ServersWrite)]
-    public async Task<ActionResult<ServerSummary>> Create(CreateServerRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<ServerSummary>> Create(CreateServerRequest request,
+        CancellationToken cancellationToken)
     {
         return Ok(await _resources.CreateServerAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken));
     }
@@ -36,7 +37,8 @@ public sealed class ServersController : ControllerBase
     [Authorize(Policy = VesselPermissions.ServersWrite)]
     public async Task<ActionResult<ServerConnectivityResult>> Test(Guid serverId, CancellationToken cancellationToken)
     {
-        return Ok(await _resources.TestServerConnectivityAsync(User.GetUserId(), User.GetTeamId(), new ServerId(serverId), cancellationToken));
+        return Ok(await _resources.TestServerConnectivityAsync(User.GetUserId(), User.GetTeamId(),
+            new ServerId(serverId), cancellationToken));
     }
 
     [HttpGet("{serverId:guid}/snapshots")]

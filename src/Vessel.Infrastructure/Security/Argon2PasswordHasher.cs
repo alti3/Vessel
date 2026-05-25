@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Konscious.Security.Cryptography;
@@ -12,6 +13,12 @@ internal sealed class Argon2PasswordHasher : IPasswordHasher
 {
     private const int HashSizeInBytes = 32;
     private const int SaltSizeInBytes = 16;
+    private static readonly Action<ILogger, Exception?> LogPasswordHashParseFailure =
+        LoggerMessage.Define(
+            LogLevel.Warning,
+            new EventId(1, nameof(LogPasswordHashParseFailure)),
+            "Password verification failed because the stored hash could not be parsed.");
+
     private readonly int _degreeOfParallelism;
     private readonly int _iterations;
     private readonly ILogger<Argon2PasswordHasher> _logger;
@@ -30,11 +37,11 @@ internal sealed class Argon2PasswordHasher : IPasswordHasher
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
 
-        byte[] salt = RandomNumberGenerator.GetBytes(SaltSizeInBytes);
-        byte[] hash = Hash(password, salt, _memorySize, _iterations, _degreeOfParallelism, HashSizeInBytes);
+        var salt = RandomNumberGenerator.GetBytes(SaltSizeInBytes);
+        var hash = Hash(password, salt, _memorySize, _iterations, _degreeOfParallelism, HashSizeInBytes);
 
         return string.Create(
-            System.Globalization.CultureInfo.InvariantCulture,
+            CultureInfo.InvariantCulture,
             $"$argon2id$v=19$m={_memorySize},t={_iterations},p={_degreeOfParallelism}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}");
     }
 
@@ -44,23 +51,23 @@ internal sealed class Argon2PasswordHasher : IPasswordHasher
 
         try
         {
-            string[] parts = passwordHash.Split('$');
+            var parts = passwordHash.Split('$');
             if (parts.Length != 6 || parts[1] != "argon2id" || parts[2] != "v=19") return false;
 
-            Dictionary<string, int> parameters = parts[3]
+            var parameters = parts[3]
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(part => part.Split('=', 2))
-                .ToDictionary(part => part[0], part => int.Parse(part[1], System.Globalization.CultureInfo.InvariantCulture));
+                .ToDictionary(part => part[0], part => int.Parse(part[1], CultureInfo.InvariantCulture));
 
-            byte[] salt = Convert.FromBase64String(parts[4]);
-            byte[] storedHash = Convert.FromBase64String(parts[5]);
-            byte[] computed = Hash(password, salt, parameters["m"], parameters["t"], parameters["p"], storedHash.Length);
+            var salt = Convert.FromBase64String(parts[4]);
+            var storedHash = Convert.FromBase64String(parts[5]);
+            var computed = Hash(password, salt, parameters["m"], parameters["t"], parameters["p"], storedHash.Length);
 
             return CryptographicOperations.FixedTimeEquals(computed, storedHash);
         }
         catch (Exception exception) when (exception is FormatException or ArgumentException or KeyNotFoundException)
         {
-            _logger.LogWarning("Password verification failed because the stored hash could not be parsed.");
+            LogPasswordHashParseFailure(_logger, null);
             return false;
         }
     }

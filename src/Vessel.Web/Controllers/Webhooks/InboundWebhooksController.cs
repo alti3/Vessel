@@ -47,9 +47,11 @@ public sealed class InboundWebhooksController(WebhookReceiptService receipts) : 
     {
         string rawBody;
         using (var reader = new StreamReader(Request.Body, Encoding.UTF8))
+        {
             rawBody = await reader.ReadToEndAsync(cancellationToken);
+        }
 
-        Dictionary<string, string> headers = Request.Headers
+        var headers = Request.Headers
             .ToDictionary(header => header.Key, header => header.Value.ToString(), StringComparer.OrdinalIgnoreCase);
 
         WebhookReceiptResult result = await receipts.ReceiveAsync(

@@ -1,4 +1,3 @@
-using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Databases;
 using Vessel.Domain.EnvironmentVariables;
@@ -16,7 +15,12 @@ public sealed record ProjectDetails(
     bool IsArchived,
     IReadOnlyList<EnvironmentSummary> Environments);
 
-public sealed record EnvironmentSummary(Guid Id, Guid ProjectId, string Name, EnvironmentKind Kind, string? Description);
+public sealed record EnvironmentSummary(
+    Guid Id,
+    Guid ProjectId,
+    string Name,
+    EnvironmentKind Kind,
+    string? Description);
 
 public sealed record ServerSummary(
     Guid Id,

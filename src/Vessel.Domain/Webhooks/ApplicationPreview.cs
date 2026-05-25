@@ -78,7 +78,8 @@ public sealed class ApplicationPreview : Entity<ApplicationPreviewId>
             now);
     }
 
-    public void Refresh(string sourceBranch, string targetBranch, string commitSha, string? pullRequestUrl, string? title, DateTimeOffset now)
+    public void Refresh(string sourceBranch, string targetBranch, string commitSha, string? pullRequestUrl,
+        string? title, DateTimeOffset now)
     {
         SourceBranch = DomainValidation.Required(sourceBranch, nameof(sourceBranch), 255);
         TargetBranch = DomainValidation.Required(targetBranch, nameof(targetBranch), 255);

@@ -5,19 +5,25 @@
 
 <PageTitle>Projects | Vessel</PageTitle>
 <PageHeader Kicker="Resources" Title="Projects" Description="All your projects are here.">
-    <a class="button button-primary" href="/projects/new"><Icon Name="plus" CssClass="size-4" />Add</a>
+    <a class="button button-primary" href="/projects/new">
+        <Icon Name="plus" CssClass="size-4"/>
+        Add</a>
 </PageHeader>
 
 @if (Items.Count == 0)
 {
-    <EmptyState Title="No projects found" Description="Create a project before adding applications, databases, or environment-scoped configuration." ActionHref="/projects/new" ActionText="Create project" />
+    <EmptyState Title="No projects found"
+                Description="Create a project before adding applications, databases, or environment-scoped configuration."
+                ActionHref="/projects/new" ActionText="Create project"/>
 }
 else
 {
     <div class="resource-grid">
         @foreach (var item in Items)
         {
-            <ResourceCard Href="@($"/projects/{item.Id}")" IconName="folder" Title="@item.Name" Description="@(item.Description ?? "No description recorded.")" Meta="@($"{item.EnvironmentCount} environments")" />
+            <ResourceCard Href="@($"/projects/{item.Id}")" IconName="folder" Title="@item.Name"
+                          Description="@(item.Description ?? "No description recorded.")"
+                          Meta="@($"{item.EnvironmentCount} environments")"/>
         }
     </div>
 }
@@ -30,4 +36,5 @@ else
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         Items = Resources.ListProjects(user.GetUserId(), user.GetTeamId());
     }
+
 }

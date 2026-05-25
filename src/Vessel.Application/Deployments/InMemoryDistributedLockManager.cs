@@ -13,13 +13,12 @@ public sealed class InMemoryDistributedLockManager(TimeProvider timeProvider) : 
         TimeSpan waitTimeout,
         CancellationToken cancellationToken = default)
     {
-        string owner = Guid.NewGuid().ToString("N");
+        var owner = Guid.NewGuid().ToString("N");
         DateTimeOffset deadline = timeProvider.GetUtcNow().Add(waitTimeout);
 
         do
         {
             if (_locks.TryAdd(key, owner))
-            {
                 return new DistributedLockHandle(key, owner, timeProvider.GetUtcNow(), leaseDuration)
                 {
                     ReleaseAsync = () =>
@@ -28,11 +27,9 @@ public sealed class InMemoryDistributedLockManager(TimeProvider timeProvider) : 
                         return ValueTask.CompletedTask;
                     }
                 };
-            }
 
             await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
-        }
-        while (timeProvider.GetUtcNow() < deadline);
+        } while (timeProvider.GetUtcNow() < deadline);
 
         return null;
     }

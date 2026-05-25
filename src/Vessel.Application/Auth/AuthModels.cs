@@ -31,6 +31,9 @@ public sealed record TwoFactorSetup(string Secret, string OtpAuthUri);
 
 public sealed record TwoFactorRecoveryCodes(IReadOnlyList<string> Codes);
 
-public sealed record TeamInvitationResult(TeamInvitationId InvitationId, string PlainTextToken, DateTimeOffset ExpiresAt);
+public sealed record TeamInvitationResult(
+    TeamInvitationId InvitationId,
+    string PlainTextToken,
+    DateTimeOffset ExpiresAt);
 
 public sealed record TeamSummary(TeamId Id, string Name, bool IsPersonal, TeamRole Role);

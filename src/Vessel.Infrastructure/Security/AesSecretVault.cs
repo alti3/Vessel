@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Options;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Persistence;
@@ -16,7 +17,7 @@ public sealed class AesSecretVault(
     VesselAuthorizationService authorization,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
-    Microsoft.Extensions.Options.IOptions<SecretStorageOptions> options) : ISecretVault
+    IOptions<SecretStorageOptions> options) : ISecretVault
 {
     public async Task<SecretReference> StoreAsync(
         TeamId teamId,
@@ -28,11 +29,11 @@ public sealed class AesSecretVault(
         CancellationToken cancellationToken = default)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
-        SecretReference reference = SecretReference.Create(teamId, scope, key, SecretProvider.Vessel,
+        var reference = SecretReference.Create(teamId, scope, key, SecretProvider.Vessel,
             $"vessel://secrets/{Guid.NewGuid():D}", policy, now);
         ApplyTarget(reference, target);
         EncryptedSecret encrypted = Encrypt(plaintext, reference.Id);
-        SecretValue secretValue = SecretValue.Create(reference.Id, encrypted.CipherText, encrypted.Nonce, encrypted.Tag,
+        var secretValue = SecretValue.Create(reference.Id, encrypted.CipherText, encrypted.Nonce, encrypted.Tag,
             options.Value.KeyVersion, now);
 
         await dbContext.SecretReferenceRepository.AddAsync(reference, cancellationToken);
@@ -68,7 +69,7 @@ public sealed class AesSecretVault(
         SecretReference reference = dbContext.SecretReferences.Single(reference => reference.Id == secretReferenceId);
         if (reference.TeamId != teamId) throw new UnauthorizedAccessException("Secret is outside the active team.");
         SecretValue secretValue = dbContext.SecretValues.Single(value => value.SecretReferenceId == secretReferenceId);
-        string plaintext = Decrypt(secretValue);
+        var plaintext = Decrypt(secretValue);
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.SecretRevealed,
             new AuditTarget("secret", secretReferenceId.Value.ToString("D")), null,
             new Dictionary<string, object?> { ["scope"] = reference.Scope.ToString(), ["key"] = reference.Key },
@@ -87,7 +88,8 @@ public sealed class AesSecretVault(
         SecretValue secretValue = dbContext.SecretValues.Single(value => value.SecretReferenceId == secretReferenceId);
         await auditWriter.RecordAsync(teamId, null, AuditActions.SecretRevealed,
             new AuditTarget("secret", secretReferenceId.Value.ToString("D")), null,
-            new Dictionary<string, object?> { ["scope"] = reference.Scope.ToString(), ["key"] = reference.Key, ["purpose"] = "deployment" },
+            new Dictionary<string, object?>
+            { ["scope"] = reference.Scope.ToString(), ["key"] = reference.Key, ["purpose"] = "deployment" },
             cancellationToken);
 
         return Decrypt(secretValue);
@@ -95,13 +97,13 @@ public sealed class AesSecretVault(
 
     private EncryptedSecret Encrypt(string plaintext, SecretReferenceId secretReferenceId)
     {
-        byte[] nonce = RandomNumberGenerator.GetBytes(12);
+        var nonce = RandomNumberGenerator.GetBytes(12);
         if (string.IsNullOrWhiteSpace(plaintext) || plaintext.Length > 12000)
             throw new InvalidOperationException("Secret value is required and cannot exceed 12000 characters.");
 
-        byte[] plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
-        byte[] cipherText = new byte[plaintextBytes.Length];
-        byte[] tag = new byte[16];
+        var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
+        var cipherText = new byte[plaintextBytes.Length];
+        var tag = new byte[16];
         using var aes = new AesGcm(GetKey(), 16);
         aes.Encrypt(nonce, plaintextBytes, cipherText, tag, AssociatedData(secretReferenceId));
 
@@ -111,10 +113,10 @@ public sealed class AesSecretVault(
 
     private string Decrypt(SecretValue secretValue)
     {
-        byte[] cipherText = Convert.FromBase64String(secretValue.CipherText);
-        byte[] nonce = Convert.FromBase64String(secretValue.Nonce);
-        byte[] tag = Convert.FromBase64String(secretValue.Tag);
-        byte[] plaintextBytes = new byte[cipherText.Length];
+        var cipherText = Convert.FromBase64String(secretValue.CipherText);
+        var nonce = Convert.FromBase64String(secretValue.Nonce);
+        var tag = Convert.FromBase64String(secretValue.Tag);
+        var plaintextBytes = new byte[cipherText.Length];
         using var aes = new AesGcm(GetKey(), 16);
         aes.Decrypt(nonce, cipherText, tag, plaintextBytes, AssociatedData(secretValue.SecretReferenceId));
 
@@ -125,7 +127,7 @@ public sealed class AesSecretVault(
     {
         if (!string.IsNullOrWhiteSpace(options.Value.MasterKey))
         {
-            byte[] configured = Convert.FromBase64String(options.Value.MasterKey);
+            var configured = Convert.FromBase64String(options.Value.MasterKey);
             if (configured.Length == 32) return configured;
         }
 
@@ -141,13 +143,15 @@ public sealed class AesSecretVault(
     {
         if (target.ApplicationId.HasValue)
         {
-            reference.TargetApplication(target.ProjectId!.Value, target.EnvironmentId!.Value, target.ApplicationId.Value);
+            reference.TargetApplication(target.ProjectId!.Value, target.EnvironmentId!.Value,
+                target.ApplicationId.Value);
             return;
         }
 
         if (target.DatabaseResourceId.HasValue)
         {
-            reference.TargetDatabase(target.ProjectId!.Value, target.EnvironmentId!.Value, target.DatabaseResourceId.Value);
+            reference.TargetDatabase(target.ProjectId!.Value, target.EnvironmentId!.Value,
+                target.DatabaseResourceId.Value);
             return;
         }
 

@@ -8,7 +8,9 @@ public interface IGitClient
 
     Task CheckoutAsync(string repositoryDirectory, string reference, CancellationToken cancellationToken = default);
 
-    Task<GitCommitInfo> GetCommitAsync(string repositoryDirectory, string reference, CancellationToken cancellationToken = default);
+    Task<GitCommitInfo> GetCommitAsync(string repositoryDirectory, string reference,
+        CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<GitRepositoryRef>> ListRefsAsync(Uri repositoryUrl, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<GitRepositoryRef>> ListRefsAsync(Uri repositoryUrl,
+        CancellationToken cancellationToken = default);
 }

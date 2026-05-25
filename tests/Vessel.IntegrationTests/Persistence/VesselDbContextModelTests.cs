@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Vessel.Domain.Certificates;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
@@ -21,10 +24,12 @@ public sealed class VesselDbContextModelTests
         Assert.Equal("vessel", context.Model.FindEntityType(typeof(Team))?.GetSchema());
         Assert.Equal("teams", context.Model.FindEntityType(typeof(Team))?.GetTableName());
         Assert.Equal("applications", context.Model.FindEntityType(typeof(AppEntity))?.GetTableName());
-        Assert.Equal("environment_variables", context.Model.FindEntityType(typeof(EnvironmentVariable))?.GetTableName());
+        Assert.Equal("environment_variables",
+            context.Model.FindEntityType(typeof(EnvironmentVariable))?.GetTableName());
         Assert.Equal("secret_values", context.Model.FindEntityType(typeof(SecretValue))?.GetTableName());
         Assert.Equal("registry_credentials", context.Model.FindEntityType(typeof(RegistryCredential))?.GetTableName());
-        Assert.Equal("server_status_snapshots", context.Model.FindEntityType(typeof(ServerStatusSnapshot))?.GetTableName());
+        Assert.Equal("server_status_snapshots",
+            context.Model.FindEntityType(typeof(ServerStatusSnapshot))?.GetTableName());
     }
 
     [Fact]
@@ -53,6 +58,8 @@ public sealed class VesselDbContextModelTests
             migration => migration.EndsWith("Phase8DeploymentMvp", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("Phase9WebhooksAndPreviews", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("Phase10ProxyDomainsTls", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -74,6 +81,8 @@ public sealed class VesselDbContextModelTests
         Assert.Contains("webhook_events", script, StringComparison.Ordinal);
         Assert.Contains("application_webhook_configurations", script, StringComparison.Ordinal);
         Assert.Contains("application_previews", script, StringComparison.Ordinal);
+        Assert.Contains("proxy_configuration_versions", script, StringComparison.Ordinal);
+        Assert.Contains("certificates", script, StringComparison.Ordinal);
         Assert.Contains("ConfigurationSnapshotReference", script, StringComparison.Ordinal);
         Assert.Contains("CancellationRequestedAt", script, StringComparison.Ordinal);
         Assert.Contains("WebhookEventId", script, StringComparison.Ordinal);
@@ -81,11 +90,26 @@ public sealed class VesselDbContextModelTests
     }
 
     [Fact]
+    public void Model_MapsPhase10ProxyAndCertificateTables()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? proxyVersion = context.Model.FindEntityType(typeof(ProxyConfigurationVersion));
+        IEntityType? certificate = context.Model.FindEntityType(typeof(Certificate));
+
+        Assert.Equal("proxy_configuration_versions", proxyVersion?.GetTableName());
+        Assert.Equal(128,
+            proxyVersion?.FindProperty(nameof(ProxyConfigurationVersion.ConfigurationHash))?.GetMaxLength());
+        Assert.Equal("certificates", certificate?.GetTableName());
+        Assert.Equal(253, certificate?.FindProperty(nameof(Certificate.Host))?.GetMaxLength());
+    }
+
+    [Fact]
     public void Model_MapsDeploymentMvpMetadata()
     {
         using VesselDbContext context = CreateContext();
 
-        var deployment = context.Model.FindEntityType(typeof(Deployment));
+        IEntityType? deployment = context.Model.FindEntityType(typeof(Deployment));
 
         Assert.Equal(2048, deployment?.FindProperty(nameof(Deployment.RepositoryUrl))?.GetMaxLength());
         Assert.Equal(255, deployment?.FindProperty(nameof(Deployment.CommitBranch))?.GetMaxLength());
@@ -97,9 +121,9 @@ public sealed class VesselDbContextModelTests
     {
         using VesselDbContext context = CreateContext();
 
-        var webhookEvent = context.Model.FindEntityType(typeof(WebhookEvent));
-        var configuration = context.Model.FindEntityType(typeof(ApplicationWebhookConfiguration));
-        var preview = context.Model.FindEntityType(typeof(ApplicationPreview));
+        IEntityType? webhookEvent = context.Model.FindEntityType(typeof(WebhookEvent));
+        IEntityType? configuration = context.Model.FindEntityType(typeof(ApplicationWebhookConfiguration));
+        IEntityType? preview = context.Model.FindEntityType(typeof(ApplicationPreview));
 
         Assert.Equal("webhook_events", webhookEvent?.GetTableName());
         Assert.Equal(512, webhookEvent?.FindProperty(nameof(WebhookEvent.DedupeKey))?.GetMaxLength());

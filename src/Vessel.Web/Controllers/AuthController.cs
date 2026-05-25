@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Vessel.Application.Auditing;
 using Vessel.Application.Auth;
+using Vessel.Domain.Auditing;
 using Vessel.Web.Configuration;
 using Vessel.Web.Middleware;
 using Vessel.Web.Security;
@@ -79,7 +80,8 @@ public sealed class AuthController : ControllerBase
             cancellationToken);
 
         if (user is null || user.TwoFactorRequired)
-            return Redirect($"/login?error=invalid&returnUrl={Uri.EscapeDataString(request.ReturnUrl ?? string.Empty)}");
+            return Redirect(
+                $"/login?error=invalid&returnUrl={Uri.EscapeDataString(request.ReturnUrl ?? string.Empty)}");
 
         await SignInAsync(user);
         return LocalRedirect(NormalizeReturnUrl(request.ReturnUrl));
@@ -110,7 +112,7 @@ public sealed class AuthController : ControllerBase
             User.GetTeamId(),
             User.GetUserId(),
             AuditActions.UserLoggedOut,
-            new Domain.Auditing.AuditTarget("user", User.GetUserId().ToString()),
+            new AuditTarget("user", User.GetUserId().ToString()),
             CorrelationIdMiddleware.GetCorrelationId(HttpContext),
             new Dictionary<string, object?>(),
             cancellationToken);
@@ -134,9 +136,10 @@ public sealed class AuthController : ControllerBase
 
     [HttpPost("password-reset/complete")]
     [EnableRateLimiting("auth")]
-    public async Task<IActionResult> ResetPassword(PasswordResetCompleteRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> ResetPassword(PasswordResetCompleteRequest request,
+        CancellationToken cancellationToken)
     {
-        bool succeeded = await _authenticationService.ResetPasswordAsync(
+        var succeeded = await _authenticationService.ResetPasswordAsync(
             request.Email,
             request.Token,
             request.NewPassword,
@@ -188,10 +191,10 @@ public sealed class AuthController : ControllerBase
     {
         List<Claim> claims =
         [
-            new Claim(ClaimTypes.NameIdentifier, user.UserId.Value.ToString("D")),
-            new Claim(ClaimTypes.Name, user.Name),
-            new Claim(ClaimTypes.Email, user.Email),
-            new Claim(VesselClaimTypes.TeamId, user.TeamId.Value.ToString("D"))
+            new(ClaimTypes.NameIdentifier, user.UserId.Value.ToString("D")),
+            new(ClaimTypes.Name, user.Name),
+            new(ClaimTypes.Email, user.Email),
+            new(VesselClaimTypes.TeamId, user.TeamId.Value.ToString("D"))
         ];
         var identity = new ClaimsIdentity(claims, VesselAuthenticationSchemes.Cookie);
         await HttpContext.SignInAsync(VesselAuthenticationSchemes.Cookie, new ClaimsPrincipal(identity));

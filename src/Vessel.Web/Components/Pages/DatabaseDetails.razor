@@ -2,17 +2,22 @@
 @attribute [Authorize]
 
 <PageTitle>Database | Vessel</PageTitle>
-<PageHeader Kicker="Database" Title="Database overview" Description="@($"Database {Id} health, storage, credentials, and backup policy.")" />
+<PageHeader Kicker="Database" Title="Database overview"
+            Description="@($"Database {Id} health, storage, credentials, and backup policy.")"/>
 
 <section class="dashboard-grid">
     <SettingsPanel Title="Health and storage" Description="Health state, storage policy, and runtime target.">
         <div class="signal-list">
-            <div class="signal-row"><span>Health</span><StatusBadge Text="Unknown" Tone="neutral" /></div>
-            <div class="signal-row"><span>Backups</span><StatusBadge Text="Not configured" Tone="warning" /></div>
+            <div class="signal-row"><span>Health</span>
+                <StatusBadge Text="Unknown" Tone="neutral"/>
+            </div>
+            <div class="signal-row"><span>Backups</span>
+                <StatusBadge Text="Not configured" Tone="warning"/>
+            </div>
         </div>
     </SettingsPanel>
     <SettingsPanel Title="Credentials" Description="Secret values remain write-only and masked by default.">
-        <SecretInput Name="database-password" Placeholder="DATABASE_PASSWORD" />
+        <SecretInput Name="database-password" Placeholder="DATABASE_PASSWORD"/>
     </SettingsPanel>
 </section>
 

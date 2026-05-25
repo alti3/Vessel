@@ -5,28 +5,41 @@
 
 <PageTitle>Servers | Vessel</PageTitle>
 <PageHeader Kicker="Infrastructure" Title="Servers" Description="All your servers are here.">
-    <a class="button button-primary" href="/servers/new"><Icon Name="plus" CssClass="size-4" />Add</a>
+    <a class="button button-primary" href="/servers/new">
+        <Icon Name="plus" CssClass="size-4"/>
+        Add</a>
 </PageHeader>
 
 @if (Items.Count == 0)
 {
-    <EmptyState Title="No servers found" Description="Add a server after configuring the credentials that Vessel will use to inspect and deploy to the host." ActionHref="/servers/new" ActionText="Add server" />
+    <EmptyState Title="No servers found"
+                Description="Add a server after configuring the credentials that Vessel will use to inspect and deploy to the host."
+                ActionHref="/servers/new" ActionText="Add server"/>
 }
 else
 {
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Name</th><th>Address</th><th>Runtime</th><th>Status</th></tr></thead>
+            <thead>
+            <tr>
+                <th>Name</th>
+                <th>Address</th>
+                <th>Runtime</th>
+                <th>Status</th>
+            </tr>
+            </thead>
             <tbody>
-                @foreach (var item in Items)
-                {
-                    <tr>
-                        <td>@item.Name</td>
-                        <td>@item.Address</td>
-                        <td>@item.Runtime</td>
-                        <td><StatusBadge Text="@item.Status.ToString()" Tone="@ServerTone(item.Status)" /></td>
-                    </tr>
-                }
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>@item.Name</td>
+                    <td>@item.Address</td>
+                    <td>@item.Runtime</td>
+                    <td>
+                        <StatusBadge Text="@item.Status.ToString()" Tone="@ServerTone(item.Status)"/>
+                    </td>
+                </tr>
+            }
             </tbody>
         </table>
     </div>
@@ -51,4 +64,5 @@ else
             _ => "neutral"
         };
     }
+
 }

@@ -45,7 +45,7 @@ public sealed class TokensController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Revoke(Guid id, CancellationToken cancellationToken)
     {
-        bool revoked = await _tokenService.RevokeAsync(
+        var revoked = await _tokenService.RevokeAsync(
             User.GetUserId(),
             new PersonalAccessTokenId(id),
             CorrelationIdMiddleware.GetCorrelationId(HttpContext),

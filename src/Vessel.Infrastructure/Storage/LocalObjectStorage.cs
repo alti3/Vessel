@@ -7,7 +7,7 @@ public sealed class LocalObjectStorage(string rootDirectory, IPathSafetyService 
 {
     public async Task PutAsync(ObjectStoragePutRequest request, CancellationToken cancellationToken = default)
     {
-        string path = ToPath(request.Location);
+        var path = ToPath(request.Location);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await using FileStream file = File.Create(path);
         await request.Content.CopyToAsync(file, cancellationToken);
@@ -19,19 +19,21 @@ public sealed class LocalObjectStorage(string rootDirectory, IPathSafetyService 
         return Task.FromResult(stream);
     }
 
-    public Task<bool> ExistsAsync(ObjectStorageKey location, CancellationToken cancellationToken = default) =>
-        Task.FromResult(File.Exists(ToPath(location)));
+    public Task<bool> ExistsAsync(ObjectStorageKey location, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(File.Exists(ToPath(location)));
+    }
 
     public Task DeleteAsync(ObjectStorageKey location, CancellationToken cancellationToken = default)
     {
-        string path = ToPath(location);
+        var path = ToPath(location);
         if (File.Exists(path)) File.Delete(path);
         return Task.CompletedTask;
     }
 
     private string ToPath(ObjectStorageKey location)
     {
-        string relative = Path.Combine(location.Bucket, location.Key.Replace('/', Path.DirectorySeparatorChar));
+        var relative = Path.Combine(location.Bucket, location.Key.Replace('/', Path.DirectorySeparatorChar));
         return paths.EnsureOwnedRelativePath(rootDirectory, relative);
     }
 }

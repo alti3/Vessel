@@ -24,13 +24,15 @@ public sealed class EnvironmentVariablesController(ResourceManagementService res
         CreateEnvironmentVariableRequest request,
         CancellationToken cancellationToken)
     {
-        return Ok(await resources.CreateEnvironmentVariableAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken));
+        return Ok(await resources.CreateEnvironmentVariableAsync(User.GetUserId(), User.GetTeamId(), request,
+            cancellationToken));
     }
 
     [HttpGet("{variableId:guid}/reveal")]
     [Authorize(Policy = VesselPermissions.SecretsRead)]
     public async Task<ActionResult<string>> Reveal(Guid variableId, CancellationToken cancellationToken)
     {
-        return Ok(await resources.RevealEnvironmentVariableAsync(User.GetUserId(), User.GetTeamId(), new EnvironmentVariableId(variableId), cancellationToken));
+        return Ok(await resources.RevealEnvironmentVariableAsync(User.GetUserId(), User.GetTeamId(),
+            new EnvironmentVariableId(variableId), cancellationToken));
     }
 }

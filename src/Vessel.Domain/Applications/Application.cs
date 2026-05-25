@@ -81,6 +81,40 @@ public sealed class Application : Entity<ApplicationId>
         Touch(now);
     }
 
+    public void UpsertDomain(
+        DomainName domainName,
+        int? targetPort,
+        bool tlsEnabled,
+        bool canonical,
+        bool redirectToCanonical,
+        DateTimeOffset now)
+    {
+        if (canonical && redirectToCanonical)
+            throw new DomainException("Canonical domain cannot redirect to itself.");
+
+        ApplicationDomain? existing = _domains.SingleOrDefault(domain => domain.DomainName == domainName);
+        if (existing is null)
+        {
+            existing = new ApplicationDomain(Id, domainName, now);
+            _domains.Add(existing);
+        }
+
+        if (canonical)
+            foreach (ApplicationDomain domain in _domains.Where(domain => domain.DomainName != domainName))
+                domain.UpdateRouting(domain.TargetPort, domain.TlsEnabled, false, domain.RedirectToCanonical);
+
+        existing.UpdateRouting(targetPort, tlsEnabled, canonical, redirectToCanonical);
+        Touch(now);
+    }
+
+    public void RemoveDomain(DomainName domainName, DateTimeOffset now)
+    {
+        ApplicationDomain? existing = _domains.SingleOrDefault(domain => domain.DomainName == domainName);
+        if (existing is null) return;
+        _domains.Remove(existing);
+        Touch(now);
+    }
+
     public void UpdateSettings(
         ResourceName name,
         Description? description,

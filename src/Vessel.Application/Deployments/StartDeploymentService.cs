@@ -10,6 +10,7 @@ using Vessel.Domain.Auditing;
 using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.Servers;
+using ApplicationId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Deployments;
 
@@ -33,20 +34,22 @@ public sealed class StartDeploymentService(
         activity?.SetTag("vessel.force_rebuild", request.ForceRebuild);
         activity?.SetTag("vessel.webhook_event_id", request.WebhookEventId);
 
-        var applicationId = new Vessel.Domain.ApplicationId(request.ApplicationId);
+        var applicationId = new ApplicationId(request.ApplicationId);
         if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.DeploymentsStart))
-            throw new UnauthorizedAccessException($"Missing required permission '{VesselPermissions.DeploymentsStart}'.");
+            throw new UnauthorizedAccessException(
+                $"Missing required permission '{VesselPermissions.DeploymentsStart}'.");
         if (!authorization.CanAccessApplication(actorUserId, applicationId))
             throw new UnauthorizedAccessException("Application is outside the active team.");
 
-        Domain.Applications.Application application = dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
+        Domain.Applications.Application application =
+            dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
             ?? throw new InvalidOperationException("Application was not found.");
         Server server = dbContext.Servers.SingleOrDefault(server => server.Id == application.ServerId)
-            ?? throw new InvalidOperationException("Deployment server was not found.");
+                        ?? throw new InvalidOperationException("Deployment server was not found.");
         if (server.Status == ServerStatus.Unreachable)
             throw new DomainException("Deployment server is unreachable.");
 
-        bool alreadyActive = dbContext.Deployments.Any(deployment =>
+        var alreadyActive = dbContext.Deployments.Any(deployment =>
             deployment.ApplicationId == applicationId &&
             (deployment.Status == DeploymentStatus.Queued ||
              deployment.Status == DeploymentStatus.InProgress ||
@@ -69,7 +72,8 @@ public sealed class StartDeploymentService(
             NormalizeCommit(request.CommitSha) ?? application.GitSource.CommitSha ?? "pending",
             null,
             now);
-        deployment.AddLogLine("system", request.ForceRebuild ? "Deployment queued with force rebuild." : "Deployment queued.", now);
+        deployment.AddLogLine("system",
+            request.ForceRebuild ? "Deployment queued with force rebuild." : "Deployment queued.", now);
 
         await dbContext.DeploymentRepository.AddAsync(deployment, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -90,7 +94,8 @@ public sealed class StartDeploymentService(
 
         await realtime.PublishAsync(
             new RealtimeGroup(RealtimeGroupKind.Deployment, deployment.Id.Value.ToString("D")),
-            new RealtimeMessage("deployment.status", new { deploymentId = deployment.Id.Value, status = deployment.Status.ToString() }),
+            new RealtimeMessage("deployment.status",
+                new { deploymentId = deployment.Id.Value, status = deployment.Status.ToString() }),
             cancellationToken);
 
         activity?.SetTag("vessel.deployment_id", deployment.Id.Value);
@@ -101,13 +106,14 @@ public sealed class StartDeploymentService(
                 { "force_rebuild", request.ForceRebuild }
             });
 
-        return new StartDeploymentResult(deployment.Id.Value, application.Id.Value, deployment.Status, "Deployment accepted.");
+        return new StartDeploymentResult(deployment.Id.Value, application.Id.Value, deployment.Status,
+            "Deployment accepted.");
     }
 
     private static string? NormalizeCommit(string? commitSha)
     {
         if (string.IsNullOrWhiteSpace(commitSha)) return null;
-        string trimmed = commitSha.Trim();
+        var trimmed = commitSha.Trim();
         if (trimmed.Length > 80) throw new DomainException("Commit reference is too long.");
         return trimmed;
     }
@@ -119,12 +125,13 @@ public sealed class StartDeploymentService(
         CancellationToken cancellationToken = default)
     {
         if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.DeploymentsCancel))
-            throw new UnauthorizedAccessException($"Missing required permission '{VesselPermissions.DeploymentsCancel}'.");
+            throw new UnauthorizedAccessException(
+                $"Missing required permission '{VesselPermissions.DeploymentsCancel}'.");
         if (!authorization.CanAccessDeployment(actorUserId, deploymentId))
             throw new UnauthorizedAccessException("Deployment is outside the active team.");
 
         Deployment deployment = await dbContext.DeploymentRepository.GetByIdAsync(deploymentId, cancellationToken)
-            ?? throw new InvalidOperationException("Deployment was not found.");
+                                ?? throw new InvalidOperationException("Deployment was not found.");
         DateTimeOffset now = timeProvider.GetUtcNow();
         deployment.RequestCancellation(now);
         deployment.AddLogLine("system", "Deployment cancellation requested by user.", now);
@@ -136,7 +143,8 @@ public sealed class StartDeploymentService(
 
         await realtime.PublishAsync(
             new RealtimeGroup(RealtimeGroupKind.Deployment, deployment.Id.Value.ToString("D")),
-            new RealtimeMessage("deployment.status", new { deploymentId = deployment.Id.Value, status = deployment.Status.ToString() }),
+            new RealtimeMessage("deployment.status",
+                new { deploymentId = deployment.Id.Value, status = deployment.Status.ToString() }),
             cancellationToken);
     }
 }

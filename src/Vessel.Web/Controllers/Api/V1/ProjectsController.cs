@@ -33,24 +33,29 @@ public sealed class ProjectsController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = VesselPermissions.ProjectsWrite)]
-    public async Task<ActionResult<ProjectDetails>> Create(CreateProjectRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<ProjectDetails>> Create(CreateProjectRequest request,
+        CancellationToken cancellationToken)
     {
-        ProjectDetails project = await _resources.CreateProjectAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken);
+        ProjectDetails project =
+            await _resources.CreateProjectAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken);
         return CreatedAtAction(nameof(Get), new { projectId = project.Id }, project);
     }
 
     [HttpPut("{projectId:guid}")]
     [Authorize(Policy = VesselPermissions.ProjectsWrite)]
-    public async Task<ActionResult<ProjectDetails>> Update(Guid projectId, UpdateProjectRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<ProjectDetails>> Update(Guid projectId, UpdateProjectRequest request,
+        CancellationToken cancellationToken)
     {
-        return Ok(await _resources.UpdateProjectAsync(User.GetUserId(), User.GetTeamId(), new ProjectId(projectId), request, cancellationToken));
+        return Ok(await _resources.UpdateProjectAsync(User.GetUserId(), User.GetTeamId(), new ProjectId(projectId),
+            request, cancellationToken));
     }
 
     [HttpDelete("{projectId:guid}")]
     [Authorize(Policy = VesselPermissions.ProjectsWrite)]
     public async Task<IActionResult> Archive(Guid projectId, CancellationToken cancellationToken)
     {
-        await _resources.ArchiveProjectAsync(User.GetUserId(), User.GetTeamId(), new ProjectId(projectId), cancellationToken);
+        await _resources.ArchiveProjectAsync(User.GetUserId(), User.GetTeamId(), new ProjectId(projectId),
+            cancellationToken);
         return NoContent();
     }
 }

@@ -4,22 +4,34 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Settings | Vessel</PageTitle>
-<PageHeader Kicker="System" Title="Settings" Description="Team and system settings are exposed through explicit application queries." />
+<PageHeader Kicker="System" Title="Settings"
+            Description="Team and system settings are exposed through explicit application queries."/>
 
 @if (Items.Count == 0)
 {
-    <EmptyState Title="No settings found" Description="Settings will appear here when public configuration screens are implemented." />
+    <EmptyState Title="No settings found"
+                Description="Settings will appear here when public configuration screens are implemented."/>
 }
 else
 {
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Scope</th><th>Key</th><th>Resource</th></tr></thead>
+            <thead>
+            <tr>
+                <th>Scope</th>
+                <th>Key</th>
+                <th>Resource</th>
+            </tr>
+            </thead>
             <tbody>
-                @foreach (var item in Items)
-                {
-                    <tr><td>@item.Scope</td><td>@item.Key</td><td>@(item.ResourceType ?? "global")</td></tr>
-                }
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>@item.Scope</td>
+                    <td>@item.Key</td>
+                    <td>@(item.ResourceType ?? "global")</td>
+                </tr>
+            }
             </tbody>
         </table>
     </div>
@@ -32,4 +44,5 @@ else
     {
         Items = SettingsQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
     }
+
 }

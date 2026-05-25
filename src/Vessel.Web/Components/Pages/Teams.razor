@@ -1,18 +1,21 @@
 @page "/teams"
+@using Vessel.Application.Auth
+@using Vessel.Application.Persistence
 @attribute [Authorize]
 @inject IServiceProvider Services
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Teams | Vessel</PageTitle>
-<PageHeader Kicker="Tenancy" Title="Teams" Description="Switch team context and keep resources filtered to the selected tenant boundary." />
+<PageHeader Kicker="Tenancy" Title="Teams"
+            Description="Switch team context and keep resources filtered to the selected tenant boundary."/>
 
 @if (LoadFailed)
 {
-    <EmptyState Title="Teams are not available" Description="Team data requires the Vessel database to be enabled." />
+    <EmptyState Title="Teams are not available" Description="Team data requires the Vessel database to be enabled."/>
 }
 else if (TeamItems.Count == 0)
 {
-    <EmptyState Title="No teams found" Description="The current user is not a member of any team." />
+    <EmptyState Title="No teams found" Description="The current user is not a member of any team."/>
 }
 else
 {
@@ -31,20 +34,20 @@ else
 }
 
 @code {
-    private IReadOnlyList<Vessel.Application.Auth.TeamSummary> TeamItems { get; set; } = [];
+    private IReadOnlyList<TeamSummary> TeamItems { get; set; } = [];
     private bool LoadFailed { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            if (Services.GetService<Vessel.Application.Persistence.IVesselDbContext>() is null)
+            if (Services.GetService<IVesselDbContext>() is null)
             {
                 LoadFailed = true;
                 return;
             }
 
-            var teamsService = Services.GetRequiredService<Vessel.Application.Auth.VesselTeamService>();
+            var teamsService = Services.GetRequiredService<VesselTeamService>();
             TeamItems = teamsService.ListTeams((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetUserId());
         }
         catch (InvalidOperationException)
@@ -52,4 +55,5 @@ else
             LoadFailed = true;
         }
     }
+
 }
