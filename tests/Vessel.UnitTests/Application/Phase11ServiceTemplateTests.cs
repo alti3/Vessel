@@ -54,6 +54,29 @@ public sealed class Phase11ServiceTemplateTests
         Assert.Contains(templates, template => template.Key == "grafana");
         Assert.Contains(templates, template => template.Key == "grafana-postgres");
         Assert.Contains(templates, template => template.Key == "home-assistant");
+        Assert.Contains(templates, template => template.Key == "minecraft-server");
+        Assert.Contains(templates, template => template.Key == "moodle");
+        Assert.Contains(templates, template => template.Key == "matrix-synapse-postgres");
+        Assert.Contains(templates, template => template.Key == "matrix-synapse-sqlite");
+        Assert.Contains(templates, template => template.Key == "marimo");
+        Assert.Contains(templates, template => template.Key == "jupyter-notebook-python");
+        Assert.Contains(templates, template => template.Key == "drizzle-gateway");
+        Assert.Contains(templates, template => template.Key == "drupal-postgres");
+        Assert.Contains(templates, template => template.Key == "electricsql");
+        Assert.Contains(templates, template => template.Key == "codimd");
+        Assert.Contains(templates, template => template.Key == "librechat");
+        Assert.Contains(templates, template => template.Key == "mailpit");
+        Assert.Contains(templates, template => template.Key == "nextcloud");
+        Assert.Contains(templates, template => template.Key == "nextcloud-postgres");
+        Assert.Contains(templates, template => template.Key == "nextcloud-mysql");
+        Assert.Contains(templates, template => template.Key == "nextcloud-mariadb");
+        Assert.Contains(templates, template => template.Key == "odoo");
+        Assert.Contains(templates, template => template.Key == "pocketbase");
+        Assert.Contains(templates, template => template.Key == "wikijs");
+        Assert.Contains(templates, template => template.Key == "keycloak");
+        Assert.Contains(templates, template => template.Key == "keycloak-postgres");
+        Assert.Contains(templates, template => template.Key == "cloudflared");
+        Assert.Contains(templates, template => template.Key == "metabase");
     }
 
     [Fact]
@@ -186,6 +209,24 @@ public sealed class Phase11ServiceTemplateTests
     [InlineData("gitlab", "gitlab/gitlab-ce:latest", "2222:22", "gitlab-data:/var/opt/gitlab", "GITLAB_ROOT_PASSWORD")]
     [InlineData("grafana", "grafana/grafana-oss:latest", "3004:3000", "grafana-data:/var/lib/grafana",
         "GF_SECURITY_ADMIN_PASSWORD")]
+    [InlineData("minecraft-server", "itzg/minecraft-server:latest", "25565:25565", "minecraft-data:/data",
+        "RCON_PASSWORD")]
+    [InlineData("marimo", "ghcr.io/marimo-team/marimo:latest", "2718:2718", "marimo-workspace:/workspace",
+        "MARIMO_PASSWORD")]
+    [InlineData("jupyter-notebook-python", "quay.io/jupyter/base-notebook:latest", "8888:8888",
+        "jupyter-notebook-python-work:/home/jovyan/work", "JUPYTER_TOKEN")]
+    [InlineData("drizzle-gateway", "ghcr.io/drizzle-team/gateway:latest", "4983:4983",
+        "drizzle-gateway-data:/app", "MASTER_PASSWORD")]
+    [InlineData("electricsql", "electricsql/electric:latest", "5133:3000", "ELECTRIC_SECRET",
+        "DATABASE_URL")]
+    [InlineData("nextcloud", "nextcloud:latest", "8088:80", "nextcloud-data:/var/www/html",
+        "NEXTCLOUD_ADMIN_PASSWORD")]
+    [InlineData("keycloak", "quay.io/keycloak/keycloak:latest", "8087:8080", "KC_BOOTSTRAP_ADMIN_USERNAME",
+        "KC_BOOTSTRAP_ADMIN_PASSWORD")]
+    [InlineData("cloudflared", "cloudflare/cloudflared:latest", "tunnel --no-autoupdate run", "restart: unless-stopped",
+        "TOKEN")]
+    [InlineData("metabase", "metabase/metabase:latest", "3005:3000", "metabase-data:/metabase-data",
+        "MB_ENCRYPTION_SECRET_KEY")]
     public void CreatePlan_EmitsInfrastructureTemplates(
         string templateKey,
         string image,
@@ -209,7 +250,11 @@ public sealed class Phase11ServiceTemplateTests
                 ["openAiApiKey"] = "infrastructure-secret",
                 ["gatewayToken"] = "infrastructure-secret",
                 ["rootPassword"] = "infrastructure-secret",
-                ["adminPassword"] = "infrastructure-secret"
+                ["adminPassword"] = "infrastructure-secret",
+                ["rconPassword"] = "infrastructure-secret",
+                ["masterPassword"] = "infrastructure-secret",
+                ["databaseUrl"] = "infrastructure-secret",
+                ["electricSecret"] = "infrastructure-secret"
             });
 
         Assert.Contains(image, plan.ComposeYaml, StringComparison.Ordinal);
@@ -231,6 +276,9 @@ public sealed class Phase11ServiceTemplateTests
     [InlineData("gitea", "gitea/gitea:latest", "3003:3000", "gitea-data:/data")]
     [InlineData("home-assistant", "ghcr.io/home-assistant/home-assistant:stable", "8123:8123",
         "homeassistant-config:/config")]
+    [InlineData("matrix-synapse-sqlite", "matrixdotorg/synapse:latest", "8008:8008", "synapse-data:/data")]
+    [InlineData("mailpit", "axllent/mailpit:latest", "8025:8025", "1025:1025")]
+    [InlineData("pocketbase", "ghcr.io/muchobien/pocketbase:latest", "8090:8090", "pocketbase-data:/pb_data")]
     public void CreatePlan_EmitsNoSecretApplicationTemplates(
         string templateKey,
         string image,
@@ -265,6 +313,22 @@ public sealed class Phase11ServiceTemplateTests
     [InlineData("gitea-mysql", "mysql:8.0", "3003:3000", "gitea-mysql-data:/var/lib/mysql")]
     [InlineData("grafana-postgres", "postgres:16-alpine", "3004:3000",
         "grafana-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("moodle", "bitnami/moodle:latest", "8086:8080", "moodle-mariadb-data:/bitnami/mariadb")]
+    [InlineData("matrix-synapse-postgres", "postgres:16-alpine", "8008:8008",
+        "synapse-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("keycloak-postgres", "quay.io/keycloak/keycloak:latest", "8087:8080",
+        "keycloak-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("drupal-postgres", "drupal:latest", "8089:80", "drupal-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("codimd", "quay.io/hedgedoc/hedgedoc:latest", "3006:3000",
+        "codimd-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("librechat", "ghcr.io/danny-avila/librechat:latest", "3080:3080",
+        "librechat-mongodb-data:/data/db")]
+    [InlineData("nextcloud-postgres", "postgres:16-alpine", "8088:80",
+        "nextcloud-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("nextcloud-mysql", "mysql:8", "8088:80", "nextcloud-mysql-data:/var/lib/mysql")]
+    [InlineData("nextcloud-mariadb", "mariadb:11", "8088:80", "nextcloud-mariadb-data:/var/lib/mysql")]
+    [InlineData("odoo", "odoo:latest", "8069:8069", "odoo-postgresql-data:/var/lib/postgresql/data")]
+    [InlineData("wikijs", "requarks/wiki:2", "3007:3000", "wikijs-postgresql-data:/var/lib/postgresql/data")]
     public void CreatePlan_EmitsDatabaseBackedApplicationTemplates(
         string templateKey,
         string image,
@@ -289,7 +353,12 @@ public sealed class Phase11ServiceTemplateTests
                 ["anonKey"] = "app-secret",
                 ["serviceRoleKey"] = "app-secret",
                 ["dashboardPassword"] = "app-secret",
-                ["adminPassword"] = "app-secret"
+                ["adminPassword"] = "app-secret",
+                ["sessionSecret"] = "app-secret",
+                ["jwtRefreshSecret"] = "app-secret",
+                ["credsKey"] = "app-secret",
+                ["credsIv"] = "app-secret",
+                ["meiliMasterKey"] = "app-secret"
             });
 
         Assert.Contains(image, plan.ComposeYaml, StringComparison.Ordinal);

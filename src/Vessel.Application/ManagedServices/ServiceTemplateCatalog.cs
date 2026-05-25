@@ -534,6 +534,600 @@ public sealed partial class ServiceTemplateCatalog
                           homeassistant-config:
                         """),
         new(
+            "minecraft-server",
+            "Minecraft Server",
+            "Java Edition Minecraft server with persistent world data.",
+            "1",
+            [
+                new ServiceTemplateInput("motd", "Message of the day", true, false, "Vessel Minecraft"),
+                new ServiceTemplateInput("serverType", "Server type", true, false, "VANILLA"),
+                new ServiceTemplateInput("minecraftVersion", "Minecraft version", true, false, "LATEST"),
+                new ServiceTemplateInput("memory", "Memory", true, false, "2G"),
+                new ServiceTemplateInput("maxPlayers", "Max players", true, false, "20"),
+                new ServiceTemplateInput("rconPassword", "RCON password", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          minecraft:
+                            image: itzg/minecraft-server:latest
+                            environment:
+                              EULA: "TRUE"
+                              TYPE: {{Escape(inputs["serverType"])}}
+                              VERSION: {{Escape(inputs["minecraftVersion"])}}
+                              MEMORY: {{Escape(inputs["memory"])}}
+                              MOTD: {{Escape(inputs["motd"])}}
+                              MAX_PLAYERS: {{Escape(inputs["maxPlayers"])}}
+                              ENABLE_RCON: "true"
+                              RCON_PASSWORD: {{Escape(inputs["rconPassword"])}}
+                            volumes:
+                              - minecraft-data:/data
+                            ports:
+                              - "25565:25565"
+                            healthcheck:
+                              test: ["CMD", "mc-health"]
+                              interval: 30s
+                              timeout: 10s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          minecraft-data:
+                        """),
+        new(
+            "moodle",
+            "Moodle",
+            "Open-source learning management system with a bundled MariaDB database.",
+            "1",
+            [
+                new ServiceTemplateInput("adminUsername", "Admin username", true, false, "admin"),
+                new ServiceTemplateInput("adminPassword", "Admin password", true, true, null),
+                new ServiceTemplateInput("adminEmail", "Admin email", true, false, "admin@example.com"),
+                new ServiceTemplateInput("siteName", "Site name", true, false, "Vessel Moodle"),
+                new ServiceTemplateInput("database", "Database", true, false, "moodle"),
+                new ServiceTemplateInput("databaseUser", "Database user", true, false, "moodle"),
+                new ServiceTemplateInput("databasePassword", "Database password", true, true, null),
+                new ServiceTemplateInput("rootPassword", "Database root password", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          moodle:
+                            image: bitnami/moodle:latest
+                            environment:
+                              MOODLE_USERNAME: {{Escape(inputs["adminUsername"])}}
+                              MOODLE_PASSWORD: {{Escape(inputs["adminPassword"])}}
+                              MOODLE_EMAIL: {{Escape(inputs["adminEmail"])}}
+                              MOODLE_SITE_NAME: {{Escape(inputs["siteName"])}}
+                              MOODLE_DATABASE_TYPE: mariadb
+                              MOODLE_DATABASE_HOST: moodle-mariadb
+                              MOODLE_DATABASE_PORT_NUMBER: "3306"
+                              MOODLE_DATABASE_NAME: {{Escape(inputs["database"])}}
+                              MOODLE_DATABASE_USER: {{Escape(inputs["databaseUser"])}}
+                              MOODLE_DATABASE_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - moodle-data:/bitnami/moodle
+                              - moodledata-data:/bitnami/moodledata
+                            ports:
+                              - "8086:8080"
+                            depends_on:
+                              moodle-mariadb:
+                                condition: service_healthy
+                            healthcheck:
+                              test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/login/index.php || exit 1"]
+                              interval: 10s
+                              timeout: 20s
+                              retries: 20
+                            restart: unless-stopped
+                          moodle-mariadb:
+                            image: bitnami/mariadb:latest
+                            environment:
+                              MARIADB_ROOT_PASSWORD: {{Escape(inputs["rootPassword"])}}
+                              MARIADB_DATABASE: {{Escape(inputs["database"])}}
+                              MARIADB_USER: {{Escape(inputs["databaseUser"])}}
+                              MARIADB_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - moodle-mariadb-data:/bitnami/mariadb
+                            healthcheck:
+                              test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p\"$${MARIADB_ROOT_PASSWORD}\""]
+                              interval: 5s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          moodle-data:
+                          moodledata-data:
+                          moodle-mariadb-data:
+                        """),
+        new(
+            "matrix-synapse-postgres",
+            "Matrix Synapse with Postgres",
+            "Matrix homeserver backed by a bundled PostgreSQL database.",
+            "1",
+            [
+                new ServiceTemplateInput("serverName", "Server name", true, false, "matrix.example.com"),
+                new ServiceTemplateInput("reportStats", "Report anonymous stats", true, false, "no"),
+                new ServiceTemplateInput("database", "Database", true, false, "synapse"),
+                new ServiceTemplateInput("databaseUser", "Database user", true, false, "synapse"),
+                new ServiceTemplateInput("databasePassword", "Database password", true, true, null)
+            ],
+            inputs => MatrixSynapseCompose("postgres", inputs)),
+        new(
+            "matrix-synapse-sqlite",
+            "Matrix Synapse with SQLite",
+            "Matrix homeserver using its embedded SQLite database.",
+            "1",
+            [
+                new ServiceTemplateInput("serverName", "Server name", true, false, "matrix.example.com"),
+                new ServiceTemplateInput("reportStats", "Report anonymous stats", true, false, "no")
+            ],
+            inputs => MatrixSynapseCompose("sqlite", inputs)),
+        new(
+            "marimo",
+            "Marimo",
+            "Reactive Python notebook workspace.",
+            "1",
+            [
+                new ServiceTemplateInput("password", "Password", true, true, null),
+                new ServiceTemplateInput("baseUrl", "Base URL", false, false, null)
+            ],
+            inputs => $$"""
+                        services:
+                          marimo:
+                            image: ghcr.io/marimo-team/marimo:latest
+                            command: ["marimo", "edit", "--host", "0.0.0.0", "--port", "2718", "--headless", "--no-token", "/workspace"]
+                            environment:
+                              MARIMO_PASSWORD: {{Escape(inputs["password"])}}
+                              MARIMO_BASE_URL: {{Escape(Optional(inputs, "baseUrl"))}}
+                            volumes:
+                              - marimo-workspace:/workspace
+                            ports:
+                              - "2718:2718"
+                            healthcheck:
+                              test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:2718', timeout=5)"]
+                              interval: 10s
+                              timeout: 10s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          marimo-workspace:
+                        """),
+        new(
+            "jupyter-notebook-python",
+            "Jupyter Notebook Python",
+            "Python notebook workspace using the official Jupyter Docker Stack.",
+            "1",
+            [
+                new ServiceTemplateInput("token", "Access token", true, true, null),
+                new ServiceTemplateInput("timezone", "Timezone", true, false, "UTC")
+            ],
+            inputs => $$"""
+                        services:
+                          jupyter-notebook-python:
+                            image: quay.io/jupyter/base-notebook:latest
+                            environment:
+                              JUPYTER_TOKEN: {{Escape(inputs["token"])}}
+                              TZ: {{Escape(inputs["timezone"])}}
+                            volumes:
+                              - jupyter-notebook-python-work:/home/jovyan/work
+                            ports:
+                              - "8888:8888"
+                            healthcheck:
+                              test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8888/api"]
+                              interval: 10s
+                              timeout: 10s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          jupyter-notebook-python-work:
+                        """),
+        new(
+            "drizzle-gateway",
+            "Drizzle Gateway",
+            "Web gateway for browsing and managing Drizzle-connected databases.",
+            "1",
+            [
+                new ServiceTemplateInput("masterPassword", "Master password", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          drizzle-gateway:
+                            image: ghcr.io/drizzle-team/gateway:latest
+                            environment:
+                              MASTER_PASSWORD: {{Escape(inputs["masterPassword"])}}
+                              STORE_PATH: /app
+                            volumes:
+                              - drizzle-gateway-data:/app
+                            ports:
+                              - "4983:4983"
+                            restart: unless-stopped
+                        volumes:
+                          drizzle-gateway-data:
+                        """),
+        new(
+            "drupal-postgres",
+            "Drupal with PostgreSQL",
+            "Drupal CMS backed by a bundled PostgreSQL database.",
+            "1",
+            [
+                new ServiceTemplateInput("database", "Database", true, false, "drupal"),
+                new ServiceTemplateInput("databaseUser", "Database user", true, false, "drupal"),
+                new ServiceTemplateInput("databasePassword", "Database password", true, true, null)
+            ],
+            inputs => DrupalWithPostgresCompose(inputs)),
+        new(
+            "electricsql",
+            "ElectricSQL",
+            "Postgres sync service for local-first applications.",
+            "1",
+            [
+                new ServiceTemplateInput("databaseUrl", "Postgres database URL", true, true, null),
+                new ServiceTemplateInput("electricSecret", "Electric secret", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          electricsql:
+                            image: electricsql/electric:latest
+                            environment:
+                              DATABASE_URL: {{Escape(inputs["databaseUrl"])}}
+                              ELECTRIC_SECRET: {{Escape(inputs["electricSecret"])}}
+                            ports:
+                              - "5133:3000"
+                            healthcheck:
+                              test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/v1/health || exit 1"]
+                              interval: 10s
+                              timeout: 10s
+                              retries: 10
+                            restart: unless-stopped
+                        """),
+        new(
+            "codimd",
+            "CodiMD",
+            "Collaborative Markdown notes backed by PostgreSQL.",
+            "1",
+            [
+                new ServiceTemplateInput("domain", "Domain", true, false, "localhost"),
+                new ServiceTemplateInput("database", "Database", true, false, "codimd"),
+                new ServiceTemplateInput("databaseUser", "Database user", true, false, "codimd"),
+                new ServiceTemplateInput("databasePassword", "Database password", true, true, null),
+                new ServiceTemplateInput("sessionSecret", "Session secret", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          codimd:
+                            image: quay.io/hedgedoc/hedgedoc:latest
+                            environment:
+                              CMD_DB_URL: postgres://{{Escape(inputs["databaseUser"])}}:{{Escape(inputs["databasePassword"])}}@codimd-postgresql:5432/{{Escape(inputs["database"])}}
+                              CMD_DOMAIN: {{Escape(inputs["domain"])}}
+                              CMD_PROTOCOL_USESSL: "false"
+                              CMD_URL_ADDPORT: "true"
+                              CMD_SESSION_SECRET: {{Escape(inputs["sessionSecret"])}}
+                            volumes:
+                              - codimd-uploads:/hedgedoc/public/uploads
+                            ports:
+                              - "3006:3000"
+                            depends_on:
+                              codimd-postgresql:
+                                condition: service_healthy
+                            healthcheck:
+                              test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/status || exit 1"]
+                              interval: 10s
+                              timeout: 10s
+                              retries: 20
+                            restart: unless-stopped
+                          codimd-postgresql:
+                            image: postgres:16-alpine
+                            environment:
+                              POSTGRES_DB: {{Escape(inputs["database"])}}
+                              POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                              POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - codimd-postgresql-data:/var/lib/postgresql/data
+                            healthcheck:
+                              test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+                              interval: 5s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          codimd-uploads:
+                          codimd-postgresql-data:
+                        """),
+        new(
+            "librechat",
+            "LibreChat",
+            "AI chat platform with MongoDB and Meilisearch.",
+            "1",
+            [
+                new ServiceTemplateInput("jwtSecret", "JWT secret", true, true, null),
+                new ServiceTemplateInput("jwtRefreshSecret", "JWT refresh secret", true, true, null),
+                new ServiceTemplateInput("credsKey", "Credentials key", true, true, null),
+                new ServiceTemplateInput("credsIv", "Credentials IV", true, true, null),
+                new ServiceTemplateInput("meiliMasterKey", "Meilisearch master key", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          librechat:
+                            image: ghcr.io/danny-avila/librechat:latest
+                            environment:
+                              HOST: 0.0.0.0
+                              PORT: "3080"
+                              MONGO_URI: mongodb://librechat-mongodb:27017/LibreChat
+                              MEILI_HOST: http://librechat-meilisearch:7700
+                              MEILI_MASTER_KEY: {{Escape(inputs["meiliMasterKey"])}}
+                              JWT_SECRET: {{Escape(inputs["jwtSecret"])}}
+                              JWT_REFRESH_SECRET: {{Escape(inputs["jwtRefreshSecret"])}}
+                              CREDS_KEY: {{Escape(inputs["credsKey"])}}
+                              CREDS_IV: {{Escape(inputs["credsIv"])}}
+                            volumes:
+                              - librechat-images:/app/client/public/images
+                              - librechat-logs:/app/api/logs
+                            ports:
+                              - "3080:3080"
+                            depends_on:
+                              librechat-mongodb:
+                                condition: service_started
+                              librechat-meilisearch:
+                                condition: service_healthy
+                            restart: unless-stopped
+                          librechat-mongodb:
+                            image: mongo:7
+                            volumes:
+                              - librechat-mongodb-data:/data/db
+                            restart: unless-stopped
+                          librechat-meilisearch:
+                            image: getmeili/meilisearch:v1.7
+                            environment:
+                              MEILI_MASTER_KEY: {{Escape(inputs["meiliMasterKey"])}}
+                              MEILI_NO_ANALYTICS: "true"
+                            volumes:
+                              - librechat-meilisearch-data:/meili_data
+                            healthcheck:
+                              test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7700/health || exit 1"]
+                              interval: 10s
+                              timeout: 10s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          librechat-images:
+                          librechat-logs:
+                          librechat-mongodb-data:
+                          librechat-meilisearch-data:
+                        """),
+        new(
+            "mailpit",
+            "Mailpit",
+            "Email testing SMTP server and web UI.",
+            "1",
+            [],
+            _ => """
+                 services:
+                   mailpit:
+                     image: axllent/mailpit:latest
+                     ports:
+                       - "8025:8025"
+                       - "1025:1025"
+                     healthcheck:
+                       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8025"]
+                       interval: 10s
+                       timeout: 10s
+                       retries: 10
+                     restart: unless-stopped
+                 """),
+        new(
+            "nextcloud",
+            "Nextcloud",
+            "File sync and collaboration platform using embedded SQLite.",
+            "1",
+            NextcloudInputs(false),
+            inputs => NextcloudCompose(null, inputs)),
+        new(
+            "nextcloud-postgres",
+            "Nextcloud with Postgres",
+            "Nextcloud backed by a bundled PostgreSQL database.",
+            "1",
+            NextcloudInputs(true),
+            inputs => NextcloudCompose("postgres", inputs)),
+        new(
+            "nextcloud-mysql",
+            "Nextcloud with MySQL",
+            "Nextcloud backed by a bundled MySQL database.",
+            "1",
+            NextcloudInputs(true, true),
+            inputs => NextcloudCompose("mysql", inputs)),
+        new(
+            "nextcloud-mariadb",
+            "Nextcloud with MariaDB",
+            "Nextcloud backed by a bundled MariaDB database.",
+            "1",
+            NextcloudInputs(true, true),
+            inputs => NextcloudCompose("mariadb", inputs)),
+        new(
+            "odoo",
+            "Odoo",
+            "Business application suite backed by PostgreSQL.",
+            "1",
+            [
+                new ServiceTemplateInput("databaseUser", "Database user", true, false, "odoo"),
+                new ServiceTemplateInput("databasePassword", "Database password", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          odoo:
+                            image: odoo:latest
+                            environment:
+                              HOST: odoo-postgresql
+                              USER: {{Escape(inputs["databaseUser"])}}
+                              PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - odoo-data:/var/lib/odoo
+                              - odoo-config:/etc/odoo
+                            ports:
+                              - "8069:8069"
+                            depends_on:
+                              odoo-postgresql:
+                                condition: service_healthy
+                            restart: unless-stopped
+                          odoo-postgresql:
+                            image: postgres:16-alpine
+                            environment:
+                              POSTGRES_DB: postgres
+                              POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                              POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - odoo-postgresql-data:/var/lib/postgresql/data
+                            healthcheck:
+                              test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+                              interval: 5s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          odoo-data:
+                          odoo-config:
+                          odoo-postgresql-data:
+                        """),
+        new(
+            "pocketbase",
+            "PocketBase",
+            "Single-file backend with realtime database, auth, and file storage.",
+            "1",
+            [],
+            _ => """
+                 services:
+                   pocketbase:
+                     image: ghcr.io/muchobien/pocketbase:latest
+                     volumes:
+                       - pocketbase-data:/pb_data
+                       - pocketbase-public:/pb_public
+                     ports:
+                       - "8090:8090"
+                     healthcheck:
+                       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8090/api/health"]
+                       interval: 10s
+                       timeout: 10s
+                       retries: 10
+                     restart: unless-stopped
+                 volumes:
+                   pocketbase-data:
+                   pocketbase-public:
+                 """),
+        new(
+            "wikijs",
+            "Wiki.js",
+            "Modern wiki platform backed by PostgreSQL.",
+            "1",
+            [
+                new ServiceTemplateInput("database", "Database", true, false, "wiki"),
+                new ServiceTemplateInput("databaseUser", "Database user", true, false, "wiki"),
+                new ServiceTemplateInput("databasePassword", "Database password", true, true, null)
+            ],
+            inputs => $$"""
+                        services:
+                          wikijs:
+                            image: requarks/wiki:2
+                            environment:
+                              DB_TYPE: postgres
+                              DB_HOST: wikijs-postgresql
+                              DB_PORT: "5432"
+                              DB_USER: {{Escape(inputs["databaseUser"])}}
+                              DB_PASS: {{Escape(inputs["databasePassword"])}}
+                              DB_NAME: {{Escape(inputs["database"])}}
+                            ports:
+                              - "3007:3000"
+                            depends_on:
+                              wikijs-postgresql:
+                                condition: service_healthy
+                            healthcheck:
+                              test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz || exit 1"]
+                              interval: 10s
+                              timeout: 10s
+                              retries: 20
+                            restart: unless-stopped
+                          wikijs-postgresql:
+                            image: postgres:16-alpine
+                            environment:
+                              POSTGRES_DB: {{Escape(inputs["database"])}}
+                              POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                              POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - wikijs-postgresql-data:/var/lib/postgresql/data
+                            healthcheck:
+                              test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+                              interval: 5s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          wikijs-postgresql-data:
+                        """),
+        new(
+            "keycloak",
+            "Keycloak",
+            "Open-source identity and access management server.",
+            "1",
+            [
+                new ServiceTemplateInput("adminUsername", "Admin username", true, false, "admin"),
+                new ServiceTemplateInput("adminPassword", "Admin password", true, true, null),
+                new ServiceTemplateInput("hostname", "Hostname URL", false, false, null),
+                new ServiceTemplateInput("timezone", "Timezone", true, false, "UTC")
+            ],
+            inputs => KeycloakCompose(null, inputs)),
+        new(
+            "keycloak-postgres",
+            "Keycloak with Postgres",
+            "Keycloak backed by a bundled PostgreSQL database.",
+            "1",
+            [
+                new ServiceTemplateInput("adminUsername", "Admin username", true, false, "admin"),
+                new ServiceTemplateInput("adminPassword", "Admin password", true, true, null),
+                new ServiceTemplateInput("hostname", "Hostname URL", false, false, null),
+                new ServiceTemplateInput("timezone", "Timezone", true, false, "UTC"),
+                new ServiceTemplateInput("database", "Database", true, false, "keycloak"),
+                new ServiceTemplateInput("databaseUser", "Database user", true, false, "keycloak"),
+                new ServiceTemplateInput("databasePassword", "Database password", true, true, null)
+            ],
+            inputs => KeycloakCompose("postgres", inputs)),
+        new(
+            "cloudflared",
+            "Cloudflared",
+            "Cloudflare Tunnel connector for exposing services through Cloudflare.",
+            "1",
+            [new ServiceTemplateInput("token", "Tunnel token", true, true, null)],
+            inputs => $$"""
+                        services:
+                          cloudflared:
+                            image: cloudflare/cloudflared:latest
+                            command: tunnel --no-autoupdate run --token {{Escape(inputs["token"])}}
+                            restart: unless-stopped
+                        """),
+        new(
+            "metabase",
+            "Metabase",
+            "Business intelligence and analytics dashboard.",
+            "1",
+            [
+                new ServiceTemplateInput("encryptionKey", "Encryption key", true, true, null),
+                new ServiceTemplateInput("siteUrl", "Site URL", false, false, null)
+            ],
+            inputs => $$"""
+                        services:
+                          metabase:
+                            image: metabase/metabase:latest
+                            environment:
+                              MB_ENCRYPTION_SECRET_KEY: {{Escape(inputs["encryptionKey"])}}
+                              MB_SITE_URL: {{Escape(Optional(inputs, "siteUrl"))}}
+                            volumes:
+                              - metabase-data:/metabase-data
+                            ports:
+                              - "3005:3000"
+                            healthcheck:
+                              test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/health"]
+                              interval: 10s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                        volumes:
+                          metabase-data:
+                        """),
+        new(
             "minio",
             "MinIO",
             "S3-compatible object storage service.",
@@ -1575,6 +2169,346 @@ public sealed partial class ServiceTemplateCatalog
                  volumes:
                    gitea-data:
                    {{databaseVolumeName}}:
+                 """;
+    }
+
+    private static string MatrixSynapseCompose(string storage, IReadOnlyDictionary<string, string> inputs)
+    {
+        if (storage == "sqlite")
+            return $$"""
+                     services:
+                       synapse:
+                         image: matrixdotorg/synapse:latest
+                         environment:
+                           SYNAPSE_SERVER_NAME: {{Escape(inputs["serverName"])}}
+                           SYNAPSE_REPORT_STATS: {{Escape(inputs["reportStats"])}}
+                         volumes:
+                           - synapse-data:/data
+                         ports:
+                           - "8008:8008"
+                         command:
+                           - sh
+                           - -c
+                           - |
+                             if [ ! -f /data/homeserver.yaml ]; then
+                               python -m synapse.app.homeserver --server-name "$${SYNAPSE_SERVER_NAME}" --config-path /data/homeserver.yaml --generate-config --report-stats "$${SYNAPSE_REPORT_STATS}";
+                             fi
+                             exec python -m synapse.app.homeserver --config-path /data/homeserver.yaml
+                         healthcheck:
+                           test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=5)\""]
+                           interval: 10s
+                           timeout: 10s
+                           retries: 20
+                         restart: unless-stopped
+                     volumes:
+                       synapse-data:
+                     """;
+
+        return $$"""
+                 services:
+                   synapse:
+                     image: matrixdotorg/synapse:latest
+                     environment:
+                       SYNAPSE_SERVER_NAME: {{Escape(inputs["serverName"])}}
+                       SYNAPSE_REPORT_STATS: {{Escape(inputs["reportStats"])}}
+                       SYNAPSE_POSTGRES_DB: {{Escape(inputs["database"])}}
+                       SYNAPSE_POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                       SYNAPSE_POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                     volumes:
+                       - synapse-data:/data
+                     ports:
+                       - "8008:8008"
+                     depends_on:
+                       synapse-postgres:
+                         condition: service_healthy
+                     command:
+                       - sh
+                       - -c
+                       - |
+                         if [ ! -f /data/homeserver.yaml ]; then
+                           python -m synapse.app.homeserver --server-name "$${SYNAPSE_SERVER_NAME}" --config-path /data/homeserver.yaml --generate-config --report-stats "$${SYNAPSE_REPORT_STATS}";
+                           printf '%s\n' 'database:' '  name: psycopg2' '  args:' "    user: $${SYNAPSE_POSTGRES_USER}" "    password: $${SYNAPSE_POSTGRES_PASSWORD}" "    database: $${SYNAPSE_POSTGRES_DB}" '    host: synapse-postgres' '    port: 5432' '    cp_min: 5' '    cp_max: 10' >> /data/homeserver.yaml;
+                         fi
+                         exec python -m synapse.app.homeserver --config-path /data/homeserver.yaml
+                     healthcheck:
+                       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=5)\""]
+                       interval: 10s
+                       timeout: 10s
+                       retries: 20
+                     restart: unless-stopped
+                   synapse-postgres:
+                     image: postgres:16-alpine
+                     environment:
+                       POSTGRES_DB: {{Escape(inputs["database"])}}
+                       POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                       POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                     volumes:
+                       - synapse-postgresql-data:/var/lib/postgresql/data
+                     healthcheck:
+                       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+                       interval: 5s
+                       timeout: 20s
+                       retries: 10
+                     restart: unless-stopped
+                 volumes:
+                   synapse-data:
+                   synapse-postgresql-data:
+                 """;
+    }
+
+    private static string KeycloakCompose(string? database, IReadOnlyDictionary<string, string> inputs)
+    {
+        if (database is null)
+            return $$"""
+                     services:
+                       keycloak:
+                         image: quay.io/keycloak/keycloak:latest
+                         command: ["start-dev"]
+                         environment:
+                           KC_BOOTSTRAP_ADMIN_USERNAME: {{Escape(inputs["adminUsername"])}}
+                           KC_BOOTSTRAP_ADMIN_PASSWORD: {{Escape(inputs["adminPassword"])}}
+                           KC_HOSTNAME: {{Escape(Optional(inputs, "hostname"))}}
+                           KC_HEALTH_ENABLED: "true"
+                           KC_HTTP_ENABLED: "true"
+                           TZ: {{Escape(inputs["timezone"])}}
+                         ports:
+                           - "8087:8080"
+                         healthcheck:
+                           test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/8080' || exit 1"]
+                           interval: 10s
+                           timeout: 10s
+                           retries: 20
+                         restart: unless-stopped
+                     """;
+
+        return $$"""
+                 services:
+                   keycloak:
+                     image: quay.io/keycloak/keycloak:latest
+                     command: ["start-dev"]
+                     environment:
+                       KC_BOOTSTRAP_ADMIN_USERNAME: {{Escape(inputs["adminUsername"])}}
+                       KC_BOOTSTRAP_ADMIN_PASSWORD: {{Escape(inputs["adminPassword"])}}
+                       KC_HOSTNAME: {{Escape(Optional(inputs, "hostname"))}}
+                       KC_HEALTH_ENABLED: "true"
+                       KC_HTTP_ENABLED: "true"
+                       KC_DB: postgres
+                       KC_DB_URL_HOST: keycloak-postgresql
+                       KC_DB_URL_DATABASE: {{Escape(inputs["database"])}}
+                       KC_DB_USERNAME: {{Escape(inputs["databaseUser"])}}
+                       KC_DB_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                       TZ: {{Escape(inputs["timezone"])}}
+                     ports:
+                       - "8087:8080"
+                     depends_on:
+                       keycloak-postgresql:
+                         condition: service_healthy
+                     healthcheck:
+                       test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/8080' || exit 1"]
+                       interval: 10s
+                       timeout: 10s
+                       retries: 20
+                     restart: unless-stopped
+                   keycloak-postgresql:
+                     image: postgres:16-alpine
+                     environment:
+                       POSTGRES_DB: {{Escape(inputs["database"])}}
+                       POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                       POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                     volumes:
+                       - keycloak-postgresql-data:/var/lib/postgresql/data
+                     healthcheck:
+                       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+                       interval: 5s
+                       timeout: 20s
+                       retries: 10
+                     restart: unless-stopped
+                 volumes:
+                   keycloak-postgresql-data:
+                 """;
+    }
+
+    private static string DrupalWithPostgresCompose(IReadOnlyDictionary<string, string> inputs)
+    {
+        return $$"""
+                 services:
+                   drupal:
+                     image: drupal:latest
+                     volumes:
+                       - drupal-modules:/var/www/html/modules
+                       - drupal-profiles:/var/www/html/profiles
+                       - drupal-sites:/var/www/html/sites
+                       - drupal-themes:/var/www/html/themes
+                     ports:
+                       - "8089:80"
+                     depends_on:
+                       drupal-postgresql:
+                         condition: service_healthy
+                     healthcheck:
+                       test: ["CMD", "curl", "-f", "http://127.0.0.1"]
+                       interval: 10s
+                       timeout: 10s
+                       retries: 20
+                     restart: unless-stopped
+                   drupal-postgresql:
+                     image: postgres:16-alpine
+                     environment:
+                       POSTGRES_DB: {{Escape(inputs["database"])}}
+                       POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                       POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                     volumes:
+                       - drupal-postgresql-data:/var/lib/postgresql/data
+                     healthcheck:
+                       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+                       interval: 5s
+                       timeout: 20s
+                       retries: 10
+                     restart: unless-stopped
+                 volumes:
+                   drupal-modules:
+                   drupal-profiles:
+                   drupal-sites:
+                   drupal-themes:
+                   drupal-postgresql-data:
+                 """;
+    }
+
+    private static IReadOnlyList<ServiceTemplateInput> NextcloudInputs(bool database, bool rootPassword = false)
+    {
+        var inputs = new List<ServiceTemplateInput>
+        {
+            new("adminUsername", "Admin username", true, false, "admin"),
+            new("adminPassword", "Admin password", true, true, null),
+            new("trustedDomains", "Trusted domains", false, false, null)
+        };
+
+        if (database)
+        {
+            inputs.Add(new ServiceTemplateInput("database", "Database", true, false, "nextcloud"));
+            inputs.Add(new ServiceTemplateInput("databaseUser", "Database user", true, false, "nextcloud"));
+            inputs.Add(new ServiceTemplateInput("databasePassword", "Database password", true, true, null));
+        }
+
+        if (rootPassword)
+            inputs.Add(new ServiceTemplateInput("rootPassword", "Database root password", true, true, null));
+
+        return inputs;
+    }
+
+    private static string NextcloudCompose(string? database, IReadOnlyDictionary<string, string> inputs)
+    {
+        var appEnvironment = database switch
+        {
+            "postgres" => $$"""
+                              POSTGRES_HOST: nextcloud-postgresql
+                              POSTGRES_DB: {{Escape(inputs["database"])}}
+                              POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                              POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                """,
+            "mysql" or "mariadb" => $$"""
+                              MYSQL_HOST: nextcloud-{{database}}
+                              MYSQL_DATABASE: {{Escape(inputs["database"])}}
+                              MYSQL_USER: {{Escape(inputs["databaseUser"])}}
+                              MYSQL_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                """,
+            _ => string.Empty
+        };
+
+        var dependsOn = database is null
+            ? string.Empty
+            : $$"""
+                            depends_on:
+                              nextcloud-{{(database == "postgres" ? "postgresql" : database)}}:
+                                condition: service_healthy
+              """;
+
+        var databaseService = database switch
+        {
+            "postgres" => $$"""
+                          nextcloud-postgresql:
+                            image: postgres:16-alpine
+                            environment:
+                              POSTGRES_DB: {{Escape(inputs["database"])}}
+                              POSTGRES_USER: {{Escape(inputs["databaseUser"])}}
+                              POSTGRES_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - nextcloud-postgresql-data:/var/lib/postgresql/data
+                            healthcheck:
+                              test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+                              interval: 5s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                """,
+            "mysql" => $$"""
+                          nextcloud-mysql:
+                            image: mysql:8
+                            environment:
+                              MYSQL_ROOT_PASSWORD: {{Escape(inputs["rootPassword"])}}
+                              MYSQL_DATABASE: {{Escape(inputs["database"])}}
+                              MYSQL_USER: {{Escape(inputs["databaseUser"])}}
+                              MYSQL_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - nextcloud-mysql-data:/var/lib/mysql
+                            healthcheck:
+                              test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\""]
+                              interval: 5s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                """,
+            "mariadb" => $$"""
+                          nextcloud-mariadb:
+                            image: mariadb:11
+                            environment:
+                              MYSQL_ROOT_PASSWORD: {{Escape(inputs["rootPassword"])}}
+                              MYSQL_DATABASE: {{Escape(inputs["database"])}}
+                              MYSQL_USER: {{Escape(inputs["databaseUser"])}}
+                              MYSQL_PASSWORD: {{Escape(inputs["databasePassword"])}}
+                            volumes:
+                              - nextcloud-mariadb-data:/var/lib/mysql
+                            healthcheck:
+                              test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -u root -p\"$${MYSQL_ROOT_PASSWORD}\""]
+                              interval: 5s
+                              timeout: 20s
+                              retries: 10
+                            restart: unless-stopped
+                """,
+            _ => string.Empty
+        };
+
+        var databaseVolume = database switch
+        {
+            "postgres" => "  nextcloud-postgresql-data:\n",
+            "mysql" => "  nextcloud-mysql-data:\n",
+            "mariadb" => "  nextcloud-mariadb-data:\n",
+            _ => string.Empty
+        };
+
+        return $$"""
+                 services:
+                   nextcloud:
+                     image: nextcloud:latest
+                     environment:
+                       NEXTCLOUD_ADMIN_USER: {{Escape(inputs["adminUsername"])}}
+                       NEXTCLOUD_ADMIN_PASSWORD: {{Escape(inputs["adminPassword"])}}
+                       NEXTCLOUD_TRUSTED_DOMAINS: {{Escape(Optional(inputs, "trustedDomains"))}}
+                 {{appEnvironment}}
+                     volumes:
+                       - nextcloud-data:/var/www/html
+                     ports:
+                       - "8088:80"
+                 {{dependsOn}}
+                     healthcheck:
+                       test: ["CMD", "curl", "-f", "http://127.0.0.1/status.php"]
+                       interval: 10s
+                       timeout: 10s
+                       retries: 20
+                     restart: unless-stopped
+                 {{databaseService}}
+                 volumes:
+                   nextcloud-data:
+                 {{databaseVolume}}
                  """;
     }
 
