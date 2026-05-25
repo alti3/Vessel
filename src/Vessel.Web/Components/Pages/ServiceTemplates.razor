@@ -24,24 +24,26 @@
 
 @if (Selected is not null)
 {
-    <SettingsPanel Title="@($"Create {Selected.Name}")" Description="Inputs marked as secret are redacted before persistence and logs.">
+    <SettingsPanel Title="@($"Create {Selected.Name}")"
+                   Description="Inputs marked as secret are redacted before persistence and logs.">
         <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-service-template">
             <div class="form-grid">
                 <label>Name
                     <InputText @bind-Value="Model.Name" name="name"/>
                 </label>
                 <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects)
-                    {
-                        <option value="@project.Id">@project.Name</option>
-                    }</select></label>
-                <label>Environment<select @bind="Model.EnvironmentId" name="environment">@foreach (var environment in Environments)
-                    {
-                        <option value="@environment.Id">@environment.Name</option>
-                    }</select></label>
+                        {
+                            <option value="@project.Id">@project.Name</option>
+                        }</select></label>
+                <label>Environment<select @bind="Model.EnvironmentId"
+                                          name="environment">@foreach (var environment in Environments)
+                        {
+                            <option value="@environment.Id">@environment.Name</option>
+                        }</select></label>
                 <label>Server<select @bind="Model.ServerId" name="server">@foreach (var server in Servers)
-                    {
-                        <option value="@server.Id">@server.Name</option>
-                    }</select></label>
+                        {
+                            <option value="@server.Id">@server.Name</option>
+                        }</select></label>
                 @foreach (var input in Selected.Inputs)
                 {
                     <label>@input.Label
@@ -77,6 +79,7 @@
             Environments = Resources.ListEnvironments(user.GetUserId(), user.GetTeamId(), new ProjectId(Model.ProjectId));
             Model.EnvironmentId = Environments.FirstOrDefault()?.Id ?? Guid.Empty;
         }
+
         Model.ServerId = Servers.FirstOrDefault()?.Id ?? Guid.Empty;
     }
 
@@ -119,4 +122,5 @@
         public string InputValue { get; set; } = string.Empty;
         public Dictionary<string, string> Inputs { get; } = [];
     }
+
 }
