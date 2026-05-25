@@ -21,6 +21,9 @@ public sealed class PathSafetyServiceTests
         var service = new PathSafetyService();
         var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
 
+        Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "../outside.txt"));
         Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "..\\outside.txt"));
+        Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "\\outside.txt"));
+        Assert.Throws<InvalidOperationException>(() => service.EnsureOwnedRelativePath(root, "C:\\outside.txt"));
     }
 }
