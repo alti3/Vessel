@@ -1,12 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
+using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Services;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Webhooks;
 using Vessel.Infrastructure.Persistence;
@@ -60,6 +63,8 @@ public sealed class VesselDbContextModelTests
             migration => migration.EndsWith("Phase9WebhooksAndPreviews", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("Phase10ProxyDomainsTls", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("Phase11ManagedServicesBackups", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -83,6 +88,10 @@ public sealed class VesselDbContextModelTests
         Assert.Contains("application_previews", script, StringComparison.Ordinal);
         Assert.Contains("proxy_configuration_versions", script, StringComparison.Ordinal);
         Assert.Contains("certificates", script, StringComparison.Ordinal);
+        Assert.Contains("backup_schedules", script, StringComparison.Ordinal);
+        Assert.Contains("backup_executions", script, StringComparison.Ordinal);
+        Assert.Contains("service_resources", script, StringComparison.Ordinal);
+        Assert.Contains("LifecycleState", script, StringComparison.Ordinal);
         Assert.Contains("ConfigurationSnapshotReference", script, StringComparison.Ordinal);
         Assert.Contains("CancellationRequestedAt", script, StringComparison.Ordinal);
         Assert.Contains("WebhookEventId", script, StringComparison.Ordinal);
@@ -130,6 +139,26 @@ public sealed class VesselDbContextModelTests
         Assert.Equal("application_webhook_configurations", configuration?.GetTableName());
         Assert.Equal("application_previews", preview?.GetTableName());
         Assert.Equal(2048, preview?.FindProperty(nameof(ApplicationPreview.PullRequestUrl))?.GetMaxLength());
+    }
+
+    [Fact]
+    public void Model_MapsPhase11ManagedServicesBackupsAndRestoreTables()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? database = context.Model.FindEntityType(typeof(DatabaseResource));
+        IEntityType? service = context.Model.FindEntityType(typeof(ServiceResource));
+        IEntityType? schedule = context.Model.FindEntityType(typeof(BackupSchedule));
+        IEntityType? execution = context.Model.FindEntityType(typeof(BackupExecution));
+
+        Assert.Equal("database_resources", database?.GetTableName());
+        Assert.Equal(32, database?.FindProperty(nameof(DatabaseResource.LifecycleState))?.GetMaxLength());
+        Assert.Equal("service_resources", service?.GetTableName());
+        Assert.Equal("jsonb", service?.FindProperty(nameof(ServiceResource.ConfigurationJson))?.GetColumnType());
+        Assert.Equal("backup_schedules", schedule?.GetTableName());
+        Assert.Equal(120, schedule?.FindProperty(nameof(BackupSchedule.CronExpression))?.GetMaxLength());
+        Assert.Equal("backup_executions", execution?.GetTableName());
+        Assert.Equal(512, execution?.FindProperty(nameof(BackupExecution.ArtifactKey))?.GetMaxLength());
     }
 
     private static VesselDbContext CreateContext()

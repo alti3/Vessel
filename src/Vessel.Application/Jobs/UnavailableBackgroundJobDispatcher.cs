@@ -24,7 +24,8 @@ public sealed class UnavailableRecurringJobScheduler : IRecurringJobScheduler
         Expression<Func<TJob, Task>> methodCall,
         string cronExpression)
     {
-        throw new InvalidOperationException(
-            "Background job scheduling is unavailable because Hangfire storage is disabled.");
+        _ = recurringJobId;
+        _ = methodCall;
+        _ = cronExpression;
     }
 }

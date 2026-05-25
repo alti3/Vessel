@@ -50,6 +50,12 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
 
     public DatabaseHealthState HealthState { get; private set; } = DatabaseHealthState.Unknown;
 
+    public DatabaseLifecycleState LifecycleState { get; private set; } = DatabaseLifecycleState.NotProvisioned;
+
+    public string? ContainerName { get; private set; }
+
+    public string? ComposeSnapshotReference { get; private set; }
+
     public IReadOnlyCollection<BackupPolicy> BackupPolicies => _backupPolicies.AsReadOnly();
 
     public static DatabaseResource Create(
@@ -69,6 +75,49 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
     public void ChangeHealth(DatabaseHealthState healthState, DateTimeOffset now)
     {
         HealthState = healthState;
+        Touch(now);
+    }
+
+    public void MarkProvisioning(DateTimeOffset now)
+    {
+        LifecycleState = DatabaseLifecycleState.Provisioning;
+        Touch(now);
+    }
+
+    public void MarkRunning(string containerName, string composeSnapshotReference, DateTimeOffset now)
+    {
+        ContainerName = DomainValidation.Required(containerName, nameof(containerName), 160);
+        ComposeSnapshotReference = DomainValidation.Required(composeSnapshotReference, nameof(composeSnapshotReference),
+            512);
+        LifecycleState = DatabaseLifecycleState.Running;
+        HealthState = DatabaseHealthState.Healthy;
+        Touch(now);
+    }
+
+    public void MarkStopped(DateTimeOffset now)
+    {
+        LifecycleState = DatabaseLifecycleState.Stopped;
+        HealthState = DatabaseHealthState.Unknown;
+        Touch(now);
+    }
+
+    public void MarkRestarting(DateTimeOffset now)
+    {
+        LifecycleState = DatabaseLifecycleState.Restarting;
+        Touch(now);
+    }
+
+    public void MarkDeleted(DateTimeOffset now)
+    {
+        LifecycleState = DatabaseLifecycleState.Deleted;
+        HealthState = DatabaseHealthState.Unknown;
+        Touch(now);
+    }
+
+    public void MarkFailed(DateTimeOffset now)
+    {
+        LifecycleState = DatabaseLifecycleState.Failed;
+        HealthState = DatabaseHealthState.Unhealthy;
         Touch(now);
     }
 

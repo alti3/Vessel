@@ -22,6 +22,15 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<DatabaseResourceId, Guid> DatabaseResourceId =
         new(id => id.Value, value => new DatabaseResourceId(value));
 
+    public static readonly ValueConverter<ServiceResourceId, Guid> ServiceResourceId =
+        new(id => id.Value, value => new ServiceResourceId(value));
+
+    public static readonly ValueConverter<BackupScheduleId, Guid> BackupScheduleId =
+        new(id => id.Value, value => new BackupScheduleId(value));
+
+    public static readonly ValueConverter<BackupExecutionId, Guid> BackupExecutionId =
+        new(id => id.Value, value => new BackupExecutionId(value));
+
     public static readonly ValueConverter<DeploymentId, Guid> DeploymentId = new(id => id.Value,
         value => new DeploymentId(value));
 
@@ -105,6 +114,24 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<DatabaseResourceId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(DatabaseResourceId);
+    }
+
+    public static PropertyBuilder<ServiceResourceId> HasServiceResourceIdConversion(
+        this PropertyBuilder<ServiceResourceId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(ServiceResourceId);
+    }
+
+    public static PropertyBuilder<BackupScheduleId> HasBackupScheduleIdConversion(
+        this PropertyBuilder<BackupScheduleId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(BackupScheduleId);
+    }
+
+    public static PropertyBuilder<BackupExecutionId> HasBackupExecutionIdConversion(
+        this PropertyBuilder<BackupExecutionId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(BackupExecutionId);
     }
 
     public static PropertyBuilder<DeploymentId> HasDeploymentIdConversion(

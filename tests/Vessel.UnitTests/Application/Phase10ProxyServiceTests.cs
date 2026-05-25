@@ -9,6 +9,7 @@ using Vessel.Application.Security;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Common;
 using Vessel.Domain.Databases;
@@ -20,6 +21,7 @@ using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
@@ -461,6 +463,9 @@ public sealed class Phase10ProxyServiceTests
             ApplicationItems.SelectMany(application => application.Domains).AsQueryable();
 
         public IQueryable<DatabaseResource> DatabaseResources => Array.Empty<DatabaseResource>().AsQueryable();
+        public IQueryable<ServiceResource> ServiceResources => Array.Empty<ServiceResource>().AsQueryable();
+        public IQueryable<BackupSchedule> BackupSchedules => Array.Empty<BackupSchedule>().AsQueryable();
+        public IQueryable<BackupExecution> BackupExecutions => Array.Empty<BackupExecution>().AsQueryable();
         public IQueryable<Deployment> Deployments => Array.Empty<Deployment>().AsQueryable();
         public IQueryable<SecretReference> SecretReferences => Array.Empty<SecretReference>().AsQueryable();
         public IQueryable<SecretValue> SecretValues => Array.Empty<SecretValue>().AsQueryable();
@@ -508,6 +513,15 @@ public sealed class Phase10ProxyServiceTests
 
         public IRepository<DatabaseResource, DatabaseResourceId> DatabaseResourceRepository =>
             new EmptyRepository<DatabaseResource, DatabaseResourceId>();
+
+        public IRepository<ServiceResource, ServiceResourceId> ServiceResourceRepository =>
+            new EmptyRepository<ServiceResource, ServiceResourceId>();
+
+        public IRepository<BackupSchedule, BackupScheduleId> BackupScheduleRepository =>
+            new EmptyRepository<BackupSchedule, BackupScheduleId>();
+
+        public IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository =>
+            new EmptyRepository<BackupExecution, BackupExecutionId>();
 
         public IRepository<Deployment, DeploymentId> DeploymentRepository =>
             new EmptyRepository<Deployment, DeploymentId>();
