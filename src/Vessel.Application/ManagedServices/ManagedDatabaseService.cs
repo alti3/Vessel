@@ -108,7 +108,7 @@ public sealed class ManagedDatabaseService(
             await auditWriter.RecordAsync(teamId, null, AuditActions.DatabaseLifecycleActionCompleted,
                 new AuditTarget("database", database.Id.Value.ToString("D")), null,
                 new Dictionary<string, object?>
-                    { ["action"] = action.ToString(), ["state"] = database.LifecycleState.ToString() },
+                { ["action"] = action.ToString(), ["state"] = database.LifecycleState.ToString() },
                 cancellationToken);
             return new DatabaseLifecycleResult(database.Id.Value, database.LifecycleState, database.HealthState,
                 $"Database {action} completed.");
@@ -309,7 +309,7 @@ public sealed class ManagedDatabaseService(
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.RestoreValidated,
             new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
             new Dictionary<string, object?>
-                { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
+            { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
             cancellationToken);
         return new RestoreValidationResult(execution.Id.Value, target.Id.Value, dryRun,
             dryRun
@@ -347,7 +347,7 @@ public sealed class ManagedDatabaseService(
             await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.RestoreCompleted,
                 new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
                 new Dictionary<string, object?>
-                    { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
+                { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
                 cancellationToken);
             return ToSummary(execution);
         }

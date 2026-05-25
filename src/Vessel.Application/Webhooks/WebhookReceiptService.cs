@@ -75,7 +75,7 @@ public sealed class WebhookReceiptService(
             await auditWriter.RecordAsync(null, null, AuditActions.WebhookRejected,
                 new AuditTarget("webhook-event", webhookEvent.Id.Value.ToString("D")), null,
                 new Dictionary<string, object?>
-                    { ["provider"] = request.Provider.ToString(), ["eventType"] = eventType },
+                { ["provider"] = request.Provider.ToString(), ["eventType"] = eventType },
                 cancellationToken);
             return new WebhookReceiptResult(webhookEvent.Id.Value, request.Provider, eventType, webhookEvent.Status,
                 webhookEvent.SignatureStatus, "Webhook signature or token verification failed.");

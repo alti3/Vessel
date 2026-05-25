@@ -210,7 +210,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
     public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
-        ApplicationWebhookConfigurationRepository { get; }
+        ApplicationWebhookConfigurationRepository
+    { get; }
 
     public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
 
