@@ -1,6 +1,8 @@
+using System.Runtime.CompilerServices;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
 using Vessel.Domain;
+using Vessel.Domain.Proxy;
 using Vessel.Infrastructure.Files;
 using Vessel.Infrastructure.Proxy;
 using AppId = Vessel.Domain.ApplicationId;
@@ -12,7 +14,7 @@ public sealed class TraefikProxyProviderTests
     [Fact]
     public void Generate_IsDeterministicForRouteSet()
     {
-        var provider = CreateProvider();
+        TraefikProxyProvider provider = CreateProvider();
         var serverId = ServerId.New();
         ProxyRoute[] routes =
         [
@@ -31,9 +33,9 @@ public sealed class TraefikProxyProviderTests
     [Fact]
     public void Generate_WritesHttpRoutesCustomPortsAndCanonicalRedirects()
     {
-        var provider = CreateProvider();
+        TraefikProxyProvider provider = CreateProvider();
         var serverId = ServerId.New();
-        AppId applicationId = AppId.New();
+        var applicationId = AppId.New();
 
         ProxyConfigurationDocument document = provider.Generate(serverId,
         [
@@ -54,7 +56,7 @@ public sealed class TraefikProxyProviderTests
     [Fact]
     public void Generate_RejectsRedirectToCanonicalWithoutCanonicalRoute()
     {
-        var provider = CreateProvider();
+        TraefikProxyProvider provider = CreateProvider();
         var serverId = ServerId.New();
 
         Assert.Throws<InvalidOperationException>(() => provider.Generate(serverId,
@@ -66,7 +68,7 @@ public sealed class TraefikProxyProviderTests
     [Fact]
     public void Validate_RejectsDuplicateHostsAndSecretLikeContent()
     {
-        var provider = CreateProvider();
+        TraefikProxyProvider provider = CreateProvider();
         var serverId = ServerId.New();
         ProxyRoute[] routes =
         [
@@ -88,11 +90,11 @@ public sealed class TraefikProxyProviderTests
     [Fact]
     public void Validate_RejectsMalformedHostsInvalidPortsAndWrongProvider()
     {
-        var provider = CreateProvider();
+        TraefikProxyProvider provider = CreateProvider();
         var serverId = ServerId.New();
         var document = new ProxyConfigurationDocument(
             serverId,
-            Vessel.Domain.Proxy.ProxyProviderKind.Caddy,
+            ProxyProviderKind.Caddy,
             "v1",
             "http:\n  routers: {}\n  services: {}\n",
             "hash",
@@ -104,7 +106,8 @@ public sealed class TraefikProxyProviderTests
         ProxyValidationResult result = provider.Validate(document);
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("Proxy provider must be Traefik", StringComparison.Ordinal));
+        Assert.Contains(result.Errors,
+            error => error.Contains("Proxy provider must be Traefik", StringComparison.Ordinal));
         Assert.Contains(result.Errors, error => error.Contains("is invalid", StringComparison.Ordinal));
         Assert.Contains(result.Errors, error => error.Contains("invalid target port", StringComparison.Ordinal));
     }
@@ -113,7 +116,7 @@ public sealed class TraefikProxyProviderTests
     public async Task ReloadAsync_TreatsMissingProxyContainerAsSuccess()
     {
         var provider = new TraefikProxyProvider(
-            new FakeProcessRunner(success: false, exitCode: 1, standardError: "No such container: vessel-proxy"),
+            new FakeProcessRunner(false, 1, "No such container: vessel-proxy"),
             new PathSafetyService());
 
         ProxyApplyResult result = await provider.ReloadAsync(ServerId.New());
@@ -125,17 +128,17 @@ public sealed class TraefikProxyProviderTests
     [Fact]
     public async Task ApplyAsync_RollsBackPreviousConfigWhenReloadFails()
     {
-        var processRunner = new FakeProcessRunner(success: false);
+        var processRunner = new FakeProcessRunner(false);
         var provider = new TraefikProxyProvider(processRunner, new PathSafetyService());
         var serverId = ServerId.New();
-        var previous = new ProxyConfigurationDocument(serverId, Vessel.Domain.Proxy.ProxyProviderKind.Traefik,
+        var previous = new ProxyConfigurationDocument(serverId, ProxyProviderKind.Traefik,
             "previous", "http:\n  routers: {}\n  services: {}\n", "hash", []);
-        string configPath = Path.Combine(AppContext.BaseDirectory, "proxy", "traefik", "dynamic",
+        var configPath = Path.Combine(AppContext.BaseDirectory, "proxy", "traefik", "dynamic",
             $"server-{serverId.Value:N}.yml");
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         await File.WriteAllTextAsync(configPath, previous.Contents);
-        string originalContent = await File.ReadAllTextAsync(configPath);
-        var current = provider.Generate(serverId,
+        var originalContent = await File.ReadAllTextAsync(configPath);
+        ProxyConfigurationDocument current = provider.Generate(serverId,
         [
             new ProxyRoute(AppId.New(), serverId, "vessel-app", "app.example.com", 8080, true, true, false)
         ]);
@@ -149,7 +152,7 @@ public sealed class TraefikProxyProviderTests
 
     private static TraefikProxyProvider CreateProvider()
     {
-        return new TraefikProxyProvider(new FakeProcessRunner(success: true), new PathSafetyService());
+        return new TraefikProxyProvider(new FakeProcessRunner(true), new PathSafetyService());
     }
 
     private sealed class FakeProcessRunner(
@@ -162,10 +165,10 @@ public sealed class TraefikProxyProviderTests
         public Task<ProcessResult> RunTextAsync(ProcessCommand command, CancellationToken cancellationToken = default)
         {
             RunCount++;
-            var now = DateTimeOffset.UtcNow;
+            DateTimeOffset now = DateTimeOffset.UtcNow;
             return Task.FromResult(new ProcessResult(
                 command,
-                new ProcessExitInfo(success ? 0 : (exitCode ?? 2), false, false, null),
+                new ProcessExitInfo(success ? 0 : exitCode ?? 2, false, false, null),
                 123,
                 now,
                 now,
@@ -173,7 +176,8 @@ public sealed class TraefikProxyProviderTests
                 success ? string.Empty : standardError ?? "reload failed"));
         }
 
-        public Task<ProcessBinaryResult> RunBinaryAsync(ProcessCommand command, CancellationToken cancellationToken = default)
+        public Task<ProcessBinaryResult> RunBinaryAsync(ProcessCommand command,
+            CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }
@@ -181,12 +185,12 @@ public sealed class TraefikProxyProviderTests
         public Task<ProcessExitInfo> RunAsync(ProcessCommand command, CancellationToken cancellationToken = default)
         {
             RunCount++;
-            return Task.FromResult(new ProcessExitInfo(success ? 0 : (exitCode ?? 2), false, false, null));
+            return Task.FromResult(new ProcessExitInfo(success ? 0 : exitCode ?? 2, false, false, null));
         }
 
         public async IAsyncEnumerable<ProcessOutputLine> StreamLinesAsync(
             ProcessCommand command,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.CompletedTask;
             yield break;

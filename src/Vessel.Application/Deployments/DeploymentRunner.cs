@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using System.Net.Http;
 using System.Text;
 using Vessel.Application.Auditing;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
 using Vessel.Application.Git;
 using Vessel.Application.Persistence;
+using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
@@ -19,6 +19,7 @@ using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Servers;
 using AppEntity = Vessel.Domain.Applications.Application;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
+using ProcessOutputLine = Vessel.Application.Processes.ProcessOutputLine;
 
 namespace Vessel.Application.Deployments;
 
@@ -38,7 +39,7 @@ public sealed class DeploymentRunner(
 {
     public async Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
     {
-        long startedAt = Stopwatch.GetTimestamp();
+        var startedAt = Stopwatch.GetTimestamp();
         DeploymentStatus finalStatus = DeploymentStatus.Failed;
         using Activity? activity = VesselDiagnostics.ActivitySource.StartActivity("RunDeployment");
         activity?.SetTag("vessel.deployment_id", deploymentId.Value);
@@ -47,7 +48,7 @@ public sealed class DeploymentRunner(
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
         activity?.SetTag("vessel.application_id", deployment.ApplicationId.Value);
         activity?.SetTag("vessel.server_id", deployment.ServerId.Value);
-        string lockKey = $"deployment:{deployment.ApplicationId.Value:D}";
+        var lockKey = $"deployment:{deployment.ApplicationId.Value:D}";
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
             lockKey,
             TimeSpan.FromHours(2),
@@ -56,7 +57,8 @@ public sealed class DeploymentRunner(
 
         if (handle is null)
         {
-            await AppendAsync(deploymentId, "stderr", "Another deployment is already running for this application.", cancellationToken);
+            await AppendAsync(deploymentId, "stderr", "Another deployment is already running for this application.",
+                cancellationToken);
             await FailAsync(deploymentId, cancellationToken);
             finalStatus = DeploymentStatus.Failed;
             return;
@@ -73,56 +75,65 @@ public sealed class DeploymentRunner(
             if (server.Status == ServerStatus.Unreachable)
                 throw new DomainException("Server is unreachable.");
             if (server.ConnectionType == ServerConnectionType.Ssh)
-                throw new DomainException("Phase 8 deployment runner currently supports local Docker/Podman targets; SSH runtime execution remains behind the runtime abstraction.");
+                throw new DomainException(
+                    "Phase 8 deployment runner currently supports local Docker/Podman targets; SSH runtime execution remains behind the runtime abstraction.");
 
             ContainerRuntimeTarget target = RuntimeTarget(server);
             workspace = await workspaces.PrepareAsync(deploymentId, cancellationToken);
 
             await AppendAsync(deploymentId, "system", "Cloning application source.", cancellationToken);
-            string? checkoutRef = string.IsNullOrWhiteSpace(deployment.CommitSha)
-                || string.Equals(deployment.CommitSha, "pending", StringComparison.OrdinalIgnoreCase)
-                    ? application.GitSource.CommitSha ?? application.GitSource.Branch
-                    : deployment.CommitSha;
+            var checkoutRef = string.IsNullOrWhiteSpace(deployment.CommitSha)
+                              || string.Equals(deployment.CommitSha, "pending", StringComparison.OrdinalIgnoreCase)
+                ? application.GitSource.CommitSha ?? application.GitSource.Branch
+                : deployment.CommitSha;
             await git.CloneAsync(new GitCloneRequest(
                 new Uri(application.GitSource.RepositoryUrl.Value),
                 workspace.RepositoryDirectory,
-                checkoutRef,
-                Depth: 1), cancellationToken);
+                checkoutRef), cancellationToken);
             GitCommitInfo commit = await git.GetCommitAsync(workspace.RepositoryDirectory, "HEAD", cancellationToken);
             await RecordSourceAsync(deploymentId, application, commit, cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
-            DeploymentRuntimePlan plan = await CreatePlanAsync(application, environment, server, teamId, deploymentId, workspace, cancellationToken);
-            await workspaces.WriteTextAsync(workspace.RootDirectory, ".env", plan.EnvironmentFile, restrictToOwner: true, cancellationToken);
-            await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, restrictToOwner: false, cancellationToken);
-            await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/docker-compose.redacted.yml", plan.RedactedComposeYaml, restrictToOwner: false, cancellationToken);
-            await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/env.redacted", plan.RedactedEnvironmentFile, restrictToOwner: false, cancellationToken);
+            DeploymentRuntimePlan plan = await CreatePlanAsync(application, environment, server, teamId, deploymentId,
+                workspace, cancellationToken);
+            await workspaces.WriteTextAsync(workspace.RootDirectory, ".env", plan.EnvironmentFile, true,
+                cancellationToken);
+            await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, false,
+                cancellationToken);
+            await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/docker-compose.redacted.yml",
+                plan.RedactedComposeYaml, false, cancellationToken);
+            await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/env.redacted",
+                plan.RedactedEnvironmentFile, false, cancellationToken);
             await RecordSnapshotAsync(deploymentId, "snapshots/docker-compose.redacted.yml", cancellationToken);
 
             await AppendAsync(deploymentId, "system", "Ensuring deployment network exists.", cancellationToken);
-            await runtime.EnsureNetworkAsync(target, plan.NetworkName, Labels(deploymentId, application), cancellationToken);
+            await runtime.EnsureNetworkAsync(target, plan.NetworkName, Labels(deploymentId, application),
+                cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
             if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile)
             {
-                string dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "Dockerfile");
+                var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "Dockerfile");
                 await StreamBuildAsync(target, plan, workspace, dockerfile, deploymentId, cancellationToken);
                 await ThrowIfCanceledAsync(deploymentId, cancellationToken);
             }
 
             await StreamComposeAsync(target, plan, workspace, deploymentId, ["config", "--quiet"], cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
-            await StreamComposeAsync(target, plan, workspace, deploymentId, ["up", "--detach", "--remove-orphans", "--build"], cancellationToken);
+            await StreamComposeAsync(target, plan, workspace, deploymentId,
+                ["up", "--detach", "--remove-orphans", "--build"], cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
             await RunHealthCheckAsync(plan, deploymentId, cancellationToken);
             await AppendAsync(deploymentId, "system", "Applying reverse proxy routes.", cancellationToken);
-            await proxyConfiguration.ApplyForDeploymentAsync(deployment.ActorUserId, teamId, server.Id, cancellationToken);
+            await proxyConfiguration.ApplyForDeploymentAsync(deployment.ActorUserId, teamId, server.Id,
+                cancellationToken);
             await SucceedAsync(deploymentId, plan.ImageName, cancellationToken);
             finalStatus = DeploymentStatus.Succeeded;
             await auditWriter.RecordAsync(teamId, deployment.ActorUserId, AuditActions.DeploymentFinished,
                 new AuditTarget("deployment", deploymentId.Value.ToString("D")), null,
-                new Dictionary<string, object?> { ["status"] = DeploymentStatus.Succeeded.ToString() }, cancellationToken);
+                new Dictionary<string, object?> { ["status"] = DeploymentStatus.Succeeded.ToString() },
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -136,7 +147,8 @@ public sealed class DeploymentRunner(
         }
         catch (Exception ex)
         {
-            await AppendAsync(deploymentId, "stderr", $"Deployment failed: {redactor.Redact(ex.Message)}", CancellationToken.None);
+            await AppendAsync(deploymentId, "stderr", $"Deployment failed: {redactor.Redact(ex.Message)}",
+                CancellationToken.None);
             await FailAsync(deploymentId, CancellationToken.None);
             finalStatus = DeploymentStatus.Failed;
         }
@@ -163,7 +175,7 @@ public sealed class DeploymentRunner(
         CancellationToken cancellationToken)
     {
         await AppendAsync(deploymentId, "system", "Building Docker image.", cancellationToken);
-        await foreach (Processes.ProcessOutputLine line in runtime.BuildImageAsync(
+        await foreach (ProcessOutputLine line in runtime.BuildImageAsync(
                            target,
                            new DockerBuildCommand(
                                workspace.RepositoryDirectory,
@@ -173,9 +185,7 @@ public sealed class DeploymentRunner(
                                new Dictionary<string, string>(),
                                TimeSpan.FromMinutes(30)),
                            cancellationToken))
-        {
             await AppendAsync(deploymentId, StreamName(line.Stream), line.Content, cancellationToken);
-        }
     }
 
     private async Task StreamComposeAsync(
@@ -186,10 +196,12 @@ public sealed class DeploymentRunner(
         IReadOnlyList<string> args,
         CancellationToken cancellationToken)
     {
-        await AppendAsync(deploymentId, "system", $"Running docker compose {string.Join(' ', args)}.", cancellationToken);
-        var commandArgs = new List<string> { "--project-name", plan.ProjectName, "--project-directory", workspace.RootDirectory };
+        await AppendAsync(deploymentId, "system", $"Running docker compose {string.Join(' ', args)}.",
+            cancellationToken);
+        var commandArgs = new List<string>
+            { "--project-name", plan.ProjectName, "--project-directory", workspace.RootDirectory };
         commandArgs.AddRange(args);
-        await foreach (Processes.ProcessOutputLine line in runtime.RunComposeAsync(
+        await foreach (ProcessOutputLine line in runtime.RunComposeAsync(
                            target,
                            new ComposeCommand(
                                workspace.RootDirectory,
@@ -198,9 +210,7 @@ public sealed class DeploymentRunner(
                                workspace.EnvironmentFilePath,
                                TimeSpan.FromMinutes(30)),
                            cancellationToken))
-        {
             await AppendAsync(deploymentId, StreamName(line.Stream), line.Content, cancellationToken);
-        }
     }
 
     private async Task RunHealthCheckAsync(
@@ -220,7 +230,8 @@ public sealed class DeploymentRunner(
                 using HttpResponseMessage response = await client.GetAsync(plan.HealthCheckUrl, cancellationToken);
                 if ((int)response.StatusCode < 500)
                 {
-                    await AppendAsync(deploymentId, "system", $"Health check passed: {(int)response.StatusCode}.", cancellationToken);
+                    await AppendAsync(deploymentId, "system", $"Health check passed: {(int)response.StatusCode}.",
+                        cancellationToken);
                     return;
                 }
             }
@@ -245,20 +256,22 @@ public sealed class DeploymentRunner(
         DeploymentWorkspace workspace,
         CancellationToken cancellationToken)
     {
-        IReadOnlyDictionary<string, string> env = await ResolveEnvironmentAsync(application, environment, server, teamId, cancellationToken);
-        string envFile = BuildEnvironmentFile(env);
-        string redactedEnv = redactor.Redact(envFile, new RedactionContext(env.Values.ToArray(), null));
-        string projectName = $"vessel-{application.Id.Value:N}"[..39];
-        string serviceName = SanitizeName(application.Name.Value);
-        string imageName = $"vessel/{application.Id.Value:N}:{deploymentId.Value:N}";
-        string networkName = $"vessel-{server.Id.Value:N}"[..39];
-        int port = application.RuntimeConfiguration.ExposedPort?.Value ?? 8080;
-        string healthPath = application.RuntimeConfiguration.HealthCheckPath.StartsWith("/", StringComparison.Ordinal)
+        IReadOnlyDictionary<string, string> env =
+            await ResolveEnvironmentAsync(application, environment, server, teamId, cancellationToken);
+        var envFile = BuildEnvironmentFile(env);
+        var redactedEnv = redactor.Redact(envFile, new RedactionContext(env.Values.ToArray()));
+        var projectName = $"vessel-{application.Id.Value:N}"[..39];
+        var serviceName = SanitizeName(application.Name.Value);
+        var imageName = $"vessel/{application.Id.Value:N}:{deploymentId.Value:N}";
+        var networkName = $"vessel-{server.Id.Value:N}"[..39];
+        var port = application.RuntimeConfiguration.ExposedPort?.Value ?? 8080;
+        var healthPath = application.RuntimeConfiguration.HealthCheckPath.StartsWith("/", StringComparison.Ordinal)
             ? application.RuntimeConfiguration.HealthCheckPath
             : "/" + application.RuntimeConfiguration.HealthCheckPath;
-        string healthUrl = $"http://localhost:{port}{healthPath}";
-        string compose = application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
-            ? await CreateComposePassthroughAsync(workspace, application, serviceName, imageName, networkName, port, cancellationToken)
+        var healthUrl = $"http://localhost:{port}{healthPath}";
+        var compose = application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
+            ? await CreateComposePassthroughAsync(workspace, application, serviceName, imageName, networkName, port,
+                cancellationToken)
             : CreateDockerfileCompose(application, serviceName, imageName, networkName, port);
 
         return new DeploymentRuntimePlan(
@@ -267,7 +280,7 @@ public sealed class DeploymentRunner(
             imageName,
             networkName,
             compose,
-            redactor.Redact(compose, new RedactionContext(env.Values.ToArray(), null)),
+            redactor.Redact(compose, new RedactionContext(env.Values.ToArray())),
             envFile,
             redactedEnv,
             healthUrl);
@@ -282,10 +295,10 @@ public sealed class DeploymentRunner(
         int port,
         CancellationToken cancellationToken)
     {
-        string composePath = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "docker-compose.yml");
+        var composePath = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "docker-compose.yml");
         try
         {
-            string raw = await workspaces.ReadTextAsync(workspace.RepositoryDirectory, composePath, cancellationToken);
+            var raw = await workspaces.ReadTextAsync(workspace.RepositoryDirectory, composePath, cancellationToken);
             if (raw.Contains("..", StringComparison.Ordinal))
                 throw new DomainException("Compose file contains unsupported traversal markers.");
             return raw;
@@ -303,7 +316,7 @@ public sealed class DeploymentRunner(
         string networkName,
         int port)
     {
-        string dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "Dockerfile");
+        var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "Dockerfile");
         var builder = new StringBuilder();
         builder.AppendLine("services:");
         builder.AppendLine($"  {serviceName}:");
@@ -345,17 +358,19 @@ public sealed class DeploymentRunner(
             .Where(variable => variable.TeamId == teamId && variable.IsRuntime)
             .ToArray();
 
-        foreach (EnvironmentVariable variable in variables.Where(variable => AppliesTo(variable, application, environment, server)))
-        {
-            values[variable.Key.Value] = variable.ValueKind == EnvironmentVariableValueKind.Secret && variable.SecretReferenceId.HasValue
-                ? await secretVault.RevealForDeploymentAsync(teamId, variable.SecretReferenceId.Value, cancellationToken)
+        foreach (EnvironmentVariable variable in variables.Where(variable =>
+                     AppliesTo(variable, application, environment, server)))
+            values[variable.Key.Value] = variable.ValueKind == EnvironmentVariableValueKind.Secret &&
+                                         variable.SecretReferenceId.HasValue
+                ? await secretVault.RevealForDeploymentAsync(teamId, variable.SecretReferenceId.Value,
+                    cancellationToken)
                 : variable.PlainValue ?? string.Empty;
-        }
 
         return values;
     }
 
-    private static bool AppliesTo(EnvironmentVariable variable, AppEntity application, EnvironmentEntity environment, Server server)
+    private static bool AppliesTo(EnvironmentVariable variable, AppEntity application, EnvironmentEntity environment,
+        Server server)
     {
         return variable.TargetType switch
         {
@@ -371,7 +386,7 @@ public sealed class DeploymentRunner(
     private static string BuildEnvironmentFile(IReadOnlyDictionary<string, string> values)
     {
         var builder = new StringBuilder();
-        foreach ((string key, string value) in values.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        foreach (var (key, value) in values.OrderBy(pair => pair.Key, StringComparer.Ordinal))
             builder.Append(key).Append('=').AppendLine(QuoteEnv(value));
         return builder.ToString();
     }
@@ -379,8 +394,10 @@ public sealed class DeploymentRunner(
     private static string QuoteEnv(string value)
     {
         if (value.Length == 0) return "\"\"";
-        if (value.Any(char.IsWhiteSpace) || value.Contains('"', StringComparison.Ordinal) || value.Contains('#', StringComparison.Ordinal))
-            return "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+        if (value.Any(char.IsWhiteSpace) || value.Contains('"', StringComparison.Ordinal) ||
+            value.Contains('#', StringComparison.Ordinal))
+            return "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
         return value;
     }
 
@@ -400,20 +417,24 @@ public sealed class DeploymentRunner(
         CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        deployment.RecordSource(application.GitSource.RepositoryUrl.Value, application.GitSource.Branch, commit.Sha, commit.Subject, timeProvider.GetUtcNow());
-        deployment.AddLogLine("system", $"Checked out {commit.Sha[..Math.Min(12, commit.Sha.Length)]} {commit.Subject}", timeProvider.GetUtcNow());
+        deployment.RecordSource(application.GitSource.RepositoryUrl.Value, application.GitSource.Branch, commit.Sha,
+            commit.Subject, timeProvider.GetUtcNow());
+        deployment.AddLogLine("system", $"Checked out {commit.Sha[..Math.Min(12, commit.Sha.Length)]} {commit.Subject}",
+            timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         await PublishStatusAsync(deployment, cancellationToken);
     }
 
-    private async Task RecordSnapshotAsync(DeploymentId deploymentId, string reference, CancellationToken cancellationToken)
+    private async Task RecordSnapshotAsync(DeploymentId deploymentId, string reference,
+        CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
         deployment.RecordConfigurationSnapshot(reference, timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task SucceedAsync(DeploymentId deploymentId, string artifactReference, CancellationToken cancellationToken)
+    private async Task SucceedAsync(DeploymentId deploymentId, string artifactReference,
+        CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
         deployment.MarkSucceeded(artifactReference, timeProvider.GetUtcNow());
@@ -441,16 +462,18 @@ public sealed class DeploymentRunner(
         await PublishStatusAsync(deployment, cancellationToken);
     }
 
-    private async Task AppendAsync(DeploymentId deploymentId, string stream, string message, CancellationToken cancellationToken)
+    private async Task AppendAsync(DeploymentId deploymentId, string stream, string message,
+        CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        string redacted = redactor.Redact(message);
+        var redacted = redactor.Redact(message);
         deployment.AddLogLine(stream, redacted, timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         DeploymentLogLine line = deployment.LogLines.OrderBy(item => item.Sequence).Last();
         await realtime.PublishAsync(
             new RealtimeGroup(RealtimeGroupKind.Deployment, deployment.Id.Value.ToString("D")),
-            new RealtimeMessage("deployment.log", new DeploymentLogEntry(line.Sequence, line.Stream, line.Message, line.CreatedAt)),
+            new RealtimeMessage("deployment.log",
+                new DeploymentLogEntry(line.Sequence, line.Stream, line.Message, line.CreatedAt)),
             cancellationToken);
     }
 
@@ -458,7 +481,8 @@ public sealed class DeploymentRunner(
     {
         cancellationToken.ThrowIfCancellationRequested();
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        if (deployment.Status == DeploymentStatus.CancelRequested || deployment.Status == DeploymentStatus.CanceledByUser)
+        if (deployment.Status == DeploymentStatus.CancelRequested ||
+            deployment.Status == DeploymentStatus.CanceledByUser)
             throw new DeploymentCanceledException();
     }
 
@@ -474,13 +498,17 @@ public sealed class DeploymentRunner(
         return dbContext.Applications.Single(application => application.Id == deployment.ApplicationId);
     }
 
-    private (AppEntity Application, Server Server, EnvironmentEntity Environment, TeamId TeamId) LoadDeploymentContext(DeploymentId deploymentId)
+    private (AppEntity Application, Server Server, EnvironmentEntity Environment, TeamId TeamId) LoadDeploymentContext(
+        DeploymentId deploymentId)
     {
         Deployment deployment = dbContext.Deployments.Single(item => item.Id == deploymentId);
-        AppEntity application = dbContext.Applications.Single(application => application.Id == deployment.ApplicationId);
+        AppEntity application =
+            dbContext.Applications.Single(application => application.Id == deployment.ApplicationId);
         Server server = dbContext.Servers.Single(server => server.Id == deployment.ServerId);
-        EnvironmentEntity environment = dbContext.Environments.Single(environment => environment.Id == application.EnvironmentId);
-        TeamId teamId = dbContext.Projects.Where(project => project.Id == environment.ProjectId).Select(project => project.TeamId).Single();
+        EnvironmentEntity environment =
+            dbContext.Environments.Single(environment => environment.Id == application.EnvironmentId);
+        TeamId teamId = dbContext.Projects.Where(project => project.Id == environment.ProjectId)
+            .Select(project => project.TeamId).Single();
         return (application, server, environment, teamId);
     }
 
@@ -496,7 +524,8 @@ public sealed class DeploymentRunner(
         };
         await realtime.PublishAsync(new RealtimeGroup(RealtimeGroupKind.Deployment, deployment.Id.Value.ToString("D")),
             new RealtimeMessage("deployment.status", payload), cancellationToken);
-        await realtime.PublishAsync(new RealtimeGroup(RealtimeGroupKind.Application, deployment.ApplicationId.Value.ToString("D")),
+        await realtime.PublishAsync(
+            new RealtimeGroup(RealtimeGroupKind.Application, deployment.ApplicationId.Value.ToString("D")),
             new RealtimeMessage("deployment.status", payload), cancellationToken);
     }
 
@@ -519,7 +548,7 @@ public sealed class DeploymentRunner(
 
     private static string NormalizeRelativePath(string value)
     {
-        string trimmed = string.IsNullOrWhiteSpace(value) ? "Dockerfile" : value.Trim().TrimStart('/', '\\');
+        var trimmed = string.IsNullOrWhiteSpace(value) ? "Dockerfile" : value.Trim().TrimStart('/', '\\');
         if (trimmed.Contains("..", StringComparison.Ordinal))
             throw new DomainException("Path traversal is not allowed in deployment file paths.");
         return trimmed;
@@ -534,9 +563,9 @@ public sealed class DeploymentRunner(
         return string.IsNullOrWhiteSpace(normalized) ? "app" : normalized[..Math.Min(40, normalized.Length)];
     }
 
-    private static string StreamName(Processes.ProcessStreamKind stream)
+    private static string StreamName(ProcessStreamKind stream)
     {
-        return stream == Processes.ProcessStreamKind.StandardError ? "stderr" : "stdout";
+        return stream == ProcessStreamKind.StandardError ? "stderr" : "stdout";
     }
 
     private sealed class DeploymentCanceledException : Exception;

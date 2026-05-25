@@ -1,4 +1,5 @@
 using Vessel.Domain;
+using ApplicationId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Realtime;
 
@@ -15,7 +16,10 @@ public enum RealtimeGroupKind
 
 public sealed record RealtimeGroup(RealtimeGroupKind Kind, string Id)
 {
-    public override string ToString() => $"{Kind.ToString().ToLowerInvariant()}:{Id}";
+    public override string ToString()
+    {
+        return $"{Kind.ToString().ToLowerInvariant()}:{Id}";
+    }
 }
 
 public sealed record RealtimeMessage(string Type, object Payload);
@@ -37,7 +41,7 @@ public static class RealtimeGroupNames
         return $"server:{serverId.Value:D}";
     }
 
-    public static string Application(Vessel.Domain.ApplicationId applicationId)
+    public static string Application(ApplicationId applicationId)
     {
         return $"application:{applicationId.Value:D}";
     }

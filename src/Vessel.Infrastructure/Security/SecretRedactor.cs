@@ -20,18 +20,16 @@ public sealed class SecretRedactor : ISecretRedactor
     {
         if (string.IsNullOrEmpty(value)) return value;
 
-        string redacted = value;
-        foreach (string secret in context?.SecretValues ?? [])
-        {
+        var redacted = value;
+        foreach (var secret in context?.SecretValues ?? [])
             if (!string.IsNullOrWhiteSpace(secret))
                 redacted = redacted.Replace(secret, Replacement, StringComparison.Ordinal);
-        }
 
         IEnumerable<string> patternNames = context?.PatternNames is { Count: > 0 }
             ? context.PatternNames
             : NamedPatterns.Keys;
 
-        foreach (string patternName in patternNames)
+        foreach (var patternName in patternNames)
         {
             if (!NamedPatterns.TryGetValue(patternName, out Regex? pattern)) continue;
             redacted = patternName == "assignment_secret"
@@ -44,7 +42,7 @@ public sealed class SecretRedactor : ISecretRedactor
 
     public byte[] RedactUtf8(byte[] value, RedactionContext? context = null)
     {
-        string text = Encoding.UTF8.GetString(value);
+        var text = Encoding.UTF8.GetString(value);
         return Encoding.UTF8.GetBytes(Redact(text, context));
     }
 }

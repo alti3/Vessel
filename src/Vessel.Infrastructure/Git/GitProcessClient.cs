@@ -1,3 +1,4 @@
+using System.Globalization;
 using Vessel.Application.Files;
 using Vessel.Application.Git;
 using Vessel.Application.Processes;
@@ -8,8 +9,9 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
 {
     public async Task CloneAsync(GitCloneRequest request, CancellationToken cancellationToken = default)
     {
-        string target = paths.EnsureOwnedPath(Path.GetDirectoryName(Path.GetFullPath(request.TargetDirectory))!, request.TargetDirectory);
-        var args = new List<string> { "clone", "--depth", request.Depth.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        var target = paths.EnsureOwnedPath(Path.GetDirectoryName(Path.GetFullPath(request.TargetDirectory))!,
+            request.TargetDirectory);
+        var args = new List<string> { "clone", "--depth", request.Depth.ToString(CultureInfo.InvariantCulture) };
         if (!string.IsNullOrWhiteSpace(request.BranchOrTag))
             args.AddRange(["--branch", request.BranchOrTag]);
         if (request.RecurseSubmodules)
@@ -25,7 +27,8 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
         ThrowIfFailed(result);
     }
 
-    public async Task FetchAsync(string repositoryDirectory, string? remote, CancellationToken cancellationToken = default)
+    public async Task FetchAsync(string repositoryDirectory, string? remote,
+        CancellationToken cancellationToken = default)
     {
         var args = new List<string> { "fetch", "--prune" };
         if (!string.IsNullOrWhiteSpace(remote)) args.Add(remote);
@@ -33,9 +36,12 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
         ThrowIfFailed(result);
     }
 
-    public async Task CheckoutAsync(string repositoryDirectory, string reference, CancellationToken cancellationToken = default)
+    public async Task CheckoutAsync(string repositoryDirectory, string reference,
+        CancellationToken cancellationToken = default)
     {
-        ProcessResult result = await processRunner.RunTextAsync(Command(repositoryDirectory, ["checkout", "--force", reference]), cancellationToken);
+        ProcessResult result =
+            await processRunner.RunTextAsync(Command(repositoryDirectory, ["checkout", "--force", reference]),
+                cancellationToken);
         ThrowIfFailed(result);
     }
 
@@ -48,16 +54,19 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
             repositoryDirectory,
             ["show", "-s", "--format=%H%x00%an%x00%ae%x00%aI%x00%s", reference]), cancellationToken);
         ThrowIfFailed(result);
-        string[] parts = result.StandardOutput.TrimEnd().Split('\0');
+        var parts = result.StandardOutput.TrimEnd().Split('\0');
         return new GitCommitInfo(
             parts.ElementAtOrDefault(0) ?? string.Empty,
             parts.ElementAtOrDefault(1) ?? string.Empty,
             parts.ElementAtOrDefault(2) ?? string.Empty,
-            DateTimeOffset.TryParse(parts.ElementAtOrDefault(3), out DateTimeOffset authoredAt) ? authoredAt : DateTimeOffset.MinValue,
+            DateTimeOffset.TryParse(parts.ElementAtOrDefault(3), out DateTimeOffset authoredAt)
+                ? authoredAt
+                : DateTimeOffset.MinValue,
             parts.ElementAtOrDefault(4) ?? string.Empty);
     }
 
-    public async Task<IReadOnlyList<GitRepositoryRef>> ListRefsAsync(Uri repositoryUrl, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<GitRepositoryRef>> ListRefsAsync(Uri repositoryUrl,
+        CancellationToken cancellationToken = default)
     {
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
             "git",
@@ -70,14 +79,16 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
             .ToArray();
     }
 
-    private static ProcessCommand Command(string repositoryDirectory, IReadOnlyList<string> args) =>
-        new("git", args, WorkingDirectory: repositoryDirectory, Timeout: TimeSpan.FromMinutes(5));
+    private static ProcessCommand Command(string repositoryDirectory, IReadOnlyList<string> args)
+    {
+        return new ProcessCommand("git", args, repositoryDirectory, Timeout: TimeSpan.FromMinutes(5));
+    }
 
     private static GitRepositoryRef ParseRef(string line)
     {
-        string[] parts = line.Split('\t', 2);
-        string name = parts.ElementAtOrDefault(1) ?? string.Empty;
-        bool isTag = name.StartsWith("refs/tags/", StringComparison.Ordinal);
+        var parts = line.Split('\t', 2);
+        var name = parts.ElementAtOrDefault(1) ?? string.Empty;
+        var isTag = name.StartsWith("refs/tags/", StringComparison.Ordinal);
         name = name.Replace("refs/heads/", string.Empty, StringComparison.Ordinal)
             .Replace("refs/tags/", string.Empty, StringComparison.Ordinal);
         return new GitRepositoryRef(name, parts.ElementAtOrDefault(0) ?? string.Empty, isTag);

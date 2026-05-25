@@ -44,6 +44,8 @@ public sealed class User : Entity<UserId>
 
     public string? TwoFactorRecoveryCodeHashes { get; private set; }
 
+    public bool HasPassword => !string.IsNullOrWhiteSpace(PasswordHash);
+
     public static User Create(DisplayName name, EmailAddress email, DateTimeOffset now)
     {
         return new User(UserId.New(), name, email, now);
@@ -71,8 +73,6 @@ public sealed class User : Entity<UserId>
         LockoutEndAt = null;
         Touch(now);
     }
-
-    public bool HasPassword => !string.IsNullOrWhiteSpace(PasswordHash);
 
     public bool IsLockedOut(DateTimeOffset now)
     {

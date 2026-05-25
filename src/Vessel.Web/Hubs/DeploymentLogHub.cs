@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
-using Vessel.Domain;
 using Vessel.Application.Authorization;
+using Vessel.Domain;
+using ApplicationId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Web.Hubs;
 
@@ -19,6 +20,6 @@ public sealed class DeploymentLogHub : AuthorizedResourceHub
 
     public async Task<bool> JoinApplication(Guid applicationId)
     {
-        return await JoinApplicationGroupAsync(new Vessel.Domain.ApplicationId(applicationId));
+        return await JoinApplicationGroupAsync(new ApplicationId(applicationId));
     }
 }

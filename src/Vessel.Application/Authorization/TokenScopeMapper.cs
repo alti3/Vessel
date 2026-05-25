@@ -54,7 +54,7 @@ public static class TokenScopeMapper
 
     public static string Serialize(IEnumerable<string> scopes)
     {
-        string[] normalized = scopes
+        var normalized = scopes
             .Where(scope => !string.IsNullOrWhiteSpace(scope))
             .Select(scope => scope.Trim())
             .Distinct(StringComparer.Ordinal)

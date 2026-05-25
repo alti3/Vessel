@@ -1,6 +1,7 @@
 using Vessel.Application.Dashboard;
 using Vessel.Application.Persistence;
 using Vessel.Domain;
+using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
@@ -23,6 +24,19 @@ public sealed class EfDashboardQueries :
         _dbContext = dbContext;
     }
 
+    IReadOnlyList<ApplicationListItem> IApplicationCatalogQuery.List(TeamId teamId)
+    {
+        return ApplicationsForTeam(teamId)
+            .OrderBy(application => application.Name)
+            .Select(application => new ApplicationListItem(
+                application.Id.Value,
+                application.Name.Value,
+                application.Description.ToString(),
+                application.EnvironmentId.Value,
+                application.ServerId.Value))
+            .ToArray();
+    }
+
     public DashboardOverview GetOverview(TeamId teamId)
     {
         IReadOnlyList<DeploymentListItem> recentDeployments = ListDeployments(teamId, 5);
@@ -36,6 +50,39 @@ public sealed class EfDashboardQueries :
             DeploymentsForTeam(teamId).Count(deployment => deployment.Status == DeploymentStatus.Failed),
             _dbContext.NotificationTargets.Count(target => target.TeamId == teamId),
             recentDeployments);
+    }
+
+    IReadOnlyList<DatabaseListItem> IDatabaseCatalogQuery.List(TeamId teamId)
+    {
+        return DatabasesForTeam(teamId)
+            .OrderBy(database => database.Name)
+            .Select(database => new DatabaseListItem(
+                database.Id.Value,
+                database.Name.Value,
+                database.Description.ToString(),
+                database.Engine,
+                database.Version.Value,
+                database.HealthState,
+                database.EnvironmentId.Value,
+                database.ServerId.Value))
+            .ToArray();
+    }
+
+    IReadOnlyList<DeploymentListItem> IDeploymentCatalogQuery.List(TeamId teamId)
+    {
+        return ListDeployments(teamId, 50);
+    }
+
+    IReadOnlyList<NotificationTargetListItem> INotificationCatalogQuery.List(TeamId teamId)
+    {
+        return _dbContext.NotificationTargets
+            .Where(target => target.TeamId == teamId)
+            .OrderBy(target => target.Name)
+            .Select(target => new NotificationTargetListItem(
+                target.Id.Value,
+                target.Name.Value,
+                target.Channel))
+            .ToArray();
     }
 
     public IReadOnlyList<ProjectListItem> List(TeamId teamId)
@@ -63,52 +110,6 @@ public sealed class EfDashboardQueries :
                 server.Address.ToString(),
                 server.Runtime,
                 server.Status))
-            .ToArray();
-    }
-
-    IReadOnlyList<ApplicationListItem> IApplicationCatalogQuery.List(TeamId teamId)
-    {
-        return ApplicationsForTeam(teamId)
-            .OrderBy(application => application.Name)
-            .Select(application => new ApplicationListItem(
-                application.Id.Value,
-                application.Name.Value,
-                application.Description.ToString(),
-                application.EnvironmentId.Value,
-                application.ServerId.Value))
-            .ToArray();
-    }
-
-    IReadOnlyList<DeploymentListItem> IDeploymentCatalogQuery.List(TeamId teamId)
-    {
-        return ListDeployments(teamId, 50);
-    }
-
-    IReadOnlyList<DatabaseListItem> IDatabaseCatalogQuery.List(TeamId teamId)
-    {
-        return DatabasesForTeam(teamId)
-            .OrderBy(database => database.Name)
-            .Select(database => new DatabaseListItem(
-                database.Id.Value,
-                database.Name.Value,
-                database.Description.ToString(),
-                database.Engine,
-                database.Version.Value,
-                database.HealthState,
-                database.EnvironmentId.Value,
-                database.ServerId.Value))
-            .ToArray();
-    }
-
-    IReadOnlyList<NotificationTargetListItem> INotificationCatalogQuery.List(TeamId teamId)
-    {
-        return _dbContext.NotificationTargets
-            .Where(target => target.TeamId == teamId)
-            .OrderBy(target => target.Name)
-            .Select(target => new NotificationTargetListItem(
-                target.Id.Value,
-                target.Name.Value,
-                target.Channel))
             .ToArray();
     }
 
@@ -159,7 +160,7 @@ public sealed class EfDashboardQueries :
                 (application, _) => application);
     }
 
-    private IQueryable<Domain.Databases.DatabaseResource> DatabasesForTeam(TeamId teamId)
+    private IQueryable<DatabaseResource> DatabasesForTeam(TeamId teamId)
     {
         IQueryable<EnvironmentEntity> teamEnvironments = _dbContext.Environments
             .Join(

@@ -4,29 +4,42 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Deployments | Vessel</PageTitle>
-<PageHeader Kicker="Operations" Title="Deployments" Description="Deployment records, status, commit metadata, and timestamps. Live logs stream through the deployment log hub." />
+<PageHeader Kicker="Operations" Title="Deployments"
+            Description="Deployment records, status, commit metadata, and timestamps. Live logs stream through the deployment log hub."/>
 
 @if (Items.Count == 0)
 {
-    <EmptyState Title="No deployments found" Description="Deployment jobs will create records here when Phase 8 deployment execution is connected." />
+    <EmptyState Title="No deployments found"
+                Description="Deployment jobs will create records here when Phase 8 deployment execution is connected."/>
 }
 else
 {
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Status</th><th>Application</th><th>Commit</th><th>Created</th><th>Completed</th><th></th></tr></thead>
+            <thead>
+            <tr>
+                <th>Status</th>
+                <th>Application</th>
+                <th>Commit</th>
+                <th>Created</th>
+                <th>Completed</th>
+                <th></th>
+            </tr>
+            </thead>
             <tbody>
-                @foreach (var item in Items)
-                {
-                    <tr>
-                        <td><StatusBadge Text="@item.Status.ToString()" Tone="@DeploymentTone(item.Status)" /></td>
-                        <td>@item.ApplicationId</td>
-                        <td>@(item.CommitSha ?? "not recorded")</td>
-                        <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
-                        <td>@(item.CompletedAt?.ToLocalTime().ToString("g") ?? "running")</td>
-                        <td><a class="button button-secondary" href="@($"/deployments/{item.Id}")">Open</a></td>
-                    </tr>
-                }
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>
+                        <StatusBadge Text="@item.Status.ToString()" Tone="@DeploymentTone(item.Status)"/>
+                    </td>
+                    <td>@item.ApplicationId</td>
+                    <td>@(item.CommitSha ?? "not recorded")</td>
+                    <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                    <td>@(item.CompletedAt?.ToLocalTime().ToString("g") ?? "running")</td>
+                    <td><a class="button button-secondary" href="@($"/deployments/{item.Id}")">Open</a></td>
+                </tr>
+            }
             </tbody>
         </table>
     </div>
@@ -52,4 +65,5 @@ else
             _ => "neutral"
         };
     }
+
 }

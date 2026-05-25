@@ -5,18 +5,37 @@
 @inject NavigationManager Navigation
 
 <PageTitle>Add server | Vessel</PageTitle>
-<PageHeader Kicker="Servers" Title="Add server" Description="Register a host runtime. Docker socket and remote shell access are host-root-equivalent." />
+<PageHeader Kicker="Servers" Title="Add server"
+            Description="Register a host runtime. Docker socket and remote shell access are host-root-equivalent."/>
 
-<SettingsPanel Title="Connection" Description="Validation records a status snapshot; runtime probing is owned by infrastructure adapters.">
+<SettingsPanel Title="Connection"
+               Description="Validation records a status snapshot; runtime probing is owned by infrastructure adapters.">
     <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-server">
         <div class="form-grid">
-            <label>Name<InputText @bind-Value="Model.Name" name="name" placeholder="prod-01" /></label>
-            <label>Host<InputText @bind-Value="Model.Host" name="host" placeholder="server.example.com" /></label>
-            <label>SSH user<InputText @bind-Value="Model.User" name="user" placeholder="root" /></label>
-            <label>Port<InputNumber @bind-Value="Model.Port" name="port" /></label>
-            <label>Runtime<select @bind="Model.Runtime" name="runtime"><option value="@ContainerRuntimeKind.Docker">Docker</option><option value="@ContainerRuntimeKind.Podman">Podman</option></select></label>
-            <label>Connection<select @bind="Model.ConnectionType" name="connectionType"><option value="@ServerConnectionType.Ssh">SSH</option><option value="@ServerConnectionType.DockerSocket">Docker socket</option><option value="@ServerConnectionType.Local">Local</option></select></label>
-            <label class="form-wide">Labels<InputText @bind-Value="Model.Labels" name="labels" placeholder="region=us-east tier=prod" /></label>
+            <label>Name
+                <InputText @bind-Value="Model.Name" name="name" placeholder="prod-01"/>
+            </label>
+            <label>Host
+                <InputText @bind-Value="Model.Host" name="host" placeholder="server.example.com"/>
+            </label>
+            <label>SSH user
+                <InputText @bind-Value="Model.User" name="user" placeholder="root"/>
+            </label>
+            <label>Port
+                <InputNumber @bind-Value="Model.Port" name="port"/>
+            </label>
+            <label>Runtime<select @bind="Model.Runtime" name="runtime">
+                    <option value="@ContainerRuntimeKind.Docker">Docker</option>
+                    <option value="@ContainerRuntimeKind.Podman">Podman</option>
+                </select></label>
+            <label>Connection<select @bind="Model.ConnectionType" name="connectionType">
+                    <option value="@ServerConnectionType.Ssh">SSH</option>
+                    <option value="@ServerConnectionType.DockerSocket">Docker socket</option>
+                    <option value="@ServerConnectionType.Local">Local</option>
+                </select></label>
+            <label class="form-wide">Labels
+                <InputText @bind-Value="Model.Labels" name="labels" placeholder="region=us-east tier=prod"/>
+            </label>
             @if (!string.IsNullOrWhiteSpace(Error))
             {
                 <div class="form-alert form-wide">@Error</div>
@@ -35,10 +54,10 @@
         try
         {
             var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-            ServerSummary server = await Resources.CreateServerAsync(user.GetUserId(), user.GetTeamId(),
+            var server = await Resources.CreateServerAsync(user.GetUserId(), user.GetTeamId(),
                 new CreateServerRequest(Model.Name, null, Model.Host, Model.Port, Model.User, Model.ConnectionType,
                     Model.Runtime, Model.Labels));
-            await Resources.TestServerConnectivityAsync(user.GetUserId(), user.GetTeamId(), new Vessel.Domain.ServerId(server.Id));
+            await Resources.TestServerConnectivityAsync(user.GetUserId(), user.GetTeamId(), new ServerId(server.Id));
             Navigation.NavigateTo("/servers");
         }
         catch (Exception exception)
@@ -57,4 +76,5 @@
         public ContainerRuntimeKind Runtime { get; set; } = ContainerRuntimeKind.Docker;
         public string? Labels { get; set; }
     }
+
 }

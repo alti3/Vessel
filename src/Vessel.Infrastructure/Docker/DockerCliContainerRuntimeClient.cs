@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Vessel.Application.Docker;
 using Vessel.Application.Processes;
@@ -6,11 +7,12 @@ namespace Vessel.Infrastructure.Docker;
 
 public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner) : IContainerRuntimeClient
 {
-    public async Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default)
+    public async Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
     {
         ProcessResult result = await RunDockerAsync(target, ["version", "--format", "{{json .}}"], cancellationToken);
         ThrowIfFailed(result);
-        using JsonDocument document = JsonDocument.Parse(result.StandardOutput);
+        using var document = JsonDocument.Parse(result.StandardOutput);
         JsonElement server = document.RootElement.GetProperty("Server");
         return new ContainerRuntimeInfo(
             target.Provider,
@@ -20,7 +22,8 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
             server.GetProperty("Arch").GetString() ?? string.Empty);
     }
 
-    public async Task<IReadOnlyList<ContainerSummary>> ListContainersAsync(ContainerRuntimeTarget target, bool all, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ContainerSummary>> ListContainersAsync(ContainerRuntimeTarget target, bool all,
+        CancellationToken cancellationToken = default)
     {
         var args = new List<string> { "ps", "--format", "{{json .}}" };
         if (all) args.Insert(1, "-a");
@@ -29,34 +32,40 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
         return result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(line =>
             {
-                using JsonDocument doc = JsonDocument.Parse(line);
+                using var doc = JsonDocument.Parse(line);
                 JsonElement root = doc.RootElement;
                 return new ContainerSummary(
                     root.GetProperty("ID").GetString() ?? string.Empty,
-                    [(root.GetProperty("Names").GetString() ?? string.Empty)],
+                    [root.GetProperty("Names").GetString() ?? string.Empty],
                     root.GetProperty("Image").GetString() ?? string.Empty,
-                    root.TryGetProperty("State", out JsonElement state) ? state.GetString() ?? string.Empty : string.Empty,
-                    root.TryGetProperty("Status", out JsonElement status) ? status.GetString() ?? string.Empty : string.Empty,
+                    root.TryGetProperty("State", out JsonElement state)
+                        ? state.GetString() ?? string.Empty
+                        : string.Empty,
+                    root.TryGetProperty("Status", out JsonElement status)
+                        ? status.GetString() ?? string.Empty
+                        : string.Empty,
                     new Dictionary<string, string>());
             })
             .ToArray();
     }
 
-    public async Task<string> InspectContainerAsync(ContainerRuntimeTarget target, string containerId, CancellationToken cancellationToken = default)
+    public async Task<string> InspectContainerAsync(ContainerRuntimeTarget target, string containerId,
+        CancellationToken cancellationToken = default)
     {
         ProcessResult result = await RunDockerAsync(target, ["inspect", containerId], cancellationToken);
         ThrowIfFailed(result);
         return result.StandardOutput;
     }
 
-    public async Task<IReadOnlyList<ImageSummary>> ListImagesAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ImageSummary>> ListImagesAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
     {
         ProcessResult result = await RunDockerAsync(target, ["images", "--format", "{{json .}}"], cancellationToken);
         ThrowIfFailed(result);
         return result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(line =>
             {
-                using JsonDocument doc = JsonDocument.Parse(line);
+                using var doc = JsonDocument.Parse(line);
                 JsonElement root = doc.RootElement;
                 return new ImageSummary(
                     root.GetProperty("ID").GetString() ?? string.Empty,
@@ -66,14 +75,16 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
             .ToArray();
     }
 
-    public async Task<IReadOnlyList<NetworkSummary>> ListNetworksAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<NetworkSummary>> ListNetworksAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
     {
-        ProcessResult result = await RunDockerAsync(target, ["network", "ls", "--format", "{{json .}}"], cancellationToken);
+        ProcessResult result =
+            await RunDockerAsync(target, ["network", "ls", "--format", "{{json .}}"], cancellationToken);
         ThrowIfFailed(result);
         return result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(line =>
             {
-                using JsonDocument doc = JsonDocument.Parse(line);
+                using var doc = JsonDocument.Parse(line);
                 JsonElement root = doc.RootElement;
                 return new NetworkSummary(
                     root.GetProperty("ID").GetString() ?? string.Empty,
@@ -83,14 +94,16 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
             .ToArray();
     }
 
-    public async Task<IReadOnlyList<VolumeSummary>> ListVolumesAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<VolumeSummary>> ListVolumesAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
     {
-        ProcessResult result = await RunDockerAsync(target, ["volume", "ls", "--format", "{{json .}}"], cancellationToken);
+        ProcessResult result =
+            await RunDockerAsync(target, ["volume", "ls", "--format", "{{json .}}"], cancellationToken);
         ThrowIfFailed(result);
         return result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(line =>
             {
-                using JsonDocument doc = JsonDocument.Parse(line);
+                using var doc = JsonDocument.Parse(line);
                 JsonElement root = doc.RootElement;
                 return new VolumeSummary(
                     root.GetProperty("Name").GetString() ?? string.Empty,
@@ -110,7 +123,7 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
         if (inspect.Succeeded) return;
 
         var args = new List<string> { "network", "create" };
-        foreach ((string key, string value) in labels)
+        foreach (var (key, value) in labels)
             args.AddRange(["--label", $"{key}={value}"]);
         args.Add(name);
 
@@ -121,7 +134,7 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
     public async IAsyncEnumerable<ProcessOutputLine> BuildImageAsync(
         ContainerRuntimeTarget target,
         DockerBuildCommand command,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var args = new List<string>
         {
@@ -132,34 +145,34 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
             "--tag",
             command.ImageName
         };
-        foreach ((string key, string value) in command.Labels)
+        foreach (var (key, value) in command.Labels)
             args.AddRange(["--label", $"{key}={value}"]);
-        foreach ((string key, string value) in command.BuildArguments)
+        foreach (var (key, value) in command.BuildArguments)
             args.AddRange(["--build-arg", $"{key}={value}"]);
         args.Add(".");
 
         await foreach (ProcessOutputLine line in processRunner.StreamLinesAsync(new ProcessCommand(
-                           target.CliExecutable ?? (target.Provider == ContainerRuntimeProvider.Podman ? "podman" : "docker"),
-                           args,
-                           WorkingDirectory: command.WorkingDirectory,
-                           Timeout: command.Timeout ?? TimeSpan.FromMinutes(30),
-                           OutputMode: ProcessOutputMode.Lines,
-                           Redaction: new ProcessRedactionProfile(command.BuildArguments.Values.ToArray(), [])), cancellationToken))
-        {
+                               target.CliExecutable ??
+                               (target.Provider == ContainerRuntimeProvider.Podman ? "podman" : "docker"),
+                               args,
+                               command.WorkingDirectory,
+                               Timeout: command.Timeout ?? TimeSpan.FromMinutes(30),
+                               OutputMode: ProcessOutputMode.Lines,
+                               Redaction: new ProcessRedactionProfile(command.BuildArguments.Values.ToArray(), [])),
+                           cancellationToken))
             yield return line;
-        }
     }
 
     public async IAsyncEnumerable<ContainerEvent> StreamEventsAsync(
         ContainerRuntimeTarget target,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await foreach (ProcessOutputLine line in processRunner.StreamLinesAsync(new ProcessCommand(
                            target.CliExecutable ?? "docker",
                            ["events", "--format", "{{json .}}"],
                            OutputMode: ProcessOutputMode.Lines), cancellationToken))
         {
-            using JsonDocument doc = JsonDocument.Parse(line.Content);
+            using var doc = JsonDocument.Parse(line.Content);
             JsonElement root = doc.RootElement;
             yield return new ContainerEvent(
                 root.GetProperty("Type").GetString() ?? string.Empty,
@@ -172,10 +185,10 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
     public async IAsyncEnumerable<ProcessOutputLine> RunComposeAsync(
         ContainerRuntimeTarget target,
         ComposeCommand command,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var args = new List<string> { "compose" };
-        foreach (string file in command.ComposeFiles)
+        foreach (var file in command.ComposeFiles)
             args.AddRange(["-f", file]);
         if (!string.IsNullOrWhiteSpace(command.EnvironmentFile))
             args.AddRange(["--env-file", command.EnvironmentFile]);
@@ -184,19 +197,20 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
         await foreach (ProcessOutputLine line in processRunner.StreamLinesAsync(new ProcessCommand(
                            target.CliExecutable ?? "docker",
                            args,
-                           WorkingDirectory: command.WorkingDirectory,
+                           command.WorkingDirectory,
                            Timeout: command.Timeout,
                            OutputMode: ProcessOutputMode.Lines), cancellationToken))
-        {
             yield return line;
-        }
     }
 
-    private Task<ProcessResult> RunDockerAsync(ContainerRuntimeTarget target, IReadOnlyList<string> args, CancellationToken cancellationToken) =>
-        processRunner.RunTextAsync(new ProcessCommand(
+    private Task<ProcessResult> RunDockerAsync(ContainerRuntimeTarget target, IReadOnlyList<string> args,
+        CancellationToken cancellationToken)
+    {
+        return processRunner.RunTextAsync(new ProcessCommand(
             target.CliExecutable ?? (target.Provider == ContainerRuntimeProvider.Podman ? "podman" : "docker"),
             args,
             Timeout: TimeSpan.FromMinutes(2)), cancellationToken);
+    }
 
     private static void ThrowIfFailed(ProcessResult result)
     {

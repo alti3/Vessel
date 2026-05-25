@@ -6,6 +6,9 @@ namespace Vessel.Web.Realtime;
 
 public sealed class SignalRRealtimeNotifier(IHubContext<VesselRealtimeHub> hubContext) : IRealtimeNotifier
 {
-    public Task PublishAsync(RealtimeGroup group, RealtimeMessage message, CancellationToken cancellationToken = default) =>
-        hubContext.Clients.Group(group.ToString()).SendAsync(message.Type, message.Payload, cancellationToken);
+    public Task PublishAsync(RealtimeGroup group, RealtimeMessage message,
+        CancellationToken cancellationToken = default)
+    {
+        return hubContext.Clients.Group(group.ToString()).SendAsync(message.Type, message.Payload, cancellationToken);
+    }
 }

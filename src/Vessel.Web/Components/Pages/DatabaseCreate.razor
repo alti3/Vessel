@@ -6,20 +6,49 @@
 @inject NavigationManager Navigation
 
 <PageTitle>New database | Vessel</PageTitle>
-<PageHeader Kicker="Databases" Title="Create database" Description="Create a managed database resource record with encrypted credential storage." />
+<PageHeader Kicker="Databases" Title="Create database"
+            Description="Create a managed database resource record with encrypted credential storage."/>
 
-<SettingsPanel Title="Database resource" Description="Provisioning containers and backup execution are handled by later deployment phases.">
+<SettingsPanel Title="Database resource"
+               Description="Provisioning containers and backup execution are handled by later deployment phases.">
     <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-database">
         <div class="form-grid">
-            <label>Name<InputText @bind-Value="Model.Name" name="name" placeholder="postgres-main" /></label>
-            <label>Engine<select @bind="Model.Engine" name="engine"><option value="@DatabaseEngine.PostgreSql">PostgreSQL</option><option value="@DatabaseEngine.MySql">MySQL</option><option value="@DatabaseEngine.MariaDb">MariaDB</option><option value="@DatabaseEngine.Redis">Redis</option><option value="@DatabaseEngine.MongoDb">MongoDB</option></select></label>
-            <label>Version<InputText @bind-Value="Model.Version" name="version" /></label>
-            <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects){<option value="@project.Id">@project.Name</option>}</select></label>
-            <label>Environment<select @bind="Model.EnvironmentId" name="environment">@foreach (var environment in Environments){<option value="@environment.Id">@environment.Name</option>}</select></label>
-            <label>Server<select @bind="Model.ServerId" name="server">@foreach (var server in Servers){<option value="@server.Id">@server.Name</option>}</select></label>
-            <label>Volume<InputText @bind-Value="Model.VolumeName" name="volume" /></label>
-            <label>Mount path<InputText @bind-Value="Model.MountPath" name="mountPath" /></label>
-            <label class="form-wide">Credentials<SecretInput Name="credentials" @bind-Value="Model.Credentials" Placeholder="generated or pasted password" /></label>
+            <label>Name
+                <InputText @bind-Value="Model.Name" name="name" placeholder="postgres-main"/>
+            </label>
+            <label>Engine<select @bind="Model.Engine" name="engine">
+                    <option value="@DatabaseEngine.PostgreSql">PostgreSQL</option>
+                    <option value="@DatabaseEngine.MySql">MySQL</option>
+                    <option value="@DatabaseEngine.MariaDb">MariaDB</option>
+                    <option value="@DatabaseEngine.Redis">Redis</option>
+                    <option value="@DatabaseEngine.MongoDb">MongoDB</option>
+                </select></label>
+            <label>Version
+                <InputText @bind-Value="Model.Version" name="version"/>
+            </label>
+            <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }</select></label>
+            <label>Environment<select @bind="Model.EnvironmentId"
+                                      name="environment">@foreach (var environment in Environments)
+                    {
+                        <option value="@environment.Id">@environment.Name</option>
+                    }</select></label>
+            <label>Server<select @bind="Model.ServerId" name="server">@foreach (var server in Servers)
+                    {
+                        <option value="@server.Id">@server.Name</option>
+                    }</select></label>
+            <label>Volume
+                <InputText @bind-Value="Model.VolumeName" name="volume"/>
+            </label>
+            <label>Mount path
+                <InputText @bind-Value="Model.MountPath" name="mountPath"/>
+            </label>
+            <label class="form-wide">Credentials
+                <SecretInput Name="credentials" @bind-Value="Model.Credentials"
+                             Placeholder="generated or pasted password"/>
+            </label>
             @if (!string.IsNullOrWhiteSpace(Error))
             {
                 <div class="form-alert form-wide">@Error</div>
@@ -52,9 +81,10 @@
         if (Projects.Count > 0)
         {
             Model.ProjectId = Projects[0].Id;
-            Environments = Resources.ListEnvironments(user.GetUserId(), user.GetTeamId(), new Vessel.Domain.ProjectId(Model.ProjectId));
+            Environments = Resources.ListEnvironments(user.GetUserId(), user.GetTeamId(), new ProjectId(Model.ProjectId));
             Model.EnvironmentId = Environments.FirstOrDefault()?.Id ?? Guid.Empty;
         }
+
         Model.ServerId = Servers.FirstOrDefault()?.Id ?? Guid.Empty;
     }
 
@@ -63,7 +93,7 @@
         try
         {
             var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-            DatabaseSummary database = await Resources.CreateDatabaseAsync(user.GetUserId(), user.GetTeamId(),
+            var database = await Resources.CreateDatabaseAsync(user.GetUserId(), user.GetTeamId(),
                 new CreateDatabaseRequest(Model.ProjectId, Model.EnvironmentId, Model.ServerId, Model.Name, null,
                     Model.Engine, Model.Version, Model.VolumeName, Model.MountPath, Model.Credentials));
             Navigation.NavigateTo($"/databases/{database.Id}");
@@ -86,4 +116,5 @@
         public string MountPath { get; set; } = "/data";
         public string Credentials { get; set; } = string.Empty;
     }
+
 }

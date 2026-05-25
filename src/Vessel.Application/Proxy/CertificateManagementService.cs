@@ -41,7 +41,7 @@ public sealed class CertificateManagementService(
         CancellationToken cancellationToken = default)
     {
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsWrite);
-        string normalized = NormalizeHost(host);
+        var normalized = NormalizeHost(host);
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
             $"certificate-issuance:{applicationId.Value:D}:{normalized}",
             TimeSpan.FromMinutes(5),
@@ -55,13 +55,10 @@ public sealed class CertificateManagementService(
         Certificate certificate = existing
                                   ?? Certificate.Create(teamId, applicationId, normalized,
                                       CertificateProvider.TraefikAcme, timeProvider.GetUtcNow());
-        if (existing is null)
-        {
-            await dbContext.CertificateRepository.AddAsync(certificate, cancellationToken);
-        }
+        if (existing is null) await dbContext.CertificateRepository.AddAsync(certificate, cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        string jobId = backgroundJobs.Enqueue<CertificateIssuanceJob>(job =>
+        var jobId = backgroundJobs.Enqueue<CertificateIssuanceJob>(job =>
             job.RunAsync(certificate.Id.Value, CancellationToken.None));
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.CertificateIssuanceQueued,
             new AuditTarget("certificate", certificate.Id.Value.ToString("D")), null,
@@ -80,7 +77,7 @@ public sealed class CertificateManagementService(
         CancellationToken cancellationToken = default)
     {
         Certificate certificate = dbContext.Certificates.SingleOrDefault(item => item.Id == certificateId)
-            ?? throw new InvalidOperationException("Certificate was not found.");
+                                  ?? throw new InvalidOperationException("Certificate was not found.");
 
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
             $"certificate:{certificate.Id.Value:D}",
@@ -91,11 +88,12 @@ public sealed class CertificateManagementService(
             throw new DomainException("A certificate operation is already running for this certificate.");
 
         Domain.Applications.Application application = dbContext.Applications
-            .SingleOrDefault(item => item.Id == certificate.ApplicationId)
-            ?? throw new InvalidOperationException("Application was not found.");
+                                                          .SingleOrDefault(item => item.Id == certificate.ApplicationId)
+                                                      ?? throw new InvalidOperationException(
+                                                          "Application was not found.");
 
         await proxyConfiguration.ApplyForDeploymentAsync(
-            actorUserId: null,
+            null,
             certificate.TeamId,
             application.ServerId,
             cancellationToken);
@@ -110,7 +108,7 @@ public sealed class CertificateManagementService(
             .Where(certificate => certificate.Status == CertificateStatus.RenewalDue ||
                                   (certificate.RenewalDueAt != null && certificate.RenewalDueAt <= now))
             .ToArray();
-        int renewed = 0;
+        var renewed = 0;
         foreach (Certificate certificate in due)
         {
             await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
@@ -143,7 +141,7 @@ public sealed class CertificateManagementService(
         CancellationToken cancellationToken = default)
     {
         Certificate certificate = dbContext.Certificates.SingleOrDefault(item => item.Id == certificateId)
-            ?? throw new InvalidOperationException("Certificate was not found.");
+                                  ?? throw new InvalidOperationException("Certificate was not found.");
         DateTimeOffset now = timeProvider.GetUtcNow();
         certificate.MarkIssued(now, expiresAt, certificateSecretReferenceId, privateKeySecretReferenceId);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -163,7 +161,7 @@ public sealed class CertificateManagementService(
         if (string.IsNullOrWhiteSpace(host)) throw new DomainException("Certificate host is required.");
         if (Uri.TryCreate(host, UriKind.Absolute, out Uri? uri))
             host = uri.Host;
-        string normalized = host.Trim().TrimEnd('/').ToLowerInvariant();
+        var normalized = host.Trim().TrimEnd('/').ToLowerInvariant();
         if (normalized.Contains('/', StringComparison.Ordinal) || normalized.Contains(':', StringComparison.Ordinal))
             throw new DomainException("Certificate host must not include a path or port.");
         return new DomainName(normalized).Value;

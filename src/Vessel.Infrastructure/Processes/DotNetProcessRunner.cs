@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using Microsoft.Win32.SafeHandles;
 using Vessel.Application.Processes;
 using Vessel.Application.Security;
 using AppProcessOutputLine = Vessel.Application.Processes.ProcessOutputLine;
+using ProcessOutputLine = System.Diagnostics.ProcessOutputLine;
 
 namespace Vessel.Infrastructure.Processes;
 
@@ -14,7 +17,7 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         ValidateCommand(command, ProcessOutputMode.Text);
         DateTimeOffset startedAt = timeProvider.GetUtcNow();
         using CancellationTokenSource timeout = CreateTimeoutToken(command, cancellationToken);
-        var startInfo = CreateStartInfo(command, redirectOutput: true, redirectError: true);
+        ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
 
         try
         {
@@ -22,19 +25,20 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             DateTimeOffset exitedAt = timeProvider.GetUtcNow();
             return new ProcessResult(
                 command,
-                MapExitStatus(output.ExitStatus, timedOut: false),
+                MapExitStatus(output.ExitStatus, false),
                 output.ProcessId,
                 startedAt,
                 exitedAt,
                 Redact(output.StandardOutput, command),
                 Redact(output.StandardError, command));
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && command.Timeout is not null)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested &&
+                                                 command.Timeout is not null)
         {
             DateTimeOffset exitedAt = timeProvider.GetUtcNow();
             return new ProcessResult(
                 command,
-                new ProcessExitInfo(-1, Canceled: true, TimedOut: true, TerminatingSignal: null),
+                new ProcessExitInfo(-1, true, true, null),
                 0,
                 startedAt,
                 exitedAt,
@@ -49,10 +53,10 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
     {
         ValidateCommand(command, ProcessOutputMode.None);
         using CancellationTokenSource timeout = CreateTimeoutToken(command, cancellationToken);
-        var startInfo = CreateStartInfo(command, redirectOutput: false, redirectError: false);
-        using var nullInput = File.OpenNullHandle();
-        using var nullOutput = File.OpenNullHandle();
-        using var nullError = File.OpenNullHandle();
+        ProcessStartInfo startInfo = CreateStartInfo(command, false, false);
+        using SafeFileHandle nullInput = File.OpenNullHandle();
+        using SafeFileHandle nullOutput = File.OpenNullHandle();
+        using SafeFileHandle nullError = File.OpenNullHandle();
         startInfo.StandardInputHandle = nullInput;
         startInfo.StandardOutputHandle = nullOutput;
         startInfo.StandardErrorHandle = nullError;
@@ -60,11 +64,12 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         try
         {
             ProcessExitStatus status = await Process.RunAsync(startInfo, timeout.Token);
-            return MapExitStatus(status, timedOut: false);
+            return MapExitStatus(status, false);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && command.Timeout is not null)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested &&
+                                                 command.Timeout is not null)
         {
-            return new ProcessExitInfo(-1, Canceled: true, TimedOut: true, TerminatingSignal: null);
+            return new ProcessExitInfo(-1, true, true, null);
         }
     }
 
@@ -75,21 +80,22 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         ValidateCommand(command, ProcessOutputMode.Binary);
         DateTimeOffset startedAt = timeProvider.GetUtcNow();
         using CancellationTokenSource timeout = CreateTimeoutToken(command, cancellationToken);
-        var startInfo = CreateStartInfo(command, redirectOutput: true, redirectError: true);
+        ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
 
         using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"Failed to start process '{command.FileName}'.");
+                                ?? throw new InvalidOperationException(
+                                    $"Failed to start process '{command.FileName}'.");
 
         try
         {
-            (byte[] stdout, byte[] stderr) = await process.ReadAllBytesAsync(timeout.Token);
+            var (stdout, stderr) = await process.ReadAllBytesAsync(timeout.Token);
             await process.WaitForExitAsync(timeout.Token);
             EnforceOutputLimit(stdout.LongLength + stderr.LongLength, command.MaxOutputBytes);
 
             DateTimeOffset exitedAt = timeProvider.GetUtcNow();
             return new ProcessBinaryResult(
                 command,
-                new ProcessExitInfo(process.ExitCode, Canceled: false, TimedOut: false, TerminatingSignal: null),
+                new ProcessExitInfo(process.ExitCode, false, false, null),
                 process.Id,
                 startedAt,
                 exitedAt,
@@ -102,7 +108,7 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             DateTimeOffset exitedAt = timeProvider.GetUtcNow();
             return new ProcessBinaryResult(
                 command,
-                new ProcessExitInfo(-1, Canceled: true, TimedOut: !cancellationToken.IsCancellationRequested, TerminatingSignal: null),
+                new ProcessExitInfo(-1, true, !cancellationToken.IsCancellationRequested, null),
                 process.Id,
                 startedAt,
                 exitedAt,
@@ -113,26 +119,25 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
     public async IAsyncEnumerable<AppProcessOutputLine> StreamLinesAsync(
         ProcessCommand command,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ValidateCommand(command, ProcessOutputMode.Lines);
         DateTimeOffset startedAt = timeProvider.GetUtcNow();
         using CancellationTokenSource timeout = CreateTimeoutToken(command, cancellationToken);
-        var startInfo = CreateStartInfo(command, redirectOutput: true, redirectError: true);
+        ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
         using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"Failed to start process '{command.FileName}'.");
+                                ?? throw new InvalidOperationException(
+                                    $"Failed to start process '{command.FileName}'.");
 
         long sequence = 0;
         try
         {
-            await foreach (System.Diagnostics.ProcessOutputLine line in process.ReadAllLinesAsync(timeout.Token))
-            {
+            await foreach (ProcessOutputLine line in process.ReadAllLinesAsync(timeout.Token))
                 yield return new AppProcessOutputLine(
                     Interlocked.Increment(ref sequence),
                     timeProvider.GetUtcNow(),
                     line.StandardError ? ProcessStreamKind.StandardError : ProcessStreamKind.StandardOutput,
                     Redact(line.Content, command));
-            }
 
             await process.WaitForExitAsync(timeout.Token);
             if (process.ExitCode != 0)
@@ -140,7 +145,7 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
                 DateTimeOffset exitedAt = timeProvider.GetUtcNow();
                 throw new ProcessExecutionException(new ProcessResult(
                     command,
-                    new ProcessExitInfo(process.ExitCode, Canceled: false, TimedOut: false, TerminatingSignal: null),
+                    new ProcessExitInfo(process.ExitCode, false, false, null),
                     process.Id,
                     startedAt,
                     exitedAt,
@@ -171,15 +176,10 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             KillOnParentExit = (command.TerminationPolicy ?? ProcessTerminationPolicy.Default).KillOnParentExit
         };
 
-        foreach (string argument in command.Arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
+        foreach (var argument in command.Arguments) startInfo.ArgumentList.Add(argument);
 
-        foreach ((string key, string? value) in command.Environment ?? new Dictionary<string, string?>())
-        {
+        foreach (var (key, value) in command.Environment ?? new Dictionary<string, string?>())
             startInfo.Environment[key] = value;
-        }
 
         return startInfo;
     }
@@ -193,16 +193,17 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             throw new InvalidOperationException("Command max output bytes must be positive.");
     }
 
-    private static CancellationTokenSource CreateTimeoutToken(ProcessCommand command, CancellationToken cancellationToken)
+    private static CancellationTokenSource CreateTimeoutToken(ProcessCommand command,
+        CancellationToken cancellationToken)
     {
-        CancellationTokenSource source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         if (command.Timeout is not null) source.CancelAfter(command.Timeout.Value);
         return source;
     }
 
     private static ProcessExitInfo MapExitStatus(ProcessExitStatus status, bool timedOut)
     {
-        string? signal = status.Signal?.ToString();
+        var signal = status.Signal?.ToString();
         return new ProcessExitInfo(status.ExitCode, status.Canceled, timedOut, signal);
     }
 
@@ -212,18 +213,21 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             throw new InvalidOperationException($"Process output exceeded the configured limit of {max} bytes.");
     }
 
-    private string Redact(string value, ProcessCommand command) =>
-        redactor.Redact(value, CreateRedactionContext(command));
+    private string Redact(string value, ProcessCommand command)
+    {
+        return redactor.Redact(value, CreateRedactionContext(command));
+    }
 
-    private static RedactionContext CreateRedactionContext(ProcessCommand command) =>
-        new(command.Redaction?.SecretValues, command.Redaction?.PatternNames);
+    private static RedactionContext CreateRedactionContext(ProcessCommand command)
+    {
+        return new RedactionContext(command.Redaction?.SecretValues, command.Redaction?.PatternNames);
+    }
 
     private static async Task TerminateAsync(Process process, ProcessTerminationPolicy policy)
     {
         if (process.HasExited) return;
 
         if (OperatingSystem.IsWindows())
-        {
             try
             {
                 process.CloseMainWindow();
@@ -231,7 +235,6 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             catch (InvalidOperationException)
             {
             }
-        }
 
         try
         {

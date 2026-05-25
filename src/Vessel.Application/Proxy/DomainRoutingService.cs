@@ -22,7 +22,8 @@ public sealed class DomainRoutingService(
     {
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsRead);
         Domain.Applications.Application application = GetApplication(applicationId);
-        Certificate[] certificates = dbContext.Certificates.Where(certificate => certificate.ApplicationId == applicationId).ToArray();
+        Certificate[] certificates = dbContext.Certificates
+            .Where(certificate => certificate.ApplicationId == applicationId).ToArray();
         return application.Domains
             .OrderBy(domain => domain.DomainName.Value, StringComparer.OrdinalIgnoreCase)
             .Select(domain =>
@@ -52,11 +53,9 @@ public sealed class DomainRoutingService(
 
         if (request.TlsEnabled && !dbContext.Certificates.Any(certificate =>
                 certificate.ApplicationId == applicationId && certificate.Host == domainName.Value))
-        {
             await dbContext.CertificateRepository.AddAsync(
                 Certificate.Create(teamId, applicationId, domainName.Value, CertificateProvider.TraefikAcme, now),
                 cancellationToken);
-        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.DomainRouteConfigured,
@@ -80,7 +79,7 @@ public sealed class DomainRoutingService(
     {
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsWrite);
         Domain.Applications.Application application = GetApplication(applicationId);
-        string normalized = NormalizeHost(host);
+        var normalized = NormalizeHost(host);
         application.RemoveDomain(new DomainName(normalized), timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.DomainRouteRemoved,
@@ -90,7 +89,8 @@ public sealed class DomainRoutingService(
 
     private Domain.Applications.Application GetApplication(AppId applicationId)
     {
-        Domain.Applications.Application application = dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
+        Domain.Applications.Application application =
+            dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
             ?? throw new InvalidOperationException("Application was not found.");
         _ = dbContext.ApplicationDomains.Where(domain => domain.ApplicationId == applicationId).ToArray();
         return application;
@@ -107,7 +107,7 @@ public sealed class DomainRoutingService(
     private static string NormalizeHost(string host)
     {
         if (string.IsNullOrWhiteSpace(host)) throw new DomainException("Domain host is required.");
-        string candidate = host.Trim().TrimEnd('/');
+        var candidate = host.Trim().TrimEnd('/');
         if (Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri))
             candidate = uri.Host;
         candidate = candidate.Trim().ToLowerInvariant();

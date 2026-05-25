@@ -9,17 +9,18 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
-using Vessel.Application.Auth;
 using Vessel.Application.Auditing;
+using Vessel.Application.Auth;
 using Vessel.Application.Authorization;
 using Vessel.Application.Dashboard;
-using Vessel.Application.Diagnostics;
 using Vessel.Application.Deployments;
+using Vessel.Application.Diagnostics;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
+using Vessel.Application.Resources;
 using Vessel.Application.Security;
 using Vessel.Application.Webhooks;
 using Vessel.Infrastructure.HealthChecks;
@@ -69,7 +70,8 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(AuthOptions.SectionName))
             .Validate(options => options.LockoutThreshold > 0, "Auth lockout threshold must be positive.")
             .Validate(options => options.LockoutMinutes > 0, "Auth lockout duration must be positive.")
-            .Validate(options => options.PasswordResetTokenMinutes > 0, "Password reset token duration must be positive.")
+            .Validate(options => options.PasswordResetTokenMinutes > 0,
+                "Password reset token duration must be positive.")
             .Validate(options => options.InvitationExpirationDays > 0, "Invitation expiration must be positive.")
             .ValidateOnStart();
 
@@ -80,7 +82,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<VesselTokenService>();
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
-        services.AddScoped<Vessel.Application.Resources.ResourceManagementService>();
+        services.AddScoped<ResourceManagementService>();
         services.AddScoped<StartDeploymentService>();
         services.AddScoped<DeploymentQueryService>();
         services.AddScoped<IDeploymentRunner, DeploymentRunner>();
@@ -150,12 +152,10 @@ public static class ServiceCollectionExtensions
 
         services.AddAuthorization(options =>
         {
-            foreach (string permission in VesselPermissions.All)
-            {
+            foreach (var permission in VesselPermissions.All)
                 options.AddPolicy(permission, policy => policy
                     .RequireAuthenticatedUser()
                     .AddRequirements(new PermissionRequirement(permission)));
-            }
         });
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 

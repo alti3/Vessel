@@ -4,29 +4,43 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Databases | Vessel</PageTitle>
-<PageHeader Kicker="Resources" Title="Databases" Description="Database resources with health, storage, and credential-reference metadata.">
-    <a class="button button-primary" href="/databases/new"><Icon Name="plus" CssClass="size-4" />New database</a>
+<PageHeader Kicker="Resources" Title="Databases"
+            Description="Database resources with health, storage, and credential-reference metadata.">
+    <a class="button button-primary" href="/databases/new">
+        <Icon Name="plus" CssClass="size-4"/>
+        New database</a>
 </PageHeader>
 
 @if (Items.Count == 0)
 {
-    <EmptyState Title="No databases found" Description="Managed database resources will appear here after resource creation is implemented." ActionHref="/databases/new" ActionText="Create database" />
+    <EmptyState Title="No databases found"
+                Description="Managed database resources will appear here after resource creation is implemented."
+                ActionHref="/databases/new" ActionText="Create database"/>
 }
 else
 {
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Name</th><th>Engine</th><th>Version</th><th>Health</th></tr></thead>
+            <thead>
+            <tr>
+                <th>Name</th>
+                <th>Engine</th>
+                <th>Version</th>
+                <th>Health</th>
+            </tr>
+            </thead>
             <tbody>
-                @foreach (var item in Items)
-                {
-                    <tr>
-                        <td>@item.Name</td>
-                        <td>@item.Engine</td>
-                        <td>@item.Version</td>
-                        <td><StatusBadge Text="@item.HealthState.ToString()" Tone="neutral" /></td>
-                    </tr>
-                }
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>@item.Name</td>
+                    <td>@item.Engine</td>
+                    <td>@item.Version</td>
+                    <td>
+                        <StatusBadge Text="@item.HealthState.ToString()" Tone="neutral"/>
+                    </td>
+                </tr>
+            }
             </tbody>
         </table>
     </div>
@@ -39,4 +53,5 @@ else
     {
         Items = DatabaseQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
     }
+
 }

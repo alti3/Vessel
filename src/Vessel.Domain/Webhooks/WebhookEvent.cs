@@ -65,7 +65,7 @@ public sealed class WebhookEvent : Entity<WebhookEventId>
         WebhookSignatureStatus signatureStatus,
         DateTimeOffset now)
     {
-        string normalizedPayload = DomainValidation.Required(payloadJson, nameof(payloadJson), 262_144);
+        var normalizedPayload = DomainValidation.Required(payloadJson, nameof(payloadJson), 262_144);
         var id = WebhookEventId.New();
         return new WebhookEvent(
             id,
@@ -113,7 +113,8 @@ public sealed class WebhookEvent : Entity<WebhookEventId>
         Touch(now);
     }
 
-    public void MarkProcessed(ApplicationId? applicationId, DeploymentId? deploymentId, ApplicationPreviewId? previewId, DateTimeOffset now)
+    public void MarkProcessed(ApplicationId? applicationId, DeploymentId? deploymentId, ApplicationPreviewId? previewId,
+        DateTimeOffset now)
     {
         ApplicationId = applicationId;
         DeploymentId = deploymentId;

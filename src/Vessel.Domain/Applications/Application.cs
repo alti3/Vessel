@@ -100,10 +100,8 @@ public sealed class Application : Entity<ApplicationId>
         }
 
         if (canonical)
-        {
             foreach (ApplicationDomain domain in _domains.Where(domain => domain.DomainName != domainName))
                 domain.UpdateRouting(domain.TargetPort, domain.TlsEnabled, false, domain.RedirectToCanonical);
-        }
 
         existing.UpdateRouting(targetPort, tlsEnabled, canonical, redirectToCanonical);
         Touch(now);

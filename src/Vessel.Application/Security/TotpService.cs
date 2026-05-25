@@ -30,13 +30,13 @@ public sealed class TotpService
     {
         if (string.IsNullOrWhiteSpace(secret) || string.IsNullOrWhiteSpace(code)) return false;
 
-        string normalized = code.Replace(" ", string.Empty, StringComparison.Ordinal).Trim();
+        var normalized = code.Replace(" ", string.Empty, StringComparison.Ordinal).Trim();
         if (normalized.Length != 6 || normalized.Any(character => !char.IsDigit(character))) return false;
 
-        long timestep = now.ToUnixTimeSeconds() / 30;
+        var timestep = now.ToUnixTimeSeconds() / 30;
         for (long offset = -1; offset <= 1; offset++)
         {
-            string candidate = ComputeCode(secret, timestep + offset);
+            var candidate = ComputeCode(secret, timestep + offset);
             if (CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(candidate),
                     Encoding.ASCII.GetBytes(normalized)))
@@ -55,14 +55,14 @@ public sealed class TotpService
 
     private static string ComputeCode(string secret, long timestep)
     {
-        byte[] key = FromBase32(secret);
+        var key = FromBase32(secret);
         Span<byte> counter = stackalloc byte[8];
         BinaryPrimitivesWriteInt64BigEndian(counter, timestep);
 
         using var hmac = new HMACSHA1(key);
-        byte[] hash = hmac.ComputeHash(counter.ToArray());
-        int offset = hash[^1] & 0x0f;
-        int binary =
+        var hash = hmac.ComputeHash(counter.ToArray());
+        var offset = hash[^1] & 0x0f;
+        var binary =
             ((hash[offset] & 0x7f) << 24)
             | ((hash[offset + 1] & 0xff) << 16)
             | ((hash[offset + 2] & 0xff) << 8)
@@ -74,10 +74,10 @@ public sealed class TotpService
     private static string ToBase32(byte[] bytes)
     {
         var output = new StringBuilder((int)Math.Ceiling(bytes.Length / 5d) * 8);
-        int buffer = 0;
-        int bitsLeft = 0;
+        var buffer = 0;
+        var bitsLeft = 0;
 
-        foreach (byte value in bytes)
+        foreach (var value in bytes)
         {
             buffer = (buffer << 8) | value;
             bitsLeft += 8;
@@ -96,17 +96,17 @@ public sealed class TotpService
 
     private static byte[] FromBase32(string value)
     {
-        string normalized = value.Replace("=", string.Empty, StringComparison.Ordinal)
+        var normalized = value.Replace("=", string.Empty, StringComparison.Ordinal)
             .Replace(" ", string.Empty, StringComparison.Ordinal)
             .ToUpperInvariant();
 
         var bytes = new List<byte>();
-        int buffer = 0;
-        int bitsLeft = 0;
+        var buffer = 0;
+        var bitsLeft = 0;
 
-        foreach (char character in normalized)
+        foreach (var character in normalized)
         {
-            int index = Base32Alphabet.IndexOf(character, StringComparison.Ordinal);
+            var index = Base32Alphabet.IndexOf(character, StringComparison.Ordinal);
             if (index < 0) throw new FormatException("Invalid base32 character.");
 
             buffer = (buffer << 5) | index;

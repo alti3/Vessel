@@ -11,7 +11,7 @@ public sealed class WebhookDomainTests
     public void WebhookEvent_TracksReceiptDedupeAndProcessingState()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        WebhookEvent webhookEvent = WebhookEvent.Receive(
+        var webhookEvent = WebhookEvent.Receive(
             WebhookProvider.GitHub,
             "push",
             "delivery-1",
@@ -35,7 +35,7 @@ public sealed class WebhookDomainTests
     public void ApplicationPreview_RefreshAndArchivePreservePullRequestIdentity()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        ApplicationPreview preview = ApplicationPreview.Open(
+        var preview = ApplicationPreview.Open(
             AppId.New(),
             WebhookProvider.GitLab,
             42,
@@ -59,10 +59,10 @@ public sealed class WebhookDomainTests
     [Fact]
     public void Deployment_RecordsWebhookAndPreviewMetadata()
     {
-        ApplicationPreviewId previewId = ApplicationPreviewId.New();
-        WebhookEventId webhookEventId = WebhookEventId.New();
+        var previewId = ApplicationPreviewId.New();
+        var webhookEventId = WebhookEventId.New();
 
-        Deployment deployment = Deployment.Queue(
+        var deployment = Deployment.Queue(
             AppId.New(),
             ServerId.New(),
             null,

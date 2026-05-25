@@ -6,12 +6,14 @@ public sealed class UnavailableBackgroundJobDispatcher : IBackgroundJobDispatche
 {
     public string Enqueue<TJob>(Expression<Func<TJob, Task>> methodCall)
     {
-        throw new InvalidOperationException("Background job dispatch is unavailable because Hangfire storage is disabled.");
+        throw new InvalidOperationException(
+            "Background job dispatch is unavailable because Hangfire storage is disabled.");
     }
 
     public string Schedule<TJob>(Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
     {
-        throw new InvalidOperationException("Background job dispatch is unavailable because Hangfire storage is disabled.");
+        throw new InvalidOperationException(
+            "Background job dispatch is unavailable because Hangfire storage is disabled.");
     }
 }
 
@@ -19,8 +21,10 @@ public sealed class UnavailableRecurringJobScheduler : IRecurringJobScheduler
 {
     public void AddOrUpdate<TJob>(
         string recurringJobId,
-        System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall,
+        Expression<Func<TJob, Task>> methodCall,
         string cronExpression)
     {
+        throw new InvalidOperationException(
+            "Background job scheduling is unavailable because Hangfire storage is disabled.");
     }
 }

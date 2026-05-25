@@ -46,9 +46,9 @@ public sealed class Deployment : Entity<DeploymentId>
 
     public string? RepositoryUrl { get; private set; }
 
-    public ApplicationPreviewId? PreviewId { get; private set; }
+    public ApplicationPreviewId? PreviewId { get; }
 
-    public WebhookEventId? WebhookEventId { get; private set; }
+    public WebhookEventId? WebhookEventId { get; }
 
     public bool IsPreview => PreviewId.HasValue;
 
@@ -91,7 +91,8 @@ public sealed class Deployment : Entity<DeploymentId>
         WebhookEventId? webhookEventId,
         DateTimeOffset now)
     {
-        return new Deployment(DeploymentId.New(), applicationId, serverId, actorUserId, commitSha, previewId, webhookEventId, false, now);
+        return new Deployment(DeploymentId.New(), applicationId, serverId, actorUserId, commitSha, previewId,
+            webhookEventId, false, now);
     }
 
     public void Start(DateTimeOffset now)
@@ -99,7 +100,8 @@ public sealed class Deployment : Entity<DeploymentId>
         TransitionTo(DeploymentStatus.InProgress, now);
     }
 
-    public void RecordSource(string repositoryUrl, string branch, string commitSha, string? commitMessage, DateTimeOffset now)
+    public void RecordSource(string repositoryUrl, string branch, string commitSha, string? commitMessage,
+        DateTimeOffset now)
     {
         RepositoryUrl = DomainValidation.Required(repositoryUrl, nameof(repositoryUrl), 2048);
         CommitBranch = DomainValidation.Required(branch, nameof(branch), 255);
@@ -118,7 +120,9 @@ public sealed class Deployment : Entity<DeploymentId>
     {
         if (IsTerminal(Status)) return;
         CancellationRequestedAt = now;
-        TransitionTo(Status == DeploymentStatus.Queued ? DeploymentStatus.CanceledByUser : DeploymentStatus.CancelRequested, now);
+        TransitionTo(
+            Status == DeploymentStatus.Queued ? DeploymentStatus.CanceledByUser : DeploymentStatus.CancelRequested,
+            now);
     }
 
     public void MarkSucceeded(string? artifactReference, DateTimeOffset now)
@@ -163,7 +167,8 @@ public sealed class Deployment : Entity<DeploymentId>
             DeploymentStatus.Queued => nextStatus is DeploymentStatus.InProgress or DeploymentStatus.CanceledByUser,
             DeploymentStatus.InProgress => nextStatus is DeploymentStatus.Succeeded or DeploymentStatus.Failed
                 or DeploymentStatus.CanceledByUser or DeploymentStatus.CancelRequested,
-            DeploymentStatus.CancelRequested => nextStatus is DeploymentStatus.CanceledByUser or DeploymentStatus.Failed,
+            DeploymentStatus.CancelRequested =>
+                nextStatus is DeploymentStatus.CanceledByUser or DeploymentStatus.Failed,
             _ => false
         };
     }

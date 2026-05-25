@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Jobs;
@@ -25,6 +26,7 @@ using Vessel.Domain.Users;
 using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
+using ApplicationId = Vessel.Domain.ApplicationId;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.UnitTests.Application;
@@ -34,7 +36,7 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task ConfigureDomain_NormalizesHostCreatesCertificateAndUpdatesCanonical()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
 
         DomainRouteSummary first = await fixture.Domains.ConfigureAsync(
             fixture.UserId,
@@ -53,7 +55,8 @@ public sealed class Phase10ProxyServiceTests
         Assert.Single(fixture.Db.CertificateItems);
         Assert.Equal("app.example.com", fixture.Db.CertificateItems.Single().Host);
         Assert.True(second.Canonical);
-        Assert.False(fixture.Application.Domains.Single(domain => domain.DomainName.Value == "app.example.com").Canonical);
+        Assert.False(fixture.Application.Domains.Single(domain => domain.DomainName.Value == "app.example.com")
+            .Canonical);
         Assert.Equal(2, fixture.Audit.Records.Count(record => record.Action == AuditActions.DomainRouteConfigured));
     }
 
@@ -64,7 +67,7 @@ public sealed class Phase10ProxyServiceTests
     [InlineData("")]
     public async Task ConfigureDomain_RejectsMalformedHosts(string host)
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
 
         await Assert.ThrowsAsync<DomainException>(() => fixture.Domains.ConfigureAsync(
             fixture.UserId,
@@ -76,9 +79,9 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task ConfigureDomain_RejectsCrossTeamApplicationAccess()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
-        User otherUser = User.Create(new DisplayName("Other User"), new EmailAddress("other@example.com"), fixture.Now);
-        Team otherTeam = Team.Create(new DisplayName("Other Team"), otherUser.Id, isPersonal: false, fixture.Now);
+        var fixture = ServiceFixture.Create();
+        var otherUser = User.Create(new DisplayName("Other User"), new EmailAddress("other@example.com"), fixture.Now);
+        var otherTeam = Team.Create(new DisplayName("Other Team"), otherUser.Id, false, fixture.Now);
         fixture.Db.UserItems.Add(otherUser);
         fixture.Db.TeamItems.Add(otherTeam);
 
@@ -92,7 +95,7 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task QueueCertificate_IsIdempotentAndValidatesHosts()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
 
         CertificateSummary first = await fixture.Certificates.QueueIssuanceAsync(
             fixture.UserId,
@@ -109,7 +112,8 @@ public sealed class Phase10ProxyServiceTests
         Assert.Single(fixture.Db.CertificateItems);
         Assert.Equal("app.example.com", second.Host);
         Assert.Equal(2, fixture.BackgroundJobs.Enqueued.Count);
-        Assert.All(fixture.BackgroundJobs.Enqueued, job => Assert.StartsWith(nameof(CertificateIssuanceJob), job, StringComparison.Ordinal));
+        Assert.All(fixture.BackgroundJobs.Enqueued,
+            job => Assert.StartsWith(nameof(CertificateIssuanceJob), job, StringComparison.Ordinal));
         AuditRecord queuedAudit = Assert.Single(fixture.Audit.Records, record =>
             record.Action == AuditActions.CertificateIssuanceQueued && Equals(record.Metadata["jobId"], "job-1"));
         Assert.Equal("TraefikAcme", queuedAudit.Metadata["provider"]);
@@ -124,7 +128,7 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task QueueCertificate_WhenLockUnavailable_DoesNotPersistOrEnqueue()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
         fixture.Locks.ShouldAcquire = false;
 
         await Assert.ThrowsAsync<DomainException>(() => fixture.Certificates.QueueIssuanceAsync(
@@ -140,9 +144,9 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task RequestIssuance_AppliesProxyRoutesForCertificateApplication()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
         fixture.Application.UpsertDomain(new DomainName("app.example.com"), 8080, true, true, false, fixture.Now);
-        Certificate certificate = Certificate.Create(
+        var certificate = Certificate.Create(
             fixture.TeamId,
             fixture.Application.Id,
             "app.example.com",
@@ -160,15 +164,15 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task RenewDue_QueuesIssuedDueCertificatesAndSkipsLockedRows()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
-        Certificate due = Certificate.Create(
+        var fixture = ServiceFixture.Create();
+        var due = Certificate.Create(
             fixture.TeamId,
             fixture.Application.Id,
             "due.example.com",
             CertificateProvider.TraefikAcme,
             fixture.Now.AddDays(-90));
         due.MarkIssued(fixture.Now.AddDays(-90), fixture.Now.AddDays(7), null, null);
-        Certificate notDue = Certificate.Create(
+        var notDue = Certificate.Create(
             fixture.TeamId,
             fixture.Application.Id,
             "later.example.com",
@@ -177,7 +181,7 @@ public sealed class Phase10ProxyServiceTests
         notDue.MarkIssued(fixture.Now.AddDays(-10), fixture.Now.AddDays(40), null, null);
         fixture.Db.CertificateItems.AddRange([due, notDue]);
 
-        int renewed = await fixture.Certificates.RenewDueAsync();
+        var renewed = await fixture.Certificates.RenewDueAsync();
 
         Assert.Equal(1, renewed);
         Assert.Equal(CertificateStatus.RenewalQueued, due.Status);
@@ -185,7 +189,7 @@ public sealed class Phase10ProxyServiceTests
 
         fixture.Locks.ShouldAcquire = false;
         due.MarkFailed("reset", fixture.Now);
-        int skipped = await fixture.Certificates.RenewDueAsync();
+        var skipped = await fixture.Certificates.RenewDueAsync();
 
         Assert.Equal(0, skipped);
         Assert.Equal(CertificateStatus.Failed, due.Status);
@@ -207,7 +211,7 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task ApplyProxyConfiguration_PersistsAppliedVersionWithGeneratedRoutes()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
         fixture.Application.UpsertDomain(new DomainName("app.example.com"), null, true, true, false, fixture.Now);
         fixture.Application.UpsertDomain(new DomainName("admin.example.com"), 9090, false, false, false, fixture.Now);
 
@@ -240,11 +244,12 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task ApplyProxyConfiguration_WhenValidationFails_PersistsFailedVersionAndDoesNotApply()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
         fixture.ProxyProvider.ValidationResult = new ProxyValidationResult(false, ["password secret-value"]);
 
         DomainException exception = await Assert.ThrowsAsync<DomainException>(() =>
-            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId, fixture.Server.Id));
+            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
+                fixture.Server.Id));
 
         ProxyConfigurationVersion version = Assert.Single(fixture.Db.ProxyConfigurationVersionItems);
         Assert.Equal(ProxyConfigurationStatus.Failed, version.Status);
@@ -256,8 +261,8 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task ApplyProxyConfiguration_WhenApplyFails_RollsBackPreviousAppliedVersion()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
-        ProxyConfigurationVersion previous = ProxyConfigurationVersion.Create(
+        var fixture = ServiceFixture.Create();
+        var previous = ProxyConfigurationVersion.Create(
             fixture.Server.Id,
             ProxyProviderKind.Traefik,
             "previous",
@@ -271,9 +276,11 @@ public sealed class Phase10ProxyServiceTests
         fixture.ProxyProvider.ApplyResult = new ProxyApplyResult(false, "password leaked");
 
         DomainException exception = await Assert.ThrowsAsync<DomainException>(() =>
-            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId, fixture.Server.Id));
+            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
+                fixture.Server.Id));
 
-        ProxyConfigurationVersion current = fixture.Db.ProxyConfigurationVersionItems.Single(version => version.Id != previous.Id);
+        ProxyConfigurationVersion current =
+            fixture.Db.ProxyConfigurationVersionItems.Single(version => version.Id != previous.Id);
         Assert.Equal(previous.Id, current.PreviousVersionId);
         Assert.Equal(ProxyConfigurationStatus.Failed, current.Status);
         Assert.Contains("[redacted]", current.ApplyError, StringComparison.Ordinal);
@@ -284,25 +291,27 @@ public sealed class Phase10ProxyServiceTests
     [Fact]
     public async Task ApplyProxyConfiguration_RejectsUnreachableServerAndLockContention()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
+        var fixture = ServiceFixture.Create();
         fixture.Server.ChangeStatus(ServerStatus.Unreachable, fixture.Now);
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId, fixture.Server.Id));
+            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
+                fixture.Server.Id));
         Assert.Empty(fixture.Db.ProxyConfigurationVersionItems);
 
         fixture.Server.ChangeStatus(ServerStatus.Reachable, fixture.Now);
         fixture.Locks.ShouldAcquire = false;
         await Assert.ThrowsAsync<DomainException>(() =>
-            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId, fixture.Server.Id));
+            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
+                fixture.Server.Id));
         Assert.Empty(fixture.Db.ProxyConfigurationVersionItems);
     }
 
     [Fact]
     public async Task Rollback_RejectsVersionFromDifferentServer()
     {
-        ServiceFixture fixture = ServiceFixture.Create();
-        Server otherServer = Server.Create(
+        var fixture = ServiceFixture.Create();
+        var otherServer = Server.Create(
             fixture.TeamId,
             new ResourceName("other"),
             new ServerAddress("127.0.0.2", new PortNumber(22)),
@@ -310,7 +319,7 @@ public sealed class Phase10ProxyServiceTests
             ContainerRuntimeKind.Docker,
             fixture.Now);
         fixture.Db.ServerItems.Add(otherServer);
-        ProxyConfigurationVersion version = ProxyConfigurationVersion.Create(
+        var version = ProxyConfigurationVersion.Create(
             otherServer.Id,
             ProxyProviderKind.Traefik,
             "v1",
@@ -330,7 +339,8 @@ public sealed class Phase10ProxyServiceTests
     {
         private ServiceFixture()
         {
-            ProxyConfigurations = new ProxyConfigurationService(Db, Authorization, ProxyProvider, Locks, Audit, Redactor, Time);
+            ProxyConfigurations =
+                new ProxyConfigurationService(Db, Authorization, ProxyProvider, Locks, Audit, Redactor, Time);
             Domains = new DomainRoutingService(Db, Authorization, Audit, Redactor, Time);
             Certificates = new CertificateManagementService(
                 Db,
@@ -379,11 +389,11 @@ public sealed class Phase10ProxyServiceTests
         {
             var fixture = new ServiceFixture();
             DateTimeOffset now = fixture.Now;
-            User user = User.Create(new DisplayName("Test User"), new EmailAddress("owner@example.com"), now);
-            Team team = Team.Create(new DisplayName("Team"), user.Id, isPersonal: false, now);
-            Project project = Project.Create(team.Id, new ResourceName("Project"), now);
-            EnvironmentEntity environment = EnvironmentEntity.CreateProduction(project.Id, now);
-            Server server = Server.Create(
+            var user = User.Create(new DisplayName("Test User"), new EmailAddress("owner@example.com"), now);
+            var team = Team.Create(new DisplayName("Team"), user.Id, false, now);
+            var project = Project.Create(team.Id, new ResourceName("Project"), now);
+            var environment = EnvironmentEntity.CreateProduction(project.Id, now);
+            var server = Server.Create(
                 team.Id,
                 new ResourceName("server"),
                 new ServerAddress("127.0.0.1", new PortNumber(22)),
@@ -391,7 +401,7 @@ public sealed class Phase10ProxyServiceTests
                 ContainerRuntimeKind.Docker,
                 now);
             server.ChangeStatus(ServerStatus.Reachable, now);
-            AppEntity application = AppEntity.Create(
+            var application = AppEntity.Create(
                 environment.Id,
                 server.Id,
                 new ResourceName("Web App"),
@@ -433,54 +443,106 @@ public sealed class Phase10ProxyServiceTests
         public List<Certificate> CertificateItems { get; } = [];
         public List<ProxyConfigurationVersion> ProxyConfigurationVersionItems { get; } = [];
 
+        public int SaveCount { get; private set; }
+
         public IQueryable<User> Users => UserItems.AsQueryable();
         public IQueryable<Team> Teams => TeamItems.AsQueryable();
-        public IQueryable<TeamMembership> TeamMemberships => TeamItems.SelectMany(team => team.Memberships).AsQueryable();
+
+        public IQueryable<TeamMembership> TeamMemberships =>
+            TeamItems.SelectMany(team => team.Memberships).AsQueryable();
+
         public IQueryable<TeamInvitation> TeamInvitations => Array.Empty<TeamInvitation>().AsQueryable();
         public IQueryable<Project> Projects => ProjectItems.AsQueryable();
         public IQueryable<EnvironmentEntity> Environments => EnvironmentItems.AsQueryable();
         public IQueryable<Server> Servers => ServerItems.AsQueryable();
         public IQueryable<AppEntity> Applications => ApplicationItems.AsQueryable();
-        public IQueryable<ApplicationDomain> ApplicationDomains => ApplicationItems.SelectMany(application => application.Domains).AsQueryable();
+
+        public IQueryable<ApplicationDomain> ApplicationDomains =>
+            ApplicationItems.SelectMany(application => application.Domains).AsQueryable();
+
         public IQueryable<DatabaseResource> DatabaseResources => Array.Empty<DatabaseResource>().AsQueryable();
         public IQueryable<Deployment> Deployments => Array.Empty<Deployment>().AsQueryable();
         public IQueryable<SecretReference> SecretReferences => Array.Empty<SecretReference>().AsQueryable();
         public IQueryable<SecretValue> SecretValues => Array.Empty<SecretValue>().AsQueryable();
         public IQueryable<EnvironmentVariable> EnvironmentVariables => Array.Empty<EnvironmentVariable>().AsQueryable();
         public IQueryable<RegistryCredential> RegistryCredentials => Array.Empty<RegistryCredential>().AsQueryable();
-        public IQueryable<ServerStatusSnapshot> ServerStatusSnapshots => Array.Empty<ServerStatusSnapshot>().AsQueryable();
+
+        public IQueryable<ServerStatusSnapshot> ServerStatusSnapshots =>
+            Array.Empty<ServerStatusSnapshot>().AsQueryable();
+
         public IQueryable<NotificationTarget> NotificationTargets => Array.Empty<NotificationTarget>().AsQueryable();
         public IQueryable<AuditLog> AuditLogs => Array.Empty<AuditLog>().AsQueryable();
         public IQueryable<SettingEntry> Settings => Array.Empty<SettingEntry>().AsQueryable();
         public IQueryable<PersonalAccessToken> PersonalAccessTokens => Array.Empty<PersonalAccessToken>().AsQueryable();
         public IQueryable<WebhookEvent> WebhookEvents => Array.Empty<WebhookEvent>().AsQueryable();
-        public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations => Array.Empty<ApplicationWebhookConfiguration>().AsQueryable();
+
+        public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations =>
+            Array.Empty<ApplicationWebhookConfiguration>().AsQueryable();
+
         public IQueryable<ApplicationPreview> ApplicationPreviews => Array.Empty<ApplicationPreview>().AsQueryable();
-        public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => ProxyConfigurationVersionItems.AsQueryable();
+
+        public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions =>
+            ProxyConfigurationVersionItems.AsQueryable();
+
         public IQueryable<Certificate> Certificates => CertificateItems.AsQueryable();
 
         public IRepository<User, UserId> UserRepository => new ListRepository<User, UserId>(UserItems);
         public IRepository<Team, TeamId> TeamRepository => new ListRepository<Team, TeamId>(TeamItems);
-        public IRepository<TeamInvitation, TeamInvitationId> TeamInvitationRepository => new EmptyRepository<TeamInvitation, TeamInvitationId>();
-        public IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository => new EmptyRepository<PersonalAccessToken, PersonalAccessTokenId>();
-        public IRepository<Project, ProjectId> ProjectRepository => new ListRepository<Project, ProjectId>(ProjectItems);
-        public IRepository<EnvironmentEntity, EnvironmentId> EnvironmentRepository => new ListRepository<EnvironmentEntity, EnvironmentId>(EnvironmentItems);
-        public IRepository<Server, ServerId> ServerRepository => new ListRepository<Server, ServerId>(ServerItems);
-        public IRepository<AppEntity, Vessel.Domain.ApplicationId> ApplicationRepository => new ListRepository<AppEntity, Vessel.Domain.ApplicationId>(ApplicationItems);
-        public IRepository<DatabaseResource, DatabaseResourceId> DatabaseResourceRepository => new EmptyRepository<DatabaseResource, DatabaseResourceId>();
-        public IRepository<Deployment, DeploymentId> DeploymentRepository => new EmptyRepository<Deployment, DeploymentId>();
-        public IRepository<SecretReference, SecretReferenceId> SecretReferenceRepository => new EmptyRepository<SecretReference, SecretReferenceId>();
-        public IRepository<SecretValue, SecretValueId> SecretValueRepository => new EmptyRepository<SecretValue, SecretValueId>();
-        public IRepository<EnvironmentVariable, EnvironmentVariableId> EnvironmentVariableRepository => new EmptyRepository<EnvironmentVariable, EnvironmentVariableId>();
-        public IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository => new EmptyRepository<RegistryCredential, RegistryCredentialId>();
-        public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository => new EmptyRepository<ServerStatusSnapshot, ServerStatusSnapshotId>();
-        public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository => new EmptyRepository<WebhookEvent, WebhookEventId>();
-        public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId> ApplicationWebhookConfigurationRepository => new EmptyRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>();
-        public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository => new EmptyRepository<ApplicationPreview, ApplicationPreviewId>();
-        public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository => new ListRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(ProxyConfigurationVersionItems);
-        public IRepository<Certificate, CertificateId> CertificateRepository => new ListRepository<Certificate, CertificateId>(CertificateItems);
 
-        public int SaveCount { get; private set; }
+        public IRepository<TeamInvitation, TeamInvitationId> TeamInvitationRepository =>
+            new EmptyRepository<TeamInvitation, TeamInvitationId>();
+
+        public IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository =>
+            new EmptyRepository<PersonalAccessToken, PersonalAccessTokenId>();
+
+        public IRepository<Project, ProjectId> ProjectRepository =>
+            new ListRepository<Project, ProjectId>(ProjectItems);
+
+        public IRepository<EnvironmentEntity, EnvironmentId> EnvironmentRepository =>
+            new ListRepository<EnvironmentEntity, EnvironmentId>(EnvironmentItems);
+
+        public IRepository<Server, ServerId> ServerRepository => new ListRepository<Server, ServerId>(ServerItems);
+
+        public IRepository<AppEntity, ApplicationId> ApplicationRepository =>
+            new ListRepository<AppEntity, ApplicationId>(ApplicationItems);
+
+        public IRepository<DatabaseResource, DatabaseResourceId> DatabaseResourceRepository =>
+            new EmptyRepository<DatabaseResource, DatabaseResourceId>();
+
+        public IRepository<Deployment, DeploymentId> DeploymentRepository =>
+            new EmptyRepository<Deployment, DeploymentId>();
+
+        public IRepository<SecretReference, SecretReferenceId> SecretReferenceRepository =>
+            new EmptyRepository<SecretReference, SecretReferenceId>();
+
+        public IRepository<SecretValue, SecretValueId> SecretValueRepository =>
+            new EmptyRepository<SecretValue, SecretValueId>();
+
+        public IRepository<EnvironmentVariable, EnvironmentVariableId> EnvironmentVariableRepository =>
+            new EmptyRepository<EnvironmentVariable, EnvironmentVariableId>();
+
+        public IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository =>
+            new EmptyRepository<RegistryCredential, RegistryCredentialId>();
+
+        public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository =>
+            new EmptyRepository<ServerStatusSnapshot, ServerStatusSnapshotId>();
+
+        public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository =>
+            new EmptyRepository<WebhookEvent, WebhookEventId>();
+
+        public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
+            ApplicationWebhookConfigurationRepository =>
+            new EmptyRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>();
+
+        public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository =>
+            new EmptyRepository<ApplicationPreview, ApplicationPreviewId>();
+
+        public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>
+            ProxyConfigurationVersionRepository =>
+            new ListRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(ProxyConfigurationVersionItems);
+
+        public IRepository<Certificate, CertificateId> CertificateRepository =>
+            new ListRepository<Certificate, CertificateId>(CertificateItems);
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
@@ -566,7 +628,7 @@ public sealed class Phase10ProxyServiceTests
 
         public void AddOrUpdate<TJob>(
             string recurringJobId,
-            System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall,
+            Expression<Func<TJob, Task>> methodCall,
             string cronExpression)
         {
             Registrations.Add(new RecurringRegistration(recurringJobId, typeof(TJob), cronExpression));
@@ -579,16 +641,16 @@ public sealed class Phase10ProxyServiceTests
 
         public List<string> Scheduled { get; } = [];
 
-        public string Enqueue<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall)
+        public string Enqueue<TJob>(Expression<Func<TJob, Task>> methodCall)
         {
-            string id = $"job-{Enqueued.Count + 1}";
+            var id = $"job-{Enqueued.Count + 1}";
             Enqueued.Add($"{typeof(TJob).Name}:{id}");
             return id;
         }
 
-        public string Schedule<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
+        public string Schedule<TJob>(Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
         {
-            string id = $"scheduled-{Scheduled.Count + 1}";
+            var id = $"scheduled-{Scheduled.Count + 1}";
             Scheduled.Add($"{typeof(TJob).Name}:{id}:{delay}");
             return id;
         }

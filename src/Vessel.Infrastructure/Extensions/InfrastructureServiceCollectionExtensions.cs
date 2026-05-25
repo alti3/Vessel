@@ -106,7 +106,8 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddScoped<IApplicationCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<IDeploymentCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<IDatabaseCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
-            services.AddScoped<INotificationCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<INotificationCatalogQuery>(provider =>
+                provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<ISettingsCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
         }
 
@@ -141,18 +142,14 @@ public static class InfrastructureServiceCollectionExtensions
         if (objectStorageOptions.Enabled)
         {
             if (string.Equals(objectStorageOptions.Provider, "Local", StringComparison.OrdinalIgnoreCase))
-            {
                 services.TryAddSingleton<IObjectStorage>(provider =>
                 {
-                    string root = objectStorageOptions.LocalRootDirectory
-                                  ?? Path.Combine(AppContext.BaseDirectory, "storage", "objects");
+                    var root = objectStorageOptions.LocalRootDirectory
+                               ?? Path.Combine(AppContext.BaseDirectory, "storage", "objects");
                     return new LocalObjectStorage(root, provider.GetRequiredService<IPathSafetyService>());
                 });
-            }
             else
-            {
                 services.TryAddSingleton<IObjectStorage, S3ObjectStorage>();
-            }
         }
 
         HangfireStorageOptions hangfireOptions = configuration

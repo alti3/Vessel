@@ -23,7 +23,7 @@ public sealed class Argon2PasswordHasherTests
             .BuildServiceProvider();
 
         IPasswordHasher hasher = provider.GetRequiredService<IPasswordHasher>();
-        string hash = hasher.HashPassword("CorrectHorseBatteryStaple1");
+        var hash = hasher.HashPassword("CorrectHorseBatteryStaple1");
 
         Assert.StartsWith("$argon2id$v=19$", hash, StringComparison.Ordinal);
         Assert.True(hasher.VerifyPassword(hash, "CorrectHorseBatteryStaple1"));

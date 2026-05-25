@@ -1,8 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using Vessel.Domain.Proxy;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
@@ -23,10 +24,12 @@ public sealed class VesselDbContextModelTests
         Assert.Equal("vessel", context.Model.FindEntityType(typeof(Team))?.GetSchema());
         Assert.Equal("teams", context.Model.FindEntityType(typeof(Team))?.GetTableName());
         Assert.Equal("applications", context.Model.FindEntityType(typeof(AppEntity))?.GetTableName());
-        Assert.Equal("environment_variables", context.Model.FindEntityType(typeof(EnvironmentVariable))?.GetTableName());
+        Assert.Equal("environment_variables",
+            context.Model.FindEntityType(typeof(EnvironmentVariable))?.GetTableName());
         Assert.Equal("secret_values", context.Model.FindEntityType(typeof(SecretValue))?.GetTableName());
         Assert.Equal("registry_credentials", context.Model.FindEntityType(typeof(RegistryCredential))?.GetTableName());
-        Assert.Equal("server_status_snapshots", context.Model.FindEntityType(typeof(ServerStatusSnapshot))?.GetTableName());
+        Assert.Equal("server_status_snapshots",
+            context.Model.FindEntityType(typeof(ServerStatusSnapshot))?.GetTableName());
     }
 
     [Fact]
@@ -91,11 +94,12 @@ public sealed class VesselDbContextModelTests
     {
         using VesselDbContext context = CreateContext();
 
-        var proxyVersion = context.Model.FindEntityType(typeof(ProxyConfigurationVersion));
-        var certificate = context.Model.FindEntityType(typeof(Certificate));
+        IEntityType? proxyVersion = context.Model.FindEntityType(typeof(ProxyConfigurationVersion));
+        IEntityType? certificate = context.Model.FindEntityType(typeof(Certificate));
 
         Assert.Equal("proxy_configuration_versions", proxyVersion?.GetTableName());
-        Assert.Equal(128, proxyVersion?.FindProperty(nameof(ProxyConfigurationVersion.ConfigurationHash))?.GetMaxLength());
+        Assert.Equal(128,
+            proxyVersion?.FindProperty(nameof(ProxyConfigurationVersion.ConfigurationHash))?.GetMaxLength());
         Assert.Equal("certificates", certificate?.GetTableName());
         Assert.Equal(253, certificate?.FindProperty(nameof(Certificate.Host))?.GetMaxLength());
     }
@@ -105,7 +109,7 @@ public sealed class VesselDbContextModelTests
     {
         using VesselDbContext context = CreateContext();
 
-        var deployment = context.Model.FindEntityType(typeof(Deployment));
+        IEntityType? deployment = context.Model.FindEntityType(typeof(Deployment));
 
         Assert.Equal(2048, deployment?.FindProperty(nameof(Deployment.RepositoryUrl))?.GetMaxLength());
         Assert.Equal(255, deployment?.FindProperty(nameof(Deployment.CommitBranch))?.GetMaxLength());
@@ -117,9 +121,9 @@ public sealed class VesselDbContextModelTests
     {
         using VesselDbContext context = CreateContext();
 
-        var webhookEvent = context.Model.FindEntityType(typeof(WebhookEvent));
-        var configuration = context.Model.FindEntityType(typeof(ApplicationWebhookConfiguration));
-        var preview = context.Model.FindEntityType(typeof(ApplicationPreview));
+        IEntityType? webhookEvent = context.Model.FindEntityType(typeof(WebhookEvent));
+        IEntityType? configuration = context.Model.FindEntityType(typeof(ApplicationWebhookConfiguration));
+        IEntityType? preview = context.Model.FindEntityType(typeof(ApplicationPreview));
 
         Assert.Equal("webhook_events", webhookEvent?.GetTableName());
         Assert.Equal(512, webhookEvent?.FindProperty(nameof(WebhookEvent.DedupeKey))?.GetMaxLength());

@@ -1,5 +1,4 @@
 using Vessel.Application.Processes;
-using Vessel.Application.Security;
 using Vessel.Infrastructure.Processes;
 using Vessel.Infrastructure.Security;
 
@@ -40,12 +39,14 @@ public sealed class DotNetProcessRunnerTests
                                ? "echo out& echo err 1>&2"
                                : "echo out; echo err 1>&2",
                            outputMode: ProcessOutputMode.Lines)))
-        {
             lines.Add(line);
-        }
 
-        Assert.Contains(lines, line => line.Stream == ProcessStreamKind.StandardOutput && line.Content.Contains("out", StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.Stream == ProcessStreamKind.StandardError && line.Content.Contains("err", StringComparison.Ordinal));
+        Assert.Contains(lines,
+            line => line.Stream == ProcessStreamKind.StandardOutput &&
+                    line.Content.Contains("out", StringComparison.Ordinal));
+        Assert.Contains(lines,
+            line => line.Stream == ProcessStreamKind.StandardError &&
+                    line.Content.Contains("err", StringComparison.Ordinal));
         Assert.All(lines, line => Assert.True(line.Sequence > 0));
     }
 

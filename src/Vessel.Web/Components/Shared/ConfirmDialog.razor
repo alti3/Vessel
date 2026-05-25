@@ -21,7 +21,14 @@
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback OnConfirm { get; set; }
 
-    private Task Cancel() => OnCancel.InvokeAsync();
+    private Task Cancel()
+    {
+        return OnCancel.InvokeAsync();
+    }
 
-    private Task Confirm() => OnConfirm.InvokeAsync();
+    private Task Confirm()
+    {
+        return OnConfirm.InvokeAsync();
+    }
+
 }

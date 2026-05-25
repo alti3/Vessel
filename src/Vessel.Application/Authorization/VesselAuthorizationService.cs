@@ -1,6 +1,7 @@
 using Vessel.Application.Persistence;
 using Vessel.Domain;
 using Vessel.Domain.Teams;
+using ApplicationId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Authorization;
 
@@ -25,7 +26,8 @@ public sealed class VesselAuthorizationService
 
     public bool CanAccessTeam(UserId userId, TeamId teamId)
     {
-        return _unitOfWork.TeamMemberships.Any(membership => membership.UserId == userId && membership.TeamId == teamId);
+        return _unitOfWork.TeamMemberships.Any(membership =>
+            membership.UserId == userId && membership.TeamId == teamId);
     }
 
     public bool CanAccessProject(UserId userId, ProjectId projectId)
@@ -48,7 +50,7 @@ public sealed class VesselAuthorizationService
         return teamId.HasValue && CanAccessTeam(userId, teamId.Value);
     }
 
-    public bool CanAccessApplication(UserId userId, Vessel.Domain.ApplicationId applicationId)
+    public bool CanAccessApplication(UserId userId, ApplicationId applicationId)
     {
         TeamId? teamId = _unitOfWork.Applications
             .Where(application => application.Id == applicationId)
@@ -69,9 +71,9 @@ public sealed class VesselAuthorizationService
 
     public bool CanAccessDeployment(UserId userId, DeploymentId deploymentId)
     {
-        Vessel.Domain.ApplicationId? applicationId = _unitOfWork.Deployments
+        ApplicationId? applicationId = _unitOfWork.Deployments
             .Where(deployment => deployment.Id == deploymentId)
-            .Select(deployment => (Vessel.Domain.ApplicationId?)deployment.ApplicationId)
+            .Select(deployment => (ApplicationId?)deployment.ApplicationId)
             .SingleOrDefault();
 
         return applicationId.HasValue && CanAccessApplication(userId, applicationId.Value);

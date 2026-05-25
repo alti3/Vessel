@@ -27,7 +27,7 @@ internal sealed class VesselBearerAuthenticationHandler : AuthenticationHandler<
             || !authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             return AuthenticateResult.NoResult();
 
-        string presentedToken = authorization["Bearer ".Length..].Trim();
+        var presentedToken = authorization["Bearer ".Length..].Trim();
         AuthTokenValidationResult result = await _tokenService.ValidateAsync(presentedToken, Context.RequestAborted);
         if (!result.Succeeded) return AuthenticateResult.Fail("Invalid bearer token.");
 

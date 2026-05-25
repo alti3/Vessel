@@ -84,7 +84,8 @@ public interface IDeploymentWorkspaceManager
         bool restrictToOwner,
         CancellationToken cancellationToken = default);
 
-    Task<string> ReadTextAsync(string rootDirectory, string relativePath, CancellationToken cancellationToken = default);
+    Task<string> ReadTextAsync(string rootDirectory, string relativePath,
+        CancellationToken cancellationToken = default);
 
     Task CleanupAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default);
 }

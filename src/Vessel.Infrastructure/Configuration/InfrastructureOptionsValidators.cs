@@ -77,7 +77,7 @@ public sealed class ObjectStorageOptionsValidator : IValidateOptions<ObjectStora
             failures.Add("ObjectStorage:Provider must be S3 or Local.");
 
         Uri? endpoint = null;
-        bool isLocal = string.Equals(options.Provider, "Local", StringComparison.OrdinalIgnoreCase);
+        var isLocal = string.Equals(options.Provider, "Local", StringComparison.OrdinalIgnoreCase);
 
         if (options.Enabled && !isLocal && !Uri.TryCreate(options.Endpoint, UriKind.Absolute, out endpoint))
             failures.Add("ObjectStorage:Endpoint must be an absolute URI when ObjectStorage:Enabled is true.");

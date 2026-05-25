@@ -9,8 +9,8 @@ public sealed class PathSafetyService : IPathSafetyService
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(candidatePath);
 
-        string root = NormalizeRoot(rootDirectory);
-        string candidate = Path.GetFullPath(candidatePath);
+        var root = NormalizeRoot(rootDirectory);
+        var candidate = Path.GetFullPath(candidatePath);
         if (!IsWithinRoot(root, candidate))
             throw new InvalidOperationException("Path is outside the owned root directory.");
 
@@ -26,19 +26,19 @@ public sealed class PathSafetyService : IPathSafetyService
         if (Path.IsPathRooted(relativePath))
             throw new InvalidOperationException("Path must be relative to the owned root directory.");
 
-        string root = NormalizeRoot(rootDirectory);
+        var root = NormalizeRoot(rootDirectory);
         return EnsureOwnedPath(root, Path.Combine(root, relativePath));
     }
 
     private static string NormalizeRoot(string rootDirectory)
     {
-        string root = Path.GetFullPath(rootDirectory);
+        var root = Path.GetFullPath(rootDirectory);
         return root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
     }
 
     private static bool IsWithinRoot(string root, string candidate)
     {
-        string normalizedCandidate = File.Exists(candidate) || Directory.Exists(candidate)
+        var normalizedCandidate = File.Exists(candidate) || Directory.Exists(candidate)
             ? Path.GetFullPath(candidate)
             : Path.GetFullPath(candidate);
 

@@ -1,5 +1,3 @@
-using System.Collections.ObjectModel;
-
 namespace Vessel.Application.Processes;
 
 public enum ProcessOutputMode
@@ -28,7 +26,10 @@ public sealed record ProcessCommand(
     long MaxOutputBytes = 10 * 1024 * 1024,
     IReadOnlyDictionary<string, string>? AuditMetadata = null)
 {
-    public static ProcessCommand Create(string fileName, params string[] arguments) => new(fileName, arguments);
+    public static ProcessCommand Create(string fileName, params string[] arguments)
+    {
+        return new ProcessCommand(fileName, arguments);
+    }
 }
 
 public sealed record ProcessTerminationPolicy(

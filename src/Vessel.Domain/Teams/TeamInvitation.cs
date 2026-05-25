@@ -34,7 +34,7 @@ public sealed class TeamInvitation : Entity<TeamInvitationId>
 
     public string TokenHash { get; private set; } = string.Empty;
 
-    public DateTimeOffset ExpiresAt { get; private set; }
+    public DateTimeOffset ExpiresAt { get; }
 
     public DateTimeOffset? AcceptedAt { get; private set; }
 

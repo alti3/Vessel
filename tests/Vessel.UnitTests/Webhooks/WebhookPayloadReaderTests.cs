@@ -9,16 +9,16 @@ public sealed class WebhookPayloadReaderTests
     [Fact]
     public void Parse_GitHubPushExtractsBranchRepositoryCommitAndChangedFiles()
     {
-        using JsonDocument document = JsonDocument.Parse("""
-        {
-          "ref": "refs/heads/main",
-          "after": "abc123",
-          "repository": { "full_name": "owner/repo" },
-          "commits": [
-            { "message": "Update", "added": ["src/a.cs"], "modified": ["README.md"], "removed": [] }
-          ]
-        }
-        """);
+        using var document = JsonDocument.Parse("""
+                                                {
+                                                  "ref": "refs/heads/main",
+                                                  "after": "abc123",
+                                                  "repository": { "full_name": "owner/repo" },
+                                                  "commits": [
+                                                    { "message": "Update", "added": ["src/a.cs"], "modified": ["README.md"], "removed": [] }
+                                                  ]
+                                                }
+                                                """);
 
         ParsedWebhook parsed = WebhookPayloadReader.Parse(
             WebhookProvider.GitHub,
@@ -35,23 +35,24 @@ public sealed class WebhookPayloadReaderTests
     [Fact]
     public void Parse_GitLabMergeRequestExtractsPreviewFields()
     {
-        using JsonDocument document = JsonDocument.Parse("""
-        {
-          "object_kind": "merge_request",
-          "project": { "path_with_namespace": "group/repo" },
-          "object_attributes": {
-            "action": "open",
-            "iid": 7,
-            "source_branch": "feature",
-            "target_branch": "main",
-            "url": "https://gitlab.example/group/repo/-/merge_requests/7",
-            "title": "Feature",
-            "last_commit": { "id": "def456" }
-          }
-        }
-        """);
+        using var document = JsonDocument.Parse("""
+                                                {
+                                                  "object_kind": "merge_request",
+                                                  "project": { "path_with_namespace": "group/repo" },
+                                                  "object_attributes": {
+                                                    "action": "open",
+                                                    "iid": 7,
+                                                    "source_branch": "feature",
+                                                    "target_branch": "main",
+                                                    "url": "https://gitlab.example/group/repo/-/merge_requests/7",
+                                                    "title": "Feature",
+                                                    "last_commit": { "id": "def456" }
+                                                  }
+                                                }
+                                                """);
 
-        ParsedWebhook parsed = WebhookPayloadReader.Parse(WebhookProvider.GitLab, new Dictionary<string, string>(), document.RootElement)!;
+        ParsedWebhook parsed = WebhookPayloadReader.Parse(WebhookProvider.GitLab, new Dictionary<string, string>(),
+            document.RootElement)!;
 
         Assert.Equal("pull_request", parsed.Kind);
         Assert.Equal(7, parsed.PullRequestNumber);

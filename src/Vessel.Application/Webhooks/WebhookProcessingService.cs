@@ -29,9 +29,11 @@ public sealed class WebhookProcessingService(
         WebhookEventId webhookEventId,
         CancellationToken cancellationToken = default)
     {
-        WebhookEvent webhookEvent = await dbContext.WebhookEventRepository.GetByIdAsync(webhookEventId, cancellationToken)
+        WebhookEvent webhookEvent =
+            await dbContext.WebhookEventRepository.GetByIdAsync(webhookEventId, cancellationToken)
             ?? throw new InvalidOperationException("Webhook event was not found.");
-        if (webhookEvent.Status is WebhookEventStatus.Processed or WebhookEventStatus.Ignored or WebhookEventStatus.Failed or WebhookEventStatus.Rejected)
+        if (webhookEvent.Status is WebhookEventStatus.Processed or WebhookEventStatus.Ignored
+            or WebhookEventStatus.Failed or WebhookEventStatus.Rejected)
             return Result(webhookEvent, webhookEvent.FailureReason ?? "Webhook was already handled.");
 
         DateTimeOffset now = timeProvider.GetUtcNow();
@@ -40,10 +42,12 @@ public sealed class WebhookProcessingService(
 
         try
         {
-            using JsonDocument document = JsonDocument.Parse(webhookEvent.PayloadJson);
-            IReadOnlyDictionary<string, string> headers = WebhookPayloadReader.EnvelopeHeaders(new Dictionary<string, string>(), document.RootElement);
+            using var document = JsonDocument.Parse(webhookEvent.PayloadJson);
+            IReadOnlyDictionary<string, string> headers =
+                WebhookPayloadReader.EnvelopeHeaders(new Dictionary<string, string>(), document.RootElement);
             ParsedWebhook parsed = WebhookPayloadReader.Parse(webhookEvent.Provider, headers, document.RootElement)
-                                   ?? throw new DomainException("Webhook payload is unsupported or missing required repository data.");
+                                   ?? throw new DomainException(
+                                       "Webhook payload is unsupported or missing required repository data.");
 
             if (parsed.Kind == "generic")
                 return await ProcessGenericAsync(webhookEvent, parsed, cancellationToken);
@@ -71,14 +75,16 @@ public sealed class WebhookProcessingService(
         ParsedWebhook parsed,
         CancellationToken cancellationToken)
     {
-        var applications = MatchingApplications(parsed.Repository!, parsed.Branch!, forPreview: false).ToArray();
+        AppEntity[] applications = MatchingApplications(parsed.Repository!, parsed.Branch!, false).ToArray();
         if (applications.Length == 0)
-            return await IgnoreAsync(webhookEvent, "No application matched the repository and branch.", cancellationToken);
+            return await IgnoreAsync(webhookEvent, "No application matched the repository and branch.",
+                cancellationToken);
 
         foreach (AppEntity application in applications)
         {
             TeamId teamId = TeamForApplication(application.Id);
-            if (!await VerifyApplicationSecretAsync(webhookEvent, parsed.Provider, application.Id, teamId, cancellationToken))
+            if (!await VerifyApplicationSecretAsync(webhookEvent, parsed.Provider, application.Id, teamId,
+                    cancellationToken))
                 continue;
             if (!application.DeploymentSettings.AutoDeployEnabled)
                 continue;
@@ -87,14 +93,16 @@ public sealed class WebhookProcessingService(
             if (!WatchPathsTriggered(application.DeploymentSettings.WatchPaths, parsed.ChangedFiles))
                 return await IgnoreAsync(webhookEvent, "Changed files did not match watch paths.", cancellationToken);
 
-            Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, null, webhookEvent.Id, cancellationToken);
+            Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, null,
+                webhookEvent.Id, cancellationToken);
             webhookEvent.MarkProcessed(application.Id, deployment.Id, null, timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken);
             await AuditProcessedAsync(teamId, application.Id, webhookEvent, deployment.Id, null, cancellationToken);
             return Result(webhookEvent, "Deployment queued.");
         }
 
-        return await RejectAsync(webhookEvent, "Webhook signature verification failed for matched applications.", cancellationToken);
+        return await RejectAsync(webhookEvent, "Webhook signature verification failed for matched applications.",
+            cancellationToken);
     }
 
     private async Task<WebhookProcessingResult> ProcessPullRequestAsync(
@@ -102,17 +110,19 @@ public sealed class WebhookProcessingService(
         ParsedWebhook parsed,
         CancellationToken cancellationToken)
     {
-        var applications = MatchingApplications(parsed.Repository!, parsed.TargetBranch!, forPreview: true).ToArray();
+        AppEntity[] applications = MatchingApplications(parsed.Repository!, parsed.TargetBranch!, true).ToArray();
         if (applications.Length == 0)
-            return await IgnoreAsync(webhookEvent, "No application matched the repository and target branch.", cancellationToken);
+            return await IgnoreAsync(webhookEvent, "No application matched the repository and target branch.",
+                cancellationToken);
 
         foreach (AppEntity application in applications)
         {
             TeamId teamId = TeamForApplication(application.Id);
-            if (!await VerifyApplicationSecretAsync(webhookEvent, parsed.Provider, application.Id, teamId, cancellationToken))
+            if (!await VerifyApplicationSecretAsync(webhookEvent, parsed.Provider, application.Id, teamId,
+                    cancellationToken))
                 continue;
 
-            bool closing = IsClosingAction(parsed.Provider, parsed.Action);
+            var closing = IsClosingAction(parsed.Provider, parsed.Action);
             ApplicationPreview? preview = dbContext.ApplicationPreviews.SingleOrDefault(item =>
                 item.ApplicationId == application.Id &&
                 item.Provider == parsed.Provider &&
@@ -121,20 +131,23 @@ public sealed class WebhookProcessingService(
             if (closing)
             {
                 if (preview is null)
-                    return await IgnoreAsync(webhookEvent, "No preview deployment existed for the closed pull request.", cancellationToken);
+                    return await IgnoreAsync(webhookEvent, "No preview deployment existed for the closed pull request.",
+                        cancellationToken);
 
                 preview.Archive(timeProvider.GetUtcNow());
                 webhookEvent.MarkProcessed(application.Id, null, preview.Id, timeProvider.GetUtcNow());
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await auditWriter.RecordAsync(teamId, null, AuditActions.PreviewArchived,
                     new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
-                    new Dictionary<string, object?> { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
+                    new Dictionary<string, object?>
+                        { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
                     cancellationToken);
                 return Result(webhookEvent, "Preview archived.");
             }
 
             if (!application.DeploymentSettings.PreviewDeploymentsEnabled)
-                return await IgnoreAsync(webhookEvent, "Preview deployments are disabled for this application.", cancellationToken);
+                return await IgnoreAsync(webhookEvent, "Preview deployments are disabled for this application.",
+                    cancellationToken);
             if (ShouldSkip(parsed.CommitMessages))
                 return await IgnoreAsync(webhookEvent, "Pull request requested deployment skip.", cancellationToken);
 
@@ -151,18 +164,22 @@ public sealed class WebhookProcessingService(
                     parsed.PullRequestUrl, parsed.PullRequestTitle, timeProvider.GetUtcNow());
             }
 
-            Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, preview.Id, webhookEvent.Id, cancellationToken);
+            Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, preview.Id,
+                webhookEvent.Id, cancellationToken);
             webhookEvent.MarkProcessed(application.Id, deployment.Id, preview.Id, timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken);
             await auditWriter.RecordAsync(teamId, null, AuditActions.PreviewOpened,
                 new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
-                new Dictionary<string, object?> { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
+                new Dictionary<string, object?>
+                    { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
                 cancellationToken);
-            await AuditProcessedAsync(teamId, application.Id, webhookEvent, deployment.Id, preview.Id, cancellationToken);
+            await AuditProcessedAsync(teamId, application.Id, webhookEvent, deployment.Id, preview.Id,
+                cancellationToken);
             return Result(webhookEvent, "Preview deployment queued.");
         }
 
-        return await RejectAsync(webhookEvent, "Webhook signature verification failed for matched applications.", cancellationToken);
+        return await RejectAsync(webhookEvent, "Webhook signature verification failed for matched applications.",
+            cancellationToken);
     }
 
     private async Task<WebhookProcessingResult> ProcessGenericAsync(
@@ -172,12 +189,14 @@ public sealed class WebhookProcessingService(
     {
         AppId applicationId = new(parsed.ApplicationId!.Value);
         AppEntity application = dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
-            ?? throw new InvalidOperationException("Application was not found.");
+                                ?? throw new InvalidOperationException("Application was not found.");
         TeamId teamId = TeamForApplication(application.Id);
-        if (!await VerifyApplicationSecretAsync(webhookEvent, WebhookProvider.Generic, application.Id, teamId, cancellationToken))
+        if (!await VerifyApplicationSecretAsync(webhookEvent, WebhookProvider.Generic, application.Id, teamId,
+                cancellationToken))
             return await RejectAsync(webhookEvent, "Generic webhook secret verification failed.", cancellationToken);
 
-        Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, null, webhookEvent.Id, cancellationToken);
+        Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, null, webhookEvent.Id,
+            cancellationToken);
         webhookEvent.MarkProcessed(application.Id, deployment.Id, null, timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditProcessedAsync(teamId, application.Id, webhookEvent, deployment.Id, null, cancellationToken);
@@ -196,7 +215,7 @@ public sealed class WebhookProcessingService(
         if (server.Status == ServerStatus.Unreachable)
             throw new DomainException("Deployment server is unreachable.");
 
-        bool alreadyActive = dbContext.Deployments.Any(deployment =>
+        var alreadyActive = dbContext.Deployments.Any(deployment =>
             deployment.ApplicationId == application.Id &&
             deployment.PreviewId == previewId &&
             (deployment.Status == DeploymentStatus.Queued ||
@@ -206,10 +225,15 @@ public sealed class WebhookProcessingService(
             throw new DomainException("A deployment is already queued or running for this application.");
 
         DateTimeOffset now = timeProvider.GetUtcNow();
-        string resolvedCommit = string.IsNullOrWhiteSpace(commitSha) ? application.GitSource.CommitSha ?? "HEAD" : commitSha.Trim();
-        Deployment deployment = Deployment.Queue(application.Id, application.ServerId, null, resolvedCommit, previewId, webhookEventId, now);
-        deployment.RecordSource(application.GitSource.RepositoryUrl.Value, application.GitSource.Branch, resolvedCommit, null, now);
-        deployment.AddLogLine("system", previewId.HasValue ? "Preview deployment queued by webhook." : "Deployment queued by webhook.", now);
+        var resolvedCommit = string.IsNullOrWhiteSpace(commitSha)
+            ? application.GitSource.CommitSha ?? "HEAD"
+            : commitSha.Trim();
+        var deployment = Deployment.Queue(application.Id, application.ServerId, null, resolvedCommit, previewId,
+            webhookEventId, now);
+        deployment.RecordSource(application.GitSource.RepositoryUrl.Value, application.GitSource.Branch, resolvedCommit,
+            null, now);
+        deployment.AddLogLine("system",
+            previewId.HasValue ? "Preview deployment queued by webhook." : "Deployment queued by webhook.", now);
 
         await dbContext.DeploymentRepository.AddAsync(deployment, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -245,27 +269,31 @@ public sealed class WebhookProcessingService(
         if (webhookEvent.SignatureStatus == WebhookSignatureStatus.Verified)
             return true;
 
-        ApplicationWebhookConfiguration? configuration = dbContext.ApplicationWebhookConfigurations.SingleOrDefault(configuration =>
-            configuration.ApplicationId == applicationId &&
-            configuration.Provider == provider &&
-            configuration.IsEnabled);
+        ApplicationWebhookConfiguration? configuration =
+            dbContext.ApplicationWebhookConfigurations.SingleOrDefault(configuration =>
+                configuration.ApplicationId == applicationId &&
+                configuration.Provider == provider &&
+                configuration.IsEnabled);
         if (configuration is null) return false;
 
-        string secret = await secretVault.RevealForDeploymentAsync(teamId, configuration.SecretReferenceId, cancellationToken);
-        using JsonDocument payload = JsonDocument.Parse(webhookEvent.PayloadJson);
-        IReadOnlyDictionary<string, string> headers = WebhookPayloadReader.EnvelopeHeaders(new Dictionary<string, string>(), payload.RootElement);
-        string? supplied = provider switch
+        var secret =
+            await secretVault.RevealForDeploymentAsync(teamId, configuration.SecretReferenceId, cancellationToken);
+        using var payload = JsonDocument.Parse(webhookEvent.PayloadJson);
+        IReadOnlyDictionary<string, string> headers =
+            WebhookPayloadReader.EnvelopeHeaders(new Dictionary<string, string>(), payload.RootElement);
+        var supplied = provider switch
         {
             WebhookProvider.GitHub => WebhookPayloadReader.Header(headers, "X-Hub-Signature-256"),
             WebhookProvider.Gitea => WebhookPayloadReader.Header(headers, "X-Hub-Signature-256"),
             WebhookProvider.GitLab => WebhookPayloadReader.Header(headers, "X-Gitlab-Token"),
             WebhookProvider.Bitbucket => WebhookPayloadReader.Header(headers, "X-Hub-Signature"),
-            WebhookProvider.Generic => WebhookPayloadReader.Text(WebhookPayloadReader.PayloadRoot(payload.RootElement), "secret"),
+            WebhookProvider.Generic => WebhookPayloadReader.Text(WebhookPayloadReader.PayloadRoot(payload.RootElement),
+                "secret"),
             _ => null
         };
-        string rawBody = WebhookPayloadReader.RawBody(payload.RootElement);
+        var rawBody = WebhookPayloadReader.RawBody(payload.RootElement);
 
-        bool verified = provider switch
+        var verified = provider switch
         {
             WebhookProvider.GitHub or WebhookProvider.Gitea => VerifySha256Signature(supplied, rawBody, secret),
             WebhookProvider.Bitbucket => VerifySha256Signature(supplied, rawBody, secret),
@@ -280,18 +308,21 @@ public sealed class WebhookProcessingService(
     private TeamId TeamForApplication(AppId applicationId)
     {
         AppEntity application = dbContext.Applications.Single(application => application.Id == applicationId);
-        EnvironmentEntity environment = dbContext.Environments.Single(environment => environment.Id == application.EnvironmentId);
+        EnvironmentEntity environment =
+            dbContext.Environments.Single(environment => environment.Id == application.EnvironmentId);
         return dbContext.Projects.Single(project => project.Id == environment.ProjectId).TeamId;
     }
 
-    private async Task<WebhookProcessingResult> IgnoreAsync(WebhookEvent webhookEvent, string reason, CancellationToken cancellationToken)
+    private async Task<WebhookProcessingResult> IgnoreAsync(WebhookEvent webhookEvent, string reason,
+        CancellationToken cancellationToken)
     {
         webhookEvent.Ignore(reason, timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         return Result(webhookEvent, reason);
     }
 
-    private async Task<WebhookProcessingResult> RejectAsync(WebhookEvent webhookEvent, string reason, CancellationToken cancellationToken)
+    private async Task<WebhookProcessingResult> RejectAsync(WebhookEvent webhookEvent, string reason,
+        CancellationToken cancellationToken)
     {
         webhookEvent.Reject(reason, timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -323,7 +354,8 @@ public sealed class WebhookProcessingService(
 
     private static WebhookProcessingResult Result(WebhookEvent webhookEvent, string message)
     {
-        return new WebhookProcessingResult(webhookEvent.Id.Value, webhookEvent.Status, webhookEvent.ApplicationId?.Value,
+        return new WebhookProcessingResult(webhookEvent.Id.Value, webhookEvent.Status,
+            webhookEvent.ApplicationId?.Value,
             webhookEvent.DeploymentId?.Value, webhookEvent.PreviewId?.Value, message);
     }
 
@@ -343,7 +375,7 @@ public sealed class WebhookProcessingService(
     {
         if (string.IsNullOrWhiteSpace(watchPaths)) return true;
         if (changedFiles.Count == 0) return false;
-        string[] patterns = watchPaths.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var patterns = watchPaths.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return changedFiles.Any(file => patterns.Any(pattern => GlobMatch(pattern.TrimStart('/'), file)));
     }
 
@@ -354,12 +386,12 @@ public sealed class WebhookProcessingService(
             return path.StartsWith(pattern[..^3], StringComparison.Ordinal);
         if (pattern.Contains('*', StringComparison.Ordinal))
         {
-            string[] parts = pattern.Split('*');
-            int position = 0;
-            foreach (string part in parts)
+            var parts = pattern.Split('*');
+            var position = 0;
+            foreach (var part in parts)
             {
                 if (part.Length == 0) continue;
-                int found = path.IndexOf(part, position, StringComparison.Ordinal);
+                var found = path.IndexOf(part, position, StringComparison.Ordinal);
                 if (found < 0) return false;
                 position = found + part.Length;
             }
@@ -367,14 +399,16 @@ public sealed class WebhookProcessingService(
             return true;
         }
 
-        return string.Equals(pattern, path, StringComparison.Ordinal) || path.StartsWith(pattern.TrimEnd('/') + "/", StringComparison.Ordinal);
+        return string.Equals(pattern, path, StringComparison.Ordinal) ||
+               path.StartsWith(pattern.TrimEnd('/') + "/", StringComparison.Ordinal);
     }
 
     private static bool IsClosingAction(WebhookProvider provider, string? action)
     {
         return provider switch
         {
-            WebhookProvider.GitHub or WebhookProvider.Gitea => string.Equals(action, "closed", StringComparison.OrdinalIgnoreCase),
+            WebhookProvider.GitHub or WebhookProvider.Gitea => string.Equals(action, "closed",
+                StringComparison.OrdinalIgnoreCase),
             WebhookProvider.GitLab => action is "closed" or "close" or "merge",
             WebhookProvider.Bitbucket => action is "pullrequest:rejected" or "pullrequest:fulfilled",
             _ => false
@@ -384,16 +418,19 @@ public sealed class WebhookProcessingService(
     private static bool VerifySha256Signature(string? header, string payloadJson, string secret)
     {
         if (string.IsNullOrWhiteSpace(header)) return false;
-        string signature = header.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase) ? header["sha256=".Length..] : header;
-        byte[] hash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payloadJson));
+        var signature = header.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase)
+            ? header["sha256=".Length..]
+            : header;
+        var hash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payloadJson));
         return FixedEquals(Convert.ToHexString(hash).ToLowerInvariant(), signature);
     }
 
     private static bool FixedEquals(string? expected, string? actual)
     {
         if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(actual)) return false;
-        byte[] expectedBytes = Encoding.UTF8.GetBytes(expected);
-        byte[] actualBytes = Encoding.UTF8.GetBytes(actual);
-        return expectedBytes.Length == actualBytes.Length && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+        var expectedBytes = Encoding.UTF8.GetBytes(expected);
+        var actualBytes = Encoding.UTF8.GetBytes(actual);
+        return expectedBytes.Length == actualBytes.Length &&
+               CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 }

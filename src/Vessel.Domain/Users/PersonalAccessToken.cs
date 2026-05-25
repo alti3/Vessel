@@ -37,7 +37,7 @@ public sealed class PersonalAccessToken : Entity<PersonalAccessTokenId>
 
     public string Scopes { get; private set; } = "read";
 
-    public DateTimeOffset? ExpiresAt { get; private set; }
+    public DateTimeOffset? ExpiresAt { get; }
 
     public DateTimeOffset? LastUsedAt { get; private set; }
 

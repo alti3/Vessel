@@ -7,15 +7,15 @@ internal static class ClaimsPrincipalExtensions
 {
     public static UserId GetUserId(this ClaimsPrincipal principal)
     {
-        string value = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-                       ?? throw new InvalidOperationException("Authenticated user id claim is missing.");
+        var value = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? throw new InvalidOperationException("Authenticated user id claim is missing.");
         return new UserId(Guid.Parse(value));
     }
 
     public static TeamId GetTeamId(this ClaimsPrincipal principal)
     {
-        string value = principal.FindFirstValue(VesselClaimTypes.TeamId)
-                       ?? throw new InvalidOperationException("Authenticated team id claim is missing.");
+        var value = principal.FindFirstValue(VesselClaimTypes.TeamId)
+                    ?? throw new InvalidOperationException("Authenticated team id claim is missing.");
         return new TeamId(Guid.Parse(value));
     }
 }

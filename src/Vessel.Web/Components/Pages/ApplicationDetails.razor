@@ -1,4 +1,6 @@
 @page "/applications/{Id:guid}"
+@using System.Security.Claims
+@using ApplicationId = Vessel.Domain.ApplicationId
 @attribute [Authorize]
 @inject StartDeploymentService DeploymentStarter
 @inject DeploymentQueryService DeploymentDetails
@@ -6,14 +8,15 @@
 @inject ApplicationWebhookConfigurationService WebhookConfiguration
 @inject DomainRoutingService DomainRouting
 @inject ProxyConfigurationService ProxyConfiguration
-@inject Vessel.Application.Resources.ResourceManagementService Resources
+@inject ResourceManagementService Resources
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ILogger<ApplicationDetails> Logger
 
 <PageTitle>Application | Vessel</PageTitle>
-<PageHeader Kicker="Application" Title="Application overview" Description="@($"Application {Id} deployment, domains, environment, and logs.")">
+<PageHeader Kicker="Application" Title="Application overview"
+            Description="@($"Application {Id} deployment, domains, environment, and logs.")">
     <button class="button button-primary" type="button" disabled="@IsStarting" @onclick="StartDeploymentAsync">
-        <Icon Name="rocket" CssClass="size-4" />@(IsStarting ? "Starting" : "Deploy")
+        <Icon Name="rocket" CssClass="size-4"/>@(IsStarting ? "Starting" : "Deploy")
     </button>
 </PageHeader>
 
@@ -25,9 +28,13 @@
 <section class="dashboard-grid">
     <SettingsPanel Title="Deployment" Description="Status, latest commit, rollback target, and deployment settings.">
         <div class="signal-list">
-            <div class="signal-row"><span>Status</span><StatusBadge Text="@LatestStatus" Tone="@DeploymentTone(Latest?.Status)" /></div>
+            <div class="signal-row"><span>Status</span>
+                <StatusBadge Text="@LatestStatus" Tone="@DeploymentTone(Latest?.Status)"/>
+            </div>
             <div class="signal-row"><span>Latest commit</span><span>@(Latest?.CommitSha ?? "not recorded")</span></div>
-            <div class="signal-row"><span>Auto deploy</span><StatusBadge Text="Off" Tone="warning" /></div>
+            <div class="signal-row"><span>Auto deploy</span>
+                <StatusBadge Text="Off" Tone="warning"/>
+            </div>
         </div>
     </SettingsPanel>
     <SettingsPanel Title="Configuration" Description="Build pack, runtime, domains, ports, and secret references.">
@@ -36,39 +43,46 @@
             {
                 <div class="signal-row">
                     <span>@domain.Host</span>
-                    <StatusBadge Text="@(domain.TlsEnabled ? domain.CertificateStatus?.ToString() ?? "TLS pending" : "HTTP")" Tone="@(domain.TlsEnabled ? "success" : "warning")" />
+                    <StatusBadge
+                        Text="@(domain.TlsEnabled ? domain.CertificateStatus?.ToString() ?? "TLS pending" : "HTTP")"
+                        Tone="@(domain.TlsEnabled ? "success" : "warning")"/>
                 </div>
             }
             @if (Domains.Count == 0)
             {
-                <div class="signal-row"><span>No domains configured</span><StatusBadge Text="Missing" Tone="warning" /></div>
+                <div class="signal-row"><span>No domains configured</span>
+                    <StatusBadge Text="Missing" Tone="warning"/>
+                </div>
             }
         </div>
         <form class="form-stack" @onsubmit="SaveDomainAsync" @onsubmit:preventDefault>
-            <FormField Label="Domain" Name="domain" @bind-Value="DomainHost" Placeholder="app.example.com" />
+            <FormField Label="Domain" Name="domain" @bind-Value="DomainHost" Placeholder="app.example.com"/>
             <label>
                 Target port
-                <input class="form-control" type="number" min="1" max="65535" @bind="DomainPort" />
+                <input class="form-control" type="number" min="1" max="65535" @bind="DomainPort"/>
             </label>
-            <label><input type="checkbox" @bind="DomainTlsEnabled" /> TLS</label>
-            <label><input type="checkbox" @bind="DomainCanonical" /> Canonical host</label>
-            <label><input type="checkbox" @bind="DomainRedirect" /> Redirect to canonical host</label>
+            <label><input type="checkbox" @bind="DomainTlsEnabled"/> TLS</label>
+            <label><input type="checkbox" @bind="DomainCanonical"/> Canonical host</label>
+            <label><input type="checkbox" @bind="DomainRedirect"/> Redirect to canonical host</label>
             <button class="button button-secondary" type="submit">Save route</button>
         </form>
         <button class="button button-secondary" type="button" @onclick="ApplyProxyAsync">Apply proxy routes</button>
     </SettingsPanel>
-    <SettingsPanel Title="Git Webhooks" Description="Provider trigger secrets, branch discovery, and preview deployment settings.">
+    <SettingsPanel Title="Git Webhooks"
+                   Description="Provider trigger secrets, branch discovery, and preview deployment settings.">
         <div class="signal-list">
             @foreach (var webhook in Webhooks)
             {
                 <div class="signal-row">
                     <span>@webhook.Provider</span>
-                    <StatusBadge Text="Configured" Tone="success" />
+                    <StatusBadge Text="Configured" Tone="success"/>
                 </div>
             }
             @if (Webhooks.Count == 0)
             {
-                <div class="signal-row"><span>No provider webhooks configured</span><StatusBadge Text="Missing" Tone="warning" /></div>
+                <div class="signal-row"><span>No provider webhooks configured</span>
+                    <StatusBadge Text="Missing" Tone="warning"/>
+                </div>
             }
         </div>
         <form class="form-stack" @onsubmit="SaveWebhookAsync" @onsubmit:preventDefault>
@@ -82,7 +96,9 @@
                     <option value="Generic">Generic</option>
                 </select>
             </label>
-            <label>Secret<SecretInput Name="webhook-secret" @bind-Value="WebhookSecret" Placeholder="Webhook secret" /></label>
+            <label>Secret
+                <SecretInput Name="webhook-secret" @bind-Value="WebhookSecret" Placeholder="Webhook secret"/>
+            </label>
             <button class="button button-secondary" type="submit">Save webhook</button>
         </form>
     </SettingsPanel>
@@ -91,11 +107,13 @@
 @if (Latest is not null)
 {
     <section class="section-stack">
-        <PageHeader Kicker="Latest deployment" Title="Logs" Description="Persisted deployment output. Live streaming is available to clients joined to the deployment SignalR group." />
+        <PageHeader Kicker="Latest deployment" Title="Logs"
+                    Description="Persisted deployment output. Live streaming is available to clients joined to the deployment SignalR group."/>
         <div class="log-panel">
             @foreach (var line in Latest.Logs)
             {
-                <div class="log-line log-@line.Stream"><span>@line.Sequence.ToString("0000")</span><code>@line.Message</code></div>
+                <div class="log-line log-@line.Stream">
+                    <span>@line.Sequence.ToString("0000")</span><code>@line.Message</code></div>
             }
         </div>
     </section>
@@ -108,7 +126,7 @@
     private bool IsStarting { get; set; }
     private string? Message { get; set; }
     private const string GenericErrorMessage = "An unexpected error occurred; please try again or contact support.";
-    private System.Security.Claims.ClaimsPrincipal? User { get; set; }
+    private ClaimsPrincipal? User { get; set; }
     private IReadOnlyList<ApplicationWebhookConfigurationSummary> Webhooks { get; set; } = [];
     private IReadOnlyList<DomainRouteSummary> Domains { get; set; } = [];
     private Guid? ServerId { get; set; }
@@ -138,7 +156,7 @@
         Message = null;
         try
         {
-            StartDeploymentResult result = await DeploymentStarter.StartAsync(
+            var result = await DeploymentStarter.StartAsync(
                 User.GetUserId(),
                 User.GetTeamId(),
                 new StartDeploymentRequest(Id));
@@ -159,7 +177,7 @@
     private void LoadLatest()
     {
         if (User is null) return;
-        DeploymentListItem? latest = DeploymentCatalog.List(User.GetTeamId())
+        var latest = DeploymentCatalog.List(User.GetTeamId())
             .Where(item => item.ApplicationId == Id)
             .OrderByDescending(item => item.CreatedAt)
             .FirstOrDefault();
@@ -170,13 +188,13 @@
     private void LoadWebhooks()
     {
         if (User is null) return;
-        Webhooks = WebhookConfiguration.List(User.GetUserId(), User.GetTeamId(), new Vessel.Domain.ApplicationId(Id));
+        Webhooks = WebhookConfiguration.List(User.GetUserId(), User.GetTeamId(), new ApplicationId(Id));
     }
 
     private void LoadDomains()
     {
         if (User is null) return;
-        Domains = DomainRouting.List(User.GetUserId(), User.GetTeamId(), new Vessel.Domain.ApplicationId(Id));
+        Domains = DomainRouting.List(User.GetUserId(), User.GetTeamId(), new ApplicationId(Id));
     }
 
     private void LoadApplication()
@@ -194,7 +212,7 @@
             await DomainRouting.ConfigureAsync(
                 User.GetUserId(),
                 User.GetTeamId(),
-                new Vessel.Domain.ApplicationId(Id),
+                new ApplicationId(Id),
                 new ConfigureDomainRouteRequest(DomainHost, DomainPort, DomainTlsEnabled, DomainCanonical, DomainRedirect));
             DomainHost = string.Empty;
             LoadDomains();
@@ -237,7 +255,7 @@
             await WebhookConfiguration.ConfigureAsync(
                 User.GetUserId(),
                 User.GetTeamId(),
-                new Vessel.Domain.ApplicationId(Id),
+                new ApplicationId(Id),
                 new ConfigureApplicationWebhookRequest(provider, WebhookSecret));
             WebhookSecret = string.Empty;
             LoadWebhooks();
@@ -262,4 +280,5 @@
             _ => "neutral"
         };
     }
+
 }

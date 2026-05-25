@@ -26,7 +26,8 @@ public sealed class DatabasesController : ControllerBase
 
     [HttpPost]
     [Authorize(Policy = VesselPermissions.ProjectsWrite)]
-    public async Task<ActionResult<DatabaseSummary>> Create(CreateDatabaseRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<DatabaseSummary>> Create(CreateDatabaseRequest request,
+        CancellationToken cancellationToken)
     {
         return Ok(await _resources.CreateDatabaseAsync(User.GetUserId(), User.GetTeamId(), request, cancellationToken));
     }

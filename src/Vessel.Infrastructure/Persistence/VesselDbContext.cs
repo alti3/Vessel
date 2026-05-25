@@ -44,9 +44,11 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         RegistryCredentialRepository = new EfRepository<RegistryCredential, RegistryCredentialId>(this);
         ServerStatusSnapshotRepository = new EfRepository<ServerStatusSnapshot, ServerStatusSnapshotId>(this);
         WebhookEventRepository = new EfRepository<WebhookEvent, WebhookEventId>(this);
-        ApplicationWebhookConfigurationRepository = new EfRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>(this);
+        ApplicationWebhookConfigurationRepository =
+            new EfRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>(this);
         ApplicationPreviewRepository = new EfRepository<ApplicationPreview, ApplicationPreviewId>(this);
-        ProxyConfigurationVersionRepository = new EfRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(this);
+        ProxyConfigurationVersionRepository =
+            new EfRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(this);
         CertificateRepository = new EfRepository<Certificate, CertificateId>(this);
     }
 
@@ -92,7 +94,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<WebhookEvent> WebhookEventSet => Set<WebhookEvent>();
 
-    public DbSet<ApplicationWebhookConfiguration> ApplicationWebhookConfigurationSet => Set<ApplicationWebhookConfiguration>();
+    public DbSet<ApplicationWebhookConfiguration> ApplicationWebhookConfigurationSet =>
+        Set<ApplicationWebhookConfiguration>();
 
     public DbSet<ApplicationPreview> ApplicationPreviewSet => Set<ApplicationPreview>();
 
@@ -142,7 +145,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<WebhookEvent> WebhookEvents => WebhookEventSet;
 
-    public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations => ApplicationWebhookConfigurationSet;
+    public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations =>
+        ApplicationWebhookConfigurationSet;
 
     public IQueryable<ApplicationPreview> ApplicationPreviews => ApplicationPreviewSet;
 
@@ -182,11 +186,15 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
-    public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId> ApplicationWebhookConfigurationRepository { get; }
+    public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
+        ApplicationWebhookConfigurationRepository { get; }
 
     public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository { get; }
 
-    public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository { get; }
+    public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository
+    {
+        get;
+    }
 
     public IRepository<Certificate, CertificateId> CertificateRepository { get; }
 
@@ -468,7 +476,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(version => version.Version).HasMaxLength(80).IsRequired();
             builder.Property(version => version.ConfigurationHash).HasMaxLength(128).IsRequired();
             builder.Property(version => version.Configuration).IsRequired();
-            builder.Property(version => version.PreviousVersionId).HasConversion(StronglyTypedIdConversions.ProxyConfigurationVersionId);
+            builder.Property(version => version.PreviousVersionId)
+                .HasConversion(StronglyTypedIdConversions.ProxyConfigurationVersionId);
             builder.Property(version => version.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(version => version.ValidationError).HasMaxLength(2000);
             builder.Property(version => version.ApplyError).HasMaxLength(2000);
@@ -501,8 +510,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(certificate => certificate.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(certificate => certificate.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(certificate => certificate.LastError).HasMaxLength(2000);
-            builder.Property(certificate => certificate.CertificateSecretReferenceId).HasConversion(StronglyTypedIdConversions.SecretReferenceId);
-            builder.Property(certificate => certificate.PrivateKeySecretReferenceId).HasConversion(StronglyTypedIdConversions.SecretReferenceId);
+            builder.Property(certificate => certificate.CertificateSecretReferenceId)
+                .HasConversion(StronglyTypedIdConversions.SecretReferenceId);
+            builder.Property(certificate => certificate.PrivateKeySecretReferenceId)
+                .HasConversion(StronglyTypedIdConversions.SecretReferenceId);
             builder.Property(certificate => certificate.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(certificate => certificate.DomainEvents);
             builder.HasIndex(certificate => new { certificate.ApplicationId, certificate.Host }).IsUnique();
@@ -771,7 +782,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(credential => credential.PasswordReferenceId).HasSecretReferenceIdConversion();
             builder.Property(credential => credential.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(credential => credential.DomainEvents);
-            builder.HasIndex(credential => new { credential.TeamId, credential.Registry, credential.Username }).IsUnique();
+            builder.HasIndex(credential => new { credential.TeamId, credential.Registry, credential.Username })
+                .IsUnique();
             builder.HasOne<Team>()
                 .WithMany()
                 .HasForeignKey(credential => credential.TeamId)
@@ -925,7 +937,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.HasKey(configuration => configuration.Id);
             builder.Property(configuration => configuration.Id).HasApplicationWebhookConfigurationIdConversion();
             builder.Property(configuration => configuration.ApplicationId).HasApplicationIdConversion();
-            builder.Property(configuration => configuration.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(configuration => configuration.Provider).HasConversion<string>().HasMaxLength(32)
+                .IsRequired();
             builder.Property(configuration => configuration.SecretReferenceId).HasSecretReferenceIdConversion();
             builder.Property(configuration => configuration.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(configuration => configuration.DomainEvents);
@@ -956,7 +969,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(preview => preview.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(preview => preview.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(preview => preview.DomainEvents);
-            builder.HasIndex(preview => new { preview.ApplicationId, preview.Provider, preview.PullRequestNumber }).IsUnique();
+            builder.HasIndex(preview => new { preview.ApplicationId, preview.Provider, preview.PullRequestNumber })
+                .IsUnique();
             builder.HasOne<AppEntity>()
                 .WithMany()
                 .HasForeignKey(preview => preview.ApplicationId)

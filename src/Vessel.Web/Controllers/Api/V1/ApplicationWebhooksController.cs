@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vessel.Application.Authorization;
 using Vessel.Application.Webhooks;
-using Vessel.Domain;
 using Vessel.Web.Security;
 using AppId = Vessel.Domain.ApplicationId;
 

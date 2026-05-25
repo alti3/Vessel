@@ -14,7 +14,7 @@ public sealed class Phase10DomainTests
     [Fact]
     public void Application_RejectsCanonicalSelfRedirect()
     {
-        AppEntity application = AppEntity.Create(
+        var application = AppEntity.Create(
             EnvironmentId.New(),
             ServerId.New(),
             new ResourceName("web"),
@@ -26,15 +26,15 @@ public sealed class Phase10DomainTests
             new DomainName("app.example.com"),
             8080,
             true,
-            canonical: true,
-            redirectToCanonical: true,
+            true,
+            true,
             DateTimeOffset.UtcNow));
     }
 
     [Fact]
     public void Certificate_RejectsRenewalQueueBeforeIssue()
     {
-        Certificate certificate = Certificate.Create(
+        var certificate = Certificate.Create(
             TeamId.New(),
             AppId.New(),
             "app.example.com",
@@ -47,7 +47,7 @@ public sealed class Phase10DomainTests
     [Fact]
     public void ProxyConfigurationVersion_RejectsInvalidStateTransitions()
     {
-        ProxyConfigurationVersion version = ProxyConfigurationVersion.Create(
+        var version = ProxyConfigurationVersion.Create(
             ServerId.New(),
             ProxyProviderKind.Traefik,
             "v1",

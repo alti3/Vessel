@@ -10,7 +10,9 @@ namespace Vessel.Web.Controllers.Api.V1;
 [ApiController]
 [Authorize(Policy = VesselPermissions.ApplicationsRead)]
 [Route("api/v1/applications/{applicationId:guid}/domains")]
-public sealed class ApplicationDomainsController(DomainRoutingService domains, CertificateManagementService certificates)
+public sealed class ApplicationDomainsController(
+    DomainRoutingService domains,
+    CertificateManagementService certificates)
     : ControllerBase
 {
     [HttpGet]
@@ -27,7 +29,7 @@ public sealed class ApplicationDomainsController(DomainRoutingService domains, C
         ConfigureDomainRouteRequest request,
         CancellationToken cancellationToken)
     {
-        var effective = request with { Host = host };
+        ConfigureDomainRouteRequest effective = request with { Host = host };
         return Ok(await domains.ConfigureAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId),
             effective, cancellationToken));
     }
@@ -36,7 +38,8 @@ public sealed class ApplicationDomainsController(DomainRoutingService domains, C
     [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
     public async Task<IActionResult> Remove(Guid applicationId, string host, CancellationToken cancellationToken)
     {
-        await domains.RemoveAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId), host, cancellationToken);
+        await domains.RemoveAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId), host,
+            cancellationToken);
         return NoContent();
     }
 

@@ -5,20 +5,47 @@
 @inject NavigationManager Navigation
 
 <PageTitle>Git application | Vessel</PageTitle>
-<PageHeader Kicker="Applications" Title="Git application" Description="Connect source, build configuration, target server, and environment." />
+<PageHeader Kicker="Applications" Title="Git application"
+            Description="Connect source, build configuration, target server, and environment."/>
 
-<SettingsPanel Title="Source and build" Description="Deployment execution is configured later; this creates the resource record only.">
+<SettingsPanel Title="Source and build"
+               Description="Deployment execution is configured later; this creates the resource record only.">
     <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-application">
         <div class="form-grid">
-            <label>Name<InputText @bind-Value="Model.Name" name="name" placeholder="api" /></label>
-            <label>Repository URL<InputText @bind-Value="Model.RepositoryUrl" name="repo" placeholder="https://github.com/org/repo.git" /></label>
-            <label>Branch<InputText @bind-Value="Model.Branch" name="branch" /></label>
-            <label>Build pack<select @bind="Model.BuildPack" name="buildPack"><option value="@ApplicationBuildPack.Nixpacks">Nixpacks</option><option value="@ApplicationBuildPack.Dockerfile">Dockerfile</option><option value="@ApplicationBuildPack.DockerCompose">Docker Compose</option><option value="@ApplicationBuildPack.Static">Static</option></select></label>
-            <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects){<option value="@project.Id">@project.Name</option>}</select></label>
-            <label>Environment<select @bind="Model.EnvironmentId" name="environment">@foreach (var environment in Environments){<option value="@environment.Id">@environment.Name</option>}</select></label>
-            <label>Server<select @bind="Model.ServerId" name="server">@foreach (var server in Servers){<option value="@server.Id">@server.Name</option>}</select></label>
-            <label>Base directory<InputText @bind-Value="Model.BaseDirectory" name="baseDirectory" /></label>
-            <label>Publish domain<InputText @bind-Value="Model.Domain" name="domain" placeholder="api.example.com" /></label>
+            <label>Name
+                <InputText @bind-Value="Model.Name" name="name" placeholder="api"/>
+            </label>
+            <label>Repository URL
+                <InputText @bind-Value="Model.RepositoryUrl" name="repo" placeholder="https://github.com/org/repo.git"/>
+            </label>
+            <label>Branch
+                <InputText @bind-Value="Model.Branch" name="branch"/>
+            </label>
+            <label>Build pack<select @bind="Model.BuildPack" name="buildPack">
+                    <option value="@ApplicationBuildPack.Nixpacks">Nixpacks</option>
+                    <option value="@ApplicationBuildPack.Dockerfile">Dockerfile</option>
+                    <option value="@ApplicationBuildPack.DockerCompose">Docker Compose</option>
+                    <option value="@ApplicationBuildPack.Static">Static</option>
+                </select></label>
+            <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }</select></label>
+            <label>Environment<select @bind="Model.EnvironmentId"
+                                      name="environment">@foreach (var environment in Environments)
+                    {
+                        <option value="@environment.Id">@environment.Name</option>
+                    }</select></label>
+            <label>Server<select @bind="Model.ServerId" name="server">@foreach (var server in Servers)
+                    {
+                        <option value="@server.Id">@server.Name</option>
+                    }</select></label>
+            <label>Base directory
+                <InputText @bind-Value="Model.BaseDirectory" name="baseDirectory"/>
+            </label>
+            <label>Publish domain
+                <InputText @bind-Value="Model.Domain" name="domain" placeholder="api.example.com"/>
+            </label>
             @if (!string.IsNullOrWhiteSpace(Error))
             {
                 <div class="form-alert form-wide">@Error</div>
@@ -43,9 +70,10 @@
         if (Projects.Count > 0)
         {
             Model.ProjectId = Projects[0].Id;
-            Environments = Resources.ListEnvironments(user.GetUserId(), user.GetTeamId(), new Vessel.Domain.ProjectId(Model.ProjectId));
+            Environments = Resources.ListEnvironments(user.GetUserId(), user.GetTeamId(), new ProjectId(Model.ProjectId));
             Model.EnvironmentId = Environments.FirstOrDefault()?.Id ?? Guid.Empty;
         }
+
         Model.ServerId = Servers.FirstOrDefault()?.Id ?? Guid.Empty;
     }
 
@@ -54,7 +82,7 @@
         try
         {
             var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-            ApplicationSummary application = await Resources.CreateApplicationAsync(user.GetUserId(), user.GetTeamId(),
+            var application = await Resources.CreateApplicationAsync(user.GetUserId(), user.GetTeamId(),
                 new CreateApplicationRequest(Model.ProjectId, Model.EnvironmentId, Model.ServerId, Model.Name, null,
                     Model.RepositoryUrl, Model.Branch, Model.BuildPack, Model.BaseDirectory, null, null,
                     string.IsNullOrWhiteSpace(Model.Domain) ? [] : [Model.Domain]));
@@ -78,4 +106,5 @@
         public string BaseDirectory { get; set; } = "/";
         public string? Domain { get; set; }
     }
+
 }

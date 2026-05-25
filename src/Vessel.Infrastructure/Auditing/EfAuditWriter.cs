@@ -25,9 +25,10 @@ internal sealed class EfAuditWriter : IAuditWriter
         IReadOnlyDictionary<string, object?> metadata,
         CancellationToken cancellationToken = default)
     {
-        string redactedMetadataJson = JsonSerializer.Serialize(Redact(metadata), JsonSerializerOptions);
+        var redactedMetadataJson = JsonSerializer.Serialize(Redact(metadata), JsonSerializerOptions);
         await _dbContext.AuditLogSet.AddAsync(
-            AuditLog.Record(teamId, actorUserId, action, target, correlationId, redactedMetadataJson, DateTimeOffset.UtcNow),
+            AuditLog.Record(teamId, actorUserId, action, target, correlationId, redactedMetadataJson,
+                DateTimeOffset.UtcNow),
             cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
