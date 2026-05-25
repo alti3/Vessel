@@ -29,6 +29,7 @@ try
 
     app.UseVesselWebHost();
     app.MapVesselEndpoints();
+    app.ScheduleVesselRecurringJobs();
 
     app.Run();
 }

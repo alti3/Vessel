@@ -171,6 +171,7 @@ public static class InfrastructureServiceCollectionExtensions
                 options.WorkerCount = Math.Max(1, Environment.ProcessorCount);
             });
             services.AddSingleton<IBackgroundJobDispatcher, HangfireBackgroundJobDispatcher>();
+            services.AddSingleton<IRecurringJobScheduler, HangfireRecurringJobScheduler>();
         }
 
         return services;

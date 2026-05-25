@@ -14,3 +14,13 @@ public sealed class UnavailableBackgroundJobDispatcher : IBackgroundJobDispatche
         throw new InvalidOperationException("Background job dispatch is unavailable because Hangfire storage is disabled.");
     }
 }
+
+public sealed class UnavailableRecurringJobScheduler : IRecurringJobScheduler
+{
+    public void AddOrUpdate<TJob>(
+        string recurringJobId,
+        System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall,
+        string cronExpression)
+    {
+    }
+}

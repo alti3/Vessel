@@ -1,5 +1,6 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Redis;
@@ -107,11 +108,53 @@ public sealed class Phase10ProxyServiceTests
         Assert.Equal(first.Id, second.Id);
         Assert.Single(fixture.Db.CertificateItems);
         Assert.Equal("app.example.com", second.Host);
+        Assert.Equal(2, fixture.BackgroundJobs.Enqueued.Count);
+        Assert.All(fixture.BackgroundJobs.Enqueued, job => Assert.StartsWith(nameof(CertificateIssuanceJob), job, StringComparison.Ordinal));
+        AuditRecord queuedAudit = Assert.Single(fixture.Audit.Records, record =>
+            record.Action == AuditActions.CertificateIssuanceQueued && Equals(record.Metadata["jobId"], "job-1"));
+        Assert.Equal("TraefikAcme", queuedAudit.Metadata["provider"]);
+        Assert.Equal("app.example.com", queuedAudit.Metadata["host"]);
         await Assert.ThrowsAsync<DomainException>(() => fixture.Certificates.QueueIssuanceAsync(
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
             "app.example.com/path"));
+    }
+
+    [Fact]
+    public async Task QueueCertificate_WhenLockUnavailable_DoesNotPersistOrEnqueue()
+    {
+        ServiceFixture fixture = ServiceFixture.Create();
+        fixture.Locks.ShouldAcquire = false;
+
+        await Assert.ThrowsAsync<DomainException>(() => fixture.Certificates.QueueIssuanceAsync(
+            fixture.UserId,
+            fixture.TeamId,
+            fixture.Application.Id,
+            "app.example.com"));
+
+        Assert.Empty(fixture.Db.CertificateItems);
+        Assert.Empty(fixture.BackgroundJobs.Enqueued);
+    }
+
+    [Fact]
+    public async Task RequestIssuance_AppliesProxyRoutesForCertificateApplication()
+    {
+        ServiceFixture fixture = ServiceFixture.Create();
+        fixture.Application.UpsertDomain(new DomainName("app.example.com"), 8080, true, true, false, fixture.Now);
+        Certificate certificate = Certificate.Create(
+            fixture.TeamId,
+            fixture.Application.Id,
+            "app.example.com",
+            CertificateProvider.TraefikAcme,
+            fixture.Now);
+        fixture.Db.CertificateItems.Add(certificate);
+
+        CertificateSummary summary = await fixture.Certificates.RequestIssuanceAsync(certificate.Id);
+
+        Assert.Equal(certificate.Id.Value, summary.Id);
+        Assert.Single(fixture.ProxyProvider.AppliedDocuments);
+        Assert.Equal("app.example.com", fixture.ProxyProvider.GeneratedRoutes.Single().Host);
     }
 
     [Fact]
@@ -146,6 +189,19 @@ public sealed class Phase10ProxyServiceTests
 
         Assert.Equal(0, skipped);
         Assert.Equal(CertificateStatus.Failed, due.Status);
+    }
+
+    [Fact]
+    public void CertificateRecurringJobs_RegisterSchedulesRenewalJob()
+    {
+        var scheduler = new TestRecurringJobScheduler();
+
+        CertificateRecurringJobs.Register(scheduler);
+
+        RecurringRegistration registration = Assert.Single(scheduler.Registrations);
+        Assert.Equal(CertificateRecurringJobs.RenewDueJobId, registration.RecurringJobId);
+        Assert.Equal(typeof(CertificateRenewalJob), registration.JobType);
+        Assert.Equal(CertificateRecurringJobs.RenewDueCronExpression, registration.CronExpression);
     }
 
     [Fact]
@@ -274,9 +330,17 @@ public sealed class Phase10ProxyServiceTests
     {
         private ServiceFixture()
         {
-            Domains = new DomainRoutingService(Db, Authorization, Audit, Redactor, Time);
-            Certificates = new CertificateManagementService(Db, Authorization, Locks, Audit, Redactor, Time);
             ProxyConfigurations = new ProxyConfigurationService(Db, Authorization, ProxyProvider, Locks, Audit, Redactor, Time);
+            Domains = new DomainRoutingService(Db, Authorization, Audit, Redactor, Time);
+            Certificates = new CertificateManagementService(
+                Db,
+                Authorization,
+                Locks,
+                BackgroundJobs,
+                ProxyConfigurations,
+                Audit,
+                Redactor,
+                Time);
         }
 
         public DateTimeOffset Now { get; } = new(2026, 5, 24, 12, 0, 0, TimeSpan.Zero);
@@ -286,6 +350,8 @@ public sealed class Phase10ProxyServiceTests
         public TestAuditWriter Audit { get; } = new();
 
         public TestLockManager Locks { get; } = new();
+
+        public TestBackgroundJobDispatcher BackgroundJobs { get; } = new();
 
         public TestRedactor Redactor { get; } = new();
 
@@ -488,6 +554,45 @@ public sealed class Phase10ProxyServiceTests
         string Action,
         AuditTarget Target,
         IReadOnlyDictionary<string, object?> Metadata);
+
+    private sealed record RecurringRegistration(
+        string RecurringJobId,
+        Type JobType,
+        string CronExpression);
+
+    private sealed class TestRecurringJobScheduler : IRecurringJobScheduler
+    {
+        public List<RecurringRegistration> Registrations { get; } = [];
+
+        public void AddOrUpdate<TJob>(
+            string recurringJobId,
+            System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall,
+            string cronExpression)
+        {
+            Registrations.Add(new RecurringRegistration(recurringJobId, typeof(TJob), cronExpression));
+        }
+    }
+
+    private sealed class TestBackgroundJobDispatcher : IBackgroundJobDispatcher
+    {
+        public List<string> Enqueued { get; } = [];
+
+        public List<string> Scheduled { get; } = [];
+
+        public string Enqueue<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall)
+        {
+            string id = $"job-{Enqueued.Count + 1}";
+            Enqueued.Add($"{typeof(TJob).Name}:{id}");
+            return id;
+        }
+
+        public string Schedule<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
+        {
+            string id = $"scheduled-{Scheduled.Count + 1}";
+            Scheduled.Add($"{typeof(TJob).Name}:{id}:{delay}");
+            return id;
+        }
+    }
 
     private sealed class TestLockManager : IDistributedLockManager
     {

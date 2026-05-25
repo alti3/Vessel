@@ -88,6 +88,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProxyConfigurationService>();
         services.AddScoped<CertificateManagementService>();
         services.AddScoped<CertificateRenewalJob>();
+        services.AddScoped<CertificateIssuanceJob>();
         services.AddScoped<WebhookReceiptService>();
         services.AddScoped<WebhookProcessingService>();
         services.AddScoped<ApplicationWebhookConfigurationService>();
@@ -95,6 +96,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<ISecretVault, UnavailableSecretVault>();
         services.TryAddSingleton<IDistributedLockManager, InMemoryDistributedLockManager>();
         services.TryAddSingleton<IBackgroundJobDispatcher, UnavailableBackgroundJobDispatcher>();
+        services.TryAddSingleton<IRecurringJobScheduler, UnavailableRecurringJobScheduler>();
         services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
         services.AddScoped<IDashboardOverviewQuery, EmptyDashboardOverviewQuery>();
         services.AddScoped<IProjectCatalogQuery, EmptyProjectCatalogQuery>();

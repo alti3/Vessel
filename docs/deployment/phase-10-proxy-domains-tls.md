@@ -32,6 +32,7 @@ Rationale:
 - `ProxyConfigurationService` owns locking, audit, version records, apply, and rollback orchestration.
 - `DomainRoutingService` owns application domain routing commands.
 - `CertificateManagementService` owns certificate status, issuance queueing, and renewal bookkeeping.
+- `CertificateIssuanceJob` and `CertificateRenewalJob` are thin Hangfire entry points that delegate back to Application services.
 - Web controllers and Blazor pages call Application services only.
 
 ## Persistence
@@ -54,7 +55,11 @@ proxy/traefik/dynamic/server-{serverId}.yml
 
 Reload currently sends `SIGHUP` to the `vessel-proxy` container through `IProcessRunner`. If the container is absent, the dynamic config write succeeds and the message explains that the proxy is not running. A failed reload attempts to restore the previous version.
 
-TLS issuance uses `CertificateProvider.TraefikAcme` for the initial implementation. Traefik performs the ACME exchange when TLS routes are loaded with the `letsencrypt` resolver. Vessel stores certificate state and renewal due dates without persisting private keys for Traefik-managed certificates.
+TLS issuance uses `CertificateProvider.TraefikAcme` for the initial implementation. Issuance requests are protected by a per-application/host lock, persist a pending certificate record, enqueue a durable `CertificateIssuanceJob`, and audit the queued provider, host, and job id without certificate material. The job applies the proxy routes under the existing proxy/certificate locks so Traefik can perform the ACME exchange when TLS routes are loaded with the `letsencrypt` resolver.
+
+Certificate renewal is registered at web host startup as the recurring `certificates.renew-due` Hangfire job every 15 minutes. The job scans due certificates, uses per-certificate locks, records renewal-queued or redacted failure state, and remains thin by delegating to `CertificateManagementService`.
+
+Vessel stores certificate state and renewal due dates without persisting private keys for Traefik-managed certificates.
 
 ## Verification
 
@@ -63,5 +68,6 @@ Focused coverage includes:
 - deterministic Traefik generated config
 - duplicate-host and secret-like content validation
 - failed reload rollback behavior
+- locked, audited, durable certificate issuance queueing
+- recurring certificate renewal schedule registration
 - EF model and migration coverage for proxy/certificate tables
-
