@@ -109,6 +109,8 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
 
     public void MarkDeleted(DateTimeOffset now)
     {
+        ContainerName = null;
+        ComposeSnapshotReference = null;
         LifecycleState = DatabaseLifecycleState.Deleted;
         HealthState = DatabaseHealthState.Unknown;
         Touch(now);
