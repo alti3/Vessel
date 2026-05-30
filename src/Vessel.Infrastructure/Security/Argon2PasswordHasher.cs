@@ -13,6 +13,7 @@ internal sealed class Argon2PasswordHasher : IPasswordHasher
 {
     private const int HashSizeInBytes = 32;
     private const int SaltSizeInBytes = 16;
+
     private static readonly Action<ILogger, Exception?> LogPasswordHashParseFailure =
         LoggerMessage.Define(
             LogLevel.Warning,

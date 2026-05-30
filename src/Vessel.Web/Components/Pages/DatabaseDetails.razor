@@ -1,26 +1,113 @@
 @page "/databases/{Id:guid}"
 @attribute [Authorize]
+@inject ResourceManagementService Resources
+@inject ManagedDatabaseService ManagedDatabases
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Database | Vessel</PageTitle>
 <PageHeader Kicker="Database" Title="Database overview"
-            Description="@($"Database {Id} health, storage, credentials, and backup policy.")"/>
+            Description="@($"Database {Database?.Name ?? Id.ToString()} lifecycle, health, and backups.")"/>
 
 <section class="dashboard-grid">
     <SettingsPanel Title="Health and storage" Description="Health state, storage policy, and runtime target.">
         <div class="signal-list">
             <div class="signal-row"><span>Health</span>
-                <StatusBadge Text="Unknown" Tone="neutral"/>
+                <StatusBadge Text="@(Database?.HealthState.ToString() ?? "Unknown")" Tone="neutral"/>
             </div>
-            <div class="signal-row"><span>Backups</span>
-                <StatusBadge Text="Not configured" Tone="warning"/>
+            <div class="signal-row"><span>Engine</span>
+                <strong>@(Database?.Engine.ToString() ?? "Unknown")</strong>
+            </div>
+            <div class="signal-row"><span>Version</span>
+                <strong>@(Database?.Version ?? "Unknown")</strong>
             </div>
         </div>
+        <div class="button-row">
+            <button class="button button-primary" type="button" @onclick="StartAsync">Start</button>
+            <button class="button button-secondary" type="button" @onclick="RestartAsync">Restart</button>
+            <button class="button button-secondary" type="button" @onclick="StopAsync">Stop</button>
+            <button class="button button-secondary" type="button" @onclick="BackupAsync">Backup now</button>
+        </div>
     </SettingsPanel>
-    <SettingsPanel Title="Credentials" Description="Secret values remain write-only and masked by default.">
-        <SecretInput Name="database-password" Placeholder="DATABASE_PASSWORD"/>
+    <SettingsPanel Title="Backup schedule" Description="Schedules are queued through Hangfire and enforce retention.">
+        <EditForm Model="Schedule" OnValidSubmit="CreateScheduleAsync" FormName="create-backup-schedule">
+            <div class="form-grid">
+                <label>Name
+                    <InputText @bind-Value="Schedule.Name" name="name"/>
+                </label>
+                <label>Cron
+                    <InputText @bind-Value="Schedule.CronExpression" name="cron"/>
+                </label>
+                <label>Retention
+                    <InputNumber @bind-Value="Schedule.RetentionCount" name="retention"/>
+                </label>
+                <button class="button button-primary" type="submit">Create schedule</button>
+            </div>
+        </EditForm>
     </SettingsPanel>
 </section>
 
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="form-alert">@Message</div>
+}
+
 @code {
     [Parameter] public Guid Id { get; set; }
+    private DatabaseSummary? Database { get; set; }
+    private ScheduleForm Schedule { get; } = new();
+    private string? Message { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Database = Resources.ListDatabases(user.GetUserId(), user.GetTeamId()).SingleOrDefault(item => item.Id == Id);
+    }
+
+    private Task StartAsync()
+    {
+        return LifecycleAsync(DatabaseLifecycleAction.Start);
+    }
+
+    private Task StopAsync()
+    {
+        return LifecycleAsync(DatabaseLifecycleAction.Stop);
+    }
+
+    private Task RestartAsync()
+    {
+        return LifecycleAsync(DatabaseLifecycleAction.Restart);
+    }
+
+    private async Task LifecycleAsync(DatabaseLifecycleAction action)
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        var result = await ManagedDatabases.QueueLifecycleActionAsync(user.GetUserId(), user.GetTeamId(),
+            new DatabaseResourceId(Id), action);
+        Message = result.Message;
+    }
+
+    private async Task BackupAsync()
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        var result = await ManagedDatabases.QueueBackupAsync(user.GetUserId(), user.GetTeamId(),
+            new DatabaseResourceId(Id));
+        Message = $"Backup queued: {result.Id}";
+    }
+
+    private async Task CreateScheduleAsync()
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        var schedule = await ManagedDatabases.CreateBackupScheduleAsync(user.GetUserId(), user.GetTeamId(),
+            new CreateBackupScheduleRequest(Id, Schedule.Name, Schedule.CronExpression, Schedule.RetentionCount,
+                BackupStorageKind.ObjectStorage));
+        Message = $"Backup schedule created: {schedule.Name}";
+    }
+
+    private sealed class ScheduleForm
+    {
+        public string Name { get; set; } = "daily";
+        public string CronExpression { get; set; } = "0 2 * * *";
+        public int RetentionCount { get; set; } = 7;
+    }
+
 }

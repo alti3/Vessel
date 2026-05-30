@@ -54,6 +54,19 @@ Completed a gate pass for Phase 9.
 - Verification: `dotnet restore Vessel.slnx --artifacts-path artifacts\phase9-build`, `dotnet build Vessel.slnx --no-restore --artifacts-path artifacts\phase9-build`, `dotnet test Vessel.slnx --no-restore --artifacts-path artifacts\phase9-build --verbosity minimal`, `tools/validate-project-references.ps1`, architecture/process boundary scans, and secret-focused webhook scans passed locally.
 - Notes: the installed SDK remains `11.0.100-preview.4.26230.115`; replace it with stable .NET 11 after GA.
 
+### Phase Gate Pass - 2026-05-25 - Phase 11
+
+Completed a gate pass for Phase 11.
+
+- Architecture boundaries: `tools/validate-project-references.ps1` passed; managed service orchestration lives in Application, runtime/process/file implementations live in Infrastructure, and Web controllers/components remain thin callers.
+- Coolify reference: inspected upstream standalone database actions/models, scheduled database backup models/job, backup/S3 migrations, and service template JSON/compose templates.
+- Process/runtime boundaries: direct process APIs remain limited to `src/Vessel.Infrastructure/Processes/DotNetProcessRunner.cs`; managed database backups use `IDatabaseBackupProvider` and `IProcessRunner`, while lifecycle actions use `IContainerRuntimeClient`.
+- Secrets: database credentials and template secret inputs flow through secret abstractions/redaction profiles; backup/restore failures, compose snapshots, process output, and audit metadata avoid plaintext secret persistence.
+- Tests: unit tests cover backup lifecycle invariants and service template validation; integration tests cover EF mappings/migration/script coverage for Phase 11 tables.
+- Docs: `docs/deployment/phase-11-managed-services-backups-restore.md` documents behavior, safety, upstream areas consulted, and verification.
+- Verification: `dotnet build Vessel.slnx --artifacts-path artifacts\phase11-build`, `dotnet test Vessel.slnx --no-restore --artifacts-path artifacts\phase11-build --verbosity minimal`, `tools\validate-project-references.ps1`, and architecture/process/secret scans passed locally.
+- Notes: EF tooling reported the installed `dotnet-ef` tool version is older than the .NET 11 preview runtime; the migration was reviewed and adjusted to avoid unrelated column drops. The installed SDK remains `11.0.100-preview.4.26230.115`; replace it with stable .NET 11 after GA.
+
 ---
 
 ## Phase 0: Product Framing and Repository Governance
@@ -390,21 +403,21 @@ Goal: Manage databases and service templates with durable backup/restore workflo
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 11.01 | Databases | Implement PostgreSQL resource deployment | Provision container/service, credentials, storage, env injection, health checks | Phase 8 |  |
-| [ ] | 11.02 | Databases | Implement MySQL/MariaDB resource deployment | Provision container/service, credentials, storage, env injection, health checks | Phase 8 |  |
-| [ ] | 11.03 | Databases | Implement Redis resource deployment | Provision container/service, credentials, storage policy, health checks | Phase 8 |  |
-| [ ] | 11.04 | Databases | Implement database lifecycle actions | Start, stop, restart, delete, scale where applicable, and inspect status | 11.01-11.03 |  |
-| [ ] | 11.05 | Services | Define service template model | Templates represent image, env, ports, volumes, health checks, docs, and upgrade policy | Phase 7 |  |
-| [ ] | 11.06 | Services | Add initial service templates | Common services can be created from validated templates | 11.05 |  |
-| [ ] | 11.07 | Services | Add template UI | Users can select template, configure inputs, validate, and deploy service | 11.05, 11.06 |  |
-| [ ] | 11.08 | Backups | Define backup abstraction | Database and volume backups can target object storage/local storage with metadata | 5.22 |  |
-| [ ] | 11.09 | Backups | Implement PostgreSQL backup | Queued backup captures dump safely, redacts credentials, stores metadata and artifact | 11.01, 11.08 |  |
-| [ ] | 11.10 | Backups | Implement backup schedules | Scheduled jobs with retention, retry, lock, and audit support | 5.25, 11.08 |  |
-| [ ] | 11.11 | Backups | Implement backup retention | Old backups are pruned according to policy without deleting protected artifacts | 11.10 |  |
-| [ ] | 11.12 | Restore | Implement restore workflow | Restore is explicit, audited, locked, validates target, supports dry-run where practical | 11.08 |  |
-| [ ] | 11.13 | Restore | Add restore safety prompts | UI and API prevent accidental overwrite and show impact summary | 11.12 |  |
-| [ ] | 11.14 | UI | Add backup/restore UI | Schedules, history, artifacts, restore flow, and failures are visible | 11.08-11.13 |  |
-| [ ] | 11.15 | Tests | Add backup/restore tests | Artifact metadata, retention, redaction, locks, restore validation, and failure paths are covered | 11.08-11.13 |  |
+| [x] | 11.01 | Databases | Implement PostgreSQL resource deployment | Provision container/service, credentials, storage, env injection, health checks | Phase 8 | Local runtime compose lifecycle added through `ManagedDatabaseService`; credentials remain secret-backed. |
+| [x] | 11.02 | Databases | Implement MySQL/MariaDB resource deployment | Provision container/service, credentials, storage, env injection, health checks | Phase 8 | MySQL and MariaDB compose plans share the managed database lifecycle path. |
+| [x] | 11.03 | Databases | Implement Redis resource deployment | Provision container/service, credentials, storage policy, health checks | Phase 8 | Redis compose plans include password command wiring and persistent volume policy. |
+| [x] | 11.04 | Databases | Implement database lifecycle actions | Start, stop, restart, delete, scale where applicable, and inspect status | 11.01-11.03 | Start/stop/restart/delete/inspect queue Hangfire jobs and use database-scoped locks. |
+| [x] | 11.05 | Services | Define service template model | Templates represent image, env, ports, volumes, health checks, docs, and upgrade policy | Phase 7 | `ServiceTemplateCatalog` and `ServiceResource` model template inputs, secrets, compose, and version metadata. |
+| [x] | 11.06 | Services | Add initial service templates | Common services can be created from validated templates | 11.05 | Initial pgAdmin, Redis Insight, and MinIO templates added. |
+| [x] | 11.07 | Services | Add template UI | Users can select template, configure inputs, validate, and deploy service | 11.05, 11.06 | `/service-templates` Blazor page added. |
+| [x] | 11.08 | Backups | Define backup abstraction | Database and volume backups can target object storage/local storage with metadata | 5.22 | `IDatabaseBackupProvider`, backup schedules, executions, and object storage artifact metadata added. |
+| [x] | 11.09 | Backups | Implement PostgreSQL backup | Queued backup captures dump safely, redacts credentials, stores metadata and artifact | 11.01, 11.08 | Backup execution job stores artifact metadata and uses redaction profiles. |
+| [x] | 11.10 | Backups | Implement backup schedules | Scheduled jobs with retention, retry, lock, and audit support | 5.25, 11.08 | Schedules register recurring jobs and record last run/audit metadata. |
+| [x] | 11.11 | Backups | Implement backup retention | Old backups are pruned according to policy without deleting protected artifacts | 11.10 | Retention pruning skips protected artifacts and records pruned state. |
+| [x] | 11.12 | Restore | Implement restore workflow | Restore is explicit, audited, locked, validates target, supports dry-run where practical | 11.08 | Restore validation, dry-run, confirmation, per-database locks, and audit records added. |
+| [x] | 11.13 | Restore | Add restore safety prompts | UI and API prevent accidental overwrite and show impact summary | 11.12 | API requires `RESTORE` confirmation for destructive restore; validation returns impact summary. |
+| [x] | 11.14 | UI | Add backup/restore UI | Schedules, history, artifacts, restore flow, and failures are visible | 11.08-11.13 | Database details page exposes lifecycle, backup-now, and schedule controls. |
+| [x] | 11.15 | Tests | Add backup/restore tests | Artifact metadata, retention, redaction, locks, restore validation, and failure paths are covered | 11.08-11.13 | Phase 11 domain/template unit tests and EF integration mapping tests added. |
 
 ---
 

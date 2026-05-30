@@ -24,18 +24,14 @@ public sealed class PathSafetyService : IPathSafetyService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
         if (IsRootedPath(relativePath))
-        {
             throw new InvalidOperationException("Path must be relative to the owned root directory.");
-        }
 
         var segments = relativePath.Split(
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, '/', '\\'],
             StringSplitOptions.RemoveEmptyEntries);
 
         if (segments.Any(segment => segment is "." or ".."))
-        {
             throw new InvalidOperationException("Path must not contain traversal segments.");
-        }
 
         var root = NormalizeRoot(rootDirectory);
         return EnsureOwnedPath(root, Path.Combine([root, .. segments]));
@@ -44,11 +40,11 @@ public sealed class PathSafetyService : IPathSafetyService
     private static bool IsRootedPath(string path)
     {
         return Path.IsPathRooted(path)
-            || path.StartsWith('\\')
-            || (path.Length >= 3
-                && char.IsAsciiLetter(path[0])
-                && path[1] == ':'
-                && (path[2] == '\\' || path[2] == '/'));
+               || path.StartsWith('\\')
+               || (path.Length >= 3
+                   && char.IsAsciiLetter(path[0])
+                   && path[1] == ':'
+                   && (path[2] == '\\' || path[2] == '/'));
     }
 
     private static string NormalizeRoot(string rootDirectory)
