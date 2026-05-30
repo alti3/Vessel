@@ -78,7 +78,9 @@ public sealed record BackupExecutionSummary(
     bool Protected,
     DateTimeOffset CreatedAt,
     DateTimeOffset? FinishedAt,
-    string? FailureReason);
+    string? FailureReason,
+    DateTimeOffset? LastRestoreFailedAt,
+    string? LastRestoreFailureReason);
 
 public sealed record RestoreValidationResult(
     Guid BackupExecutionId,

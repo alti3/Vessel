@@ -6,13 +6,13 @@ public sealed class UnavailableBackgroundJobDispatcher : IBackgroundJobDispatche
 {
     public string Enqueue<TJob>(Expression<Func<TJob, Task>> methodCall)
     {
-        throw new InvalidOperationException(
+        throw new BackgroundJobsUnavailableException(
             "Background job dispatch is unavailable because Hangfire storage is disabled.");
     }
 
     public string Schedule<TJob>(Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
     {
-        throw new InvalidOperationException(
+        throw new BackgroundJobsUnavailableException(
             "Background job dispatch is unavailable because Hangfire storage is disabled.");
     }
 }
@@ -24,8 +24,57 @@ public sealed class UnavailableRecurringJobScheduler : IRecurringJobScheduler
         Expression<Func<TJob, Task>> methodCall,
         string cronExpression)
     {
-        _ = recurringJobId;
-        _ = methodCall;
-        _ = cronExpression;
+        throw BackgroundJobsUnavailableException.ForRecurringJob(
+            recurringJobId,
+            methodCall.ToString(),
+            cronExpression);
+    }
+}
+
+public sealed class BackgroundJobsUnavailableException : InvalidOperationException
+{
+    public BackgroundJobsUnavailableException()
+    {
+    }
+
+    public BackgroundJobsUnavailableException(string message)
+        : base(message)
+    {
+    }
+
+    public BackgroundJobsUnavailableException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+
+    private BackgroundJobsUnavailableException(
+        string message,
+        string recurringJobId,
+        string methodCall,
+        string cronExpression)
+        : base(message)
+    {
+        RecurringJobId = recurringJobId;
+        MethodCall = methodCall;
+        CronExpression = cronExpression;
+    }
+
+    public string? RecurringJobId { get; }
+
+    public string? MethodCall { get; }
+
+    public string? CronExpression { get; }
+
+    public static BackgroundJobsUnavailableException ForRecurringJob(
+        string recurringJobId,
+        string methodCall,
+        string cronExpression)
+    {
+        return new BackgroundJobsUnavailableException(
+            "Recurring job AddOrUpdate was not executed because Hangfire storage is disabled. "
+            + $"RecurringJobId: '{recurringJobId}'. MethodCall: '{methodCall}'. CronExpression: '{cronExpression}'.",
+            recurringJobId,
+            methodCall,
+            cronExpression);
     }
 }

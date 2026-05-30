@@ -692,6 +692,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(execution => execution.ArtifactKey).HasMaxLength(512);
             builder.Property(execution => execution.ChecksumSha256).HasMaxLength(128);
             builder.Property(execution => execution.FailureReason).HasMaxLength(1000);
+            builder.Property(execution => execution.LastRestoreFailureReason).HasMaxLength(1000);
             builder.Property(execution => execution.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(execution => execution.DomainEvents);
             builder.HasIndex(execution => new { execution.TeamId, execution.DatabaseResourceId, execution.CreatedAt });

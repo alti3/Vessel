@@ -80,6 +80,59 @@ public sealed class Phase11DomainTests
         Assert.Equal(BackupExecutionStatus.RestoreSucceeded, execution.Status);
     }
 
+    [Fact]
+    public void BackupExecution_FailRejectsTerminalStatuses()
+    {
+        DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
+        BackupExecutionStatus[] terminalStatuses =
+        [
+            BackupExecutionStatus.Succeeded,
+            BackupExecutionStatus.Failed,
+            BackupExecutionStatus.Pruned,
+            BackupExecutionStatus.RestoreSucceeded,
+            BackupExecutionStatus.RestoreFailed
+        ];
+
+        foreach (BackupExecutionStatus terminalStatus in terminalStatuses)
+        {
+            var execution = CreateBackupExecutionWithStatus(terminalStatus, now);
+            string? failureReason = execution.FailureReason;
+            DateTimeOffset? finishedAt = execution.FinishedAt;
+
+            Assert.Throws<DomainException>(() => execution.Fail("late failure", now.AddMinutes(1)));
+            Assert.Equal(terminalStatus, execution.Status);
+            Assert.Equal(failureReason, execution.FailureReason);
+            Assert.Equal(finishedAt, execution.FinishedAt);
+        }
+    }
+
+    [Fact]
+    public void BackupExecution_FailFromRestoreValidatedMarksRestoreFailed()
+    {
+        DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
+        var execution = CreateBackupExecutionWithStatus(BackupExecutionStatus.RestoreValidated, now);
+
+        execution.Fail("restore failed", now.AddMinutes(1));
+
+        Assert.Equal(BackupExecutionStatus.RestoreFailed, execution.Status);
+        Assert.Equal("restore failed", execution.FailureReason);
+        Assert.Equal(now.AddMinutes(1), execution.FinishedAt);
+    }
+
+    [Fact]
+    public void BackupExecution_MarkRestoreFailedDoesNotChangeBackupArtifactStatus()
+    {
+        DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
+        var execution = CreateBackupExecutionWithStatus(BackupExecutionStatus.RestoreValidated, now);
+
+        execution.MarkRestoreFailed("restore command failed", now.AddMinutes(1));
+
+        Assert.Equal(BackupExecutionStatus.RestoreValidated, execution.Status);
+        Assert.Equal("restore command failed", execution.LastRestoreFailureReason);
+        Assert.Equal(now.AddMinutes(1), execution.LastRestoreFailedAt);
+        Assert.Null(execution.FailureReason);
+    }
+
     private static DatabaseResource CreateDatabase(DateTimeOffset now)
     {
         return DatabaseResource.Create(
@@ -91,5 +144,55 @@ public sealed class Phase11DomainTests
             new StorageConfiguration("pg-data", "/var/lib/postgresql/data"),
             SecretReferenceId.New(),
             now);
+    }
+
+    private static BackupExecution CreateBackupExecutionWithStatus(BackupExecutionStatus status, DateTimeOffset now)
+    {
+        var execution = BackupExecution.Queue(
+            TeamId.New(),
+            DatabaseResourceId.New(),
+            BackupScheduleId.New(),
+            BackupStorageKind.ObjectStorage,
+            now);
+
+        switch (status)
+        {
+            case BackupExecutionStatus.Queued:
+                return execution;
+            case BackupExecutionStatus.Running:
+                execution.Start(now.AddSeconds(1));
+                return execution;
+            case BackupExecutionStatus.Succeeded:
+                MarkBackupSucceeded(execution, now);
+                return execution;
+            case BackupExecutionStatus.Failed:
+                execution.Fail("failed", now.AddSeconds(1));
+                return execution;
+            case BackupExecutionStatus.Pruned:
+                execution.MarkPruned(now.AddSeconds(1));
+                return execution;
+            case BackupExecutionStatus.RestoreValidated:
+                MarkBackupSucceeded(execution, now);
+                execution.MarkRestoreValidated(now.AddSeconds(3));
+                return execution;
+            case BackupExecutionStatus.RestoreSucceeded:
+                MarkBackupSucceeded(execution, now);
+                execution.MarkRestoreValidated(now.AddSeconds(3));
+                execution.MarkRestoreSucceeded(now.AddSeconds(4));
+                return execution;
+            case BackupExecutionStatus.RestoreFailed:
+                MarkBackupSucceeded(execution, now);
+                execution.MarkRestoreValidated(now.AddSeconds(3));
+                execution.Fail("restore failed", now.AddSeconds(4));
+                return execution;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(status), status, null);
+        }
+    }
+
+    private static void MarkBackupSucceeded(BackupExecution execution, DateTimeOffset now)
+    {
+        execution.Start(now.AddSeconds(1));
+        execution.Succeed("backups", "db.dump", 120, new string('a', 64), now.AddSeconds(2));
     }
 }

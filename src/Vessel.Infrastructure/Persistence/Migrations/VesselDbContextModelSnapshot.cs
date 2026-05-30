@@ -198,6 +198,13 @@ namespace Vessel.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("FinishedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("LastRestoreFailedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastRestoreFailureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<bool>("Protected")
                         .HasColumnType("boolean");
 

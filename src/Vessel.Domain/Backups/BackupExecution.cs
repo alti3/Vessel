@@ -43,6 +43,10 @@ public sealed class BackupExecution : Entity<BackupExecutionId>
 
     public string? FailureReason { get; private set; }
 
+    public string? LastRestoreFailureReason { get; private set; }
+
+    public DateTimeOffset? LastRestoreFailedAt { get; private set; }
+
     public bool Protected { get; private set; }
 
     public DateTimeOffset? StartedAt { get; private set; }
@@ -84,6 +88,9 @@ public sealed class BackupExecution : Entity<BackupExecutionId>
 
     public void Fail(string reason, DateTimeOffset now)
     {
+        if (IsTerminal(Status))
+            throw new DomainException($"Cannot fail backup execution from terminal status {Status}.");
+
         FailureReason = DomainValidation.Required(reason, nameof(reason), 1000);
         Status = Status == BackupExecutionStatus.RestoreValidated
             ? BackupExecutionStatus.RestoreFailed
@@ -118,7 +125,27 @@ public sealed class BackupExecution : Entity<BackupExecutionId>
         if (Status != BackupExecutionStatus.RestoreValidated)
             throw new DomainException("Restore must be validated before it can complete.");
         Status = BackupExecutionStatus.RestoreSucceeded;
+        LastRestoreFailureReason = null;
+        LastRestoreFailedAt = null;
         FinishedAt = now;
         Touch(now);
+    }
+
+    public void MarkRestoreFailed(string reason, DateTimeOffset now)
+    {
+        if (Status is not (BackupExecutionStatus.Succeeded or BackupExecutionStatus.RestoreValidated))
+            throw new DomainException("Only successful backup artifacts can record restore failures.");
+        LastRestoreFailureReason = DomainValidation.Required(reason, nameof(reason), 1000);
+        LastRestoreFailedAt = now;
+        Touch(now);
+    }
+
+    private static bool IsTerminal(BackupExecutionStatus status)
+    {
+        return status is BackupExecutionStatus.Succeeded
+            or BackupExecutionStatus.Failed
+            or BackupExecutionStatus.Pruned
+            or BackupExecutionStatus.RestoreSucceeded
+            or BackupExecutionStatus.RestoreFailed;
     }
 }

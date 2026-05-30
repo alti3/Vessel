@@ -353,7 +353,7 @@ public sealed class ManagedDatabaseService(
         }
         catch (Exception ex)
         {
-            execution.Fail(redactor.Redact(ex.Message), timeProvider.GetUtcNow());
+            execution.MarkRestoreFailed(redactor.Redact(ex.Message), timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(CancellationToken.None);
             throw;
         }
@@ -581,7 +581,8 @@ public sealed class ManagedDatabaseService(
         return new BackupExecutionSummary(execution.Id.Value, execution.DatabaseResourceId.Value,
             execution.ScheduleId?.Value, execution.Status, execution.StorageKind, execution.ArtifactBucket,
             execution.ArtifactKey, execution.SizeBytes, execution.Protected, execution.CreatedAt,
-            execution.FinishedAt, execution.FailureReason);
+            execution.FinishedAt, execution.FailureReason, execution.LastRestoreFailedAt,
+            execution.LastRestoreFailureReason);
     }
 
     private static ServiceResourceSummary ToSummary(ServiceResource service)

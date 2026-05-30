@@ -18,7 +18,7 @@ Vessel preserves the product semantics: standalone databases are managed resourc
 - Lifecycle jobs delegate to `ManagedDatabaseService`; external runtime operations remain behind `IContainerRuntimeClient`.
 - Service templates are curated through `ServiceTemplateCatalog`; initial templates include pgAdmin, Redis Insight, and MinIO.
 - Backup schedules persist cron, retention count, storage target, last run time, and execution history.
-- Backup executions persist artifact location, size, checksum, protected/pruned state, status, and safe failure reason.
+- Backup executions persist artifact location, size, checksum, protected/pruned state, status, safe backup failure reason, and last restore failure metadata.
 - Restore requires `RESTORE` confirmation for destructive restores, uses a per-database lock, validates artifact readability, and records audit metadata.
 
 ## Safety Notes

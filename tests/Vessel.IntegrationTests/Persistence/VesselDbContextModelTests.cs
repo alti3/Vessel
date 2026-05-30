@@ -159,6 +159,7 @@ public sealed class VesselDbContextModelTests
         Assert.Equal(120, schedule?.FindProperty(nameof(BackupSchedule.CronExpression))?.GetMaxLength());
         Assert.Equal("backup_executions", execution?.GetTableName());
         Assert.Equal(512, execution?.FindProperty(nameof(BackupExecution.ArtifactKey))?.GetMaxLength());
+        Assert.Equal(1000, execution?.FindProperty(nameof(BackupExecution.LastRestoreFailureReason))?.GetMaxLength());
     }
 
     private static VesselDbContext CreateContext()
