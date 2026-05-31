@@ -11,7 +11,9 @@ public sealed class DotNetProcessRunnerTests
     [Fact]
     public async Task RunTextAsync_CapturesOutputAndExitCode()
     {
-        ProcessResult result = await _runner.RunTextAsync(Shell("echo vessel-phase-5"));
+        ProcessResult result = await _runner.RunTextAsync(
+            Shell("echo vessel-phase-5"),
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Contains("vessel-phase-5", result.StandardOutput, StringComparison.Ordinal);
@@ -23,7 +25,7 @@ public sealed class DotNetProcessRunnerTests
     {
         ProcessResult result = await _runner.RunTextAsync(Shell(
             "echo https://user:password@example.com && echo token=super-secret",
-            new ProcessRedactionProfile(["super-secret"], [])));
+            new ProcessRedactionProfile(["super-secret"], [])), TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("password", result.StandardOutput, StringComparison.Ordinal);
         Assert.DoesNotContain("super-secret", result.StandardOutput, StringComparison.Ordinal);
@@ -38,7 +40,7 @@ public sealed class DotNetProcessRunnerTests
                            OperatingSystem.IsWindows()
                                ? "echo out& echo err 1>&2"
                                : "echo out; echo err 1>&2",
-                           outputMode: ProcessOutputMode.Lines)))
+                           outputMode: ProcessOutputMode.Lines), TestContext.Current.CancellationToken))
             lines.Add(line);
 
         Assert.Contains(lines,
@@ -55,7 +57,7 @@ public sealed class DotNetProcessRunnerTests
     {
         ProcessBinaryResult result = await _runner.RunBinaryAsync(Shell(
             "echo binary",
-            outputMode: ProcessOutputMode.Binary));
+            outputMode: ProcessOutputMode.Binary), TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.True(result.StandardOutput.Length > 0);
@@ -68,7 +70,7 @@ public sealed class DotNetProcessRunnerTests
             OperatingSystem.IsWindows()
                 ? "ping -n 6 127.0.0.1 >nul"
                 : "sleep 5",
-            timeout: TimeSpan.FromMilliseconds(200)));
+            timeout: TimeSpan.FromMilliseconds(200)), TestContext.Current.CancellationToken);
 
         Assert.True(result.ExitInfo.TimedOut);
         Assert.True(result.ExitInfo.Canceled);

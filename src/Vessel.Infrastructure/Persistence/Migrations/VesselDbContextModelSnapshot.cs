@@ -16,7 +16,7 @@ namespace Vessel.Infrastructure.Persistence.Migrations
         // If you encounter a merge conflict in the line below, it means you need to
         // discard one of the migration branches and recreate its migrations on top of
         // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-        public override string LatestMigrationId => "20260525124052_Phase11ManagedServicesBackups";
+        public override string LatestMigrationId => "20260531123000_RemoveDeprecatedSwarmCapability";
 
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
