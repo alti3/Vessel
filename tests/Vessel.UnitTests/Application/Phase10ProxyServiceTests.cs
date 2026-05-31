@@ -44,12 +44,14 @@ public sealed class Phase10ProxyServiceTests
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
-            new ConfigureDomainRouteRequest("HTTPS://App.Example.COM/", 8080, true, true, false));
+            new ConfigureDomainRouteRequest("HTTPS://App.Example.COM/", 8080, true, true, false),
+            TestContext.Current.CancellationToken);
         DomainRouteSummary second = await fixture.Domains.ConfigureAsync(
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
-            new ConfigureDomainRouteRequest("www.example.com", 8081, false, true, false));
+            new ConfigureDomainRouteRequest("www.example.com", 8081, false, true, false),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal("app.example.com", first.Host);
         Assert.True(first.TlsEnabled);
@@ -75,7 +77,8 @@ public sealed class Phase10ProxyServiceTests
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
-            new ConfigureDomainRouteRequest(host, 8080, true, false, false)));
+            new ConfigureDomainRouteRequest(host, 8080, true, false, false),
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -91,7 +94,8 @@ public sealed class Phase10ProxyServiceTests
             otherUser.Id,
             otherTeam.Id,
             fixture.Application.Id,
-            new ConfigureDomainRouteRequest("app.example.com", 8080, true, false, false)));
+            new ConfigureDomainRouteRequest("app.example.com", 8080, true, false, false),
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -103,12 +107,14 @@ public sealed class Phase10ProxyServiceTests
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
-            "https://APP.example.com/");
+            "https://APP.example.com/",
+            TestContext.Current.CancellationToken);
         CertificateSummary second = await fixture.Certificates.QueueIssuanceAsync(
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
-            "app.example.com");
+            "app.example.com",
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(first.Id, second.Id);
         Assert.Single(fixture.Db.CertificateItems);
@@ -124,7 +130,8 @@ public sealed class Phase10ProxyServiceTests
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
-            "app.example.com/path"));
+            "app.example.com/path",
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -137,7 +144,8 @@ public sealed class Phase10ProxyServiceTests
             fixture.UserId,
             fixture.TeamId,
             fixture.Application.Id,
-            "app.example.com"));
+            "app.example.com",
+            TestContext.Current.CancellationToken));
 
         Assert.Empty(fixture.Db.CertificateItems);
         Assert.Empty(fixture.BackgroundJobs.Enqueued);
@@ -156,7 +164,9 @@ public sealed class Phase10ProxyServiceTests
             fixture.Now);
         fixture.Db.CertificateItems.Add(certificate);
 
-        CertificateSummary summary = await fixture.Certificates.RequestIssuanceAsync(certificate.Id);
+        CertificateSummary summary = await fixture.Certificates.RequestIssuanceAsync(
+            certificate.Id,
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(certificate.Id.Value, summary.Id);
         Assert.Single(fixture.ProxyProvider.AppliedDocuments);
@@ -183,7 +193,7 @@ public sealed class Phase10ProxyServiceTests
         notDue.MarkIssued(fixture.Now.AddDays(-10), fixture.Now.AddDays(40), null, null);
         fixture.Db.CertificateItems.AddRange([due, notDue]);
 
-        var renewed = await fixture.Certificates.RenewDueAsync();
+        var renewed = await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, renewed);
         Assert.Equal(CertificateStatus.RenewalQueued, due.Status);
@@ -191,7 +201,7 @@ public sealed class Phase10ProxyServiceTests
 
         fixture.Locks.ShouldAcquire = false;
         due.MarkFailed("reset", fixture.Now);
-        var skipped = await fixture.Certificates.RenewDueAsync();
+        var skipped = await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(0, skipped);
         Assert.Equal(CertificateStatus.Failed, due.Status);
@@ -220,7 +230,8 @@ public sealed class Phase10ProxyServiceTests
         ProxyConfigurationSummary summary = await fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(
             fixture.UserId,
             fixture.TeamId,
-            fixture.Server.Id);
+            fixture.Server.Id,
+            TestContext.Current.CancellationToken);
 
         ProxyConfigurationVersion version = Assert.Single(fixture.Db.ProxyConfigurationVersionItems);
         Assert.Equal(ProxyConfigurationStatus.Applied, version.Status);
@@ -251,7 +262,7 @@ public sealed class Phase10ProxyServiceTests
 
         DomainException exception = await Assert.ThrowsAsync<DomainException>(() =>
             fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
-                fixture.Server.Id));
+                fixture.Server.Id, TestContext.Current.CancellationToken));
 
         ProxyConfigurationVersion version = Assert.Single(fixture.Db.ProxyConfigurationVersionItems);
         Assert.Equal(ProxyConfigurationStatus.Failed, version.Status);
@@ -279,7 +290,7 @@ public sealed class Phase10ProxyServiceTests
 
         DomainException exception = await Assert.ThrowsAsync<DomainException>(() =>
             fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
-                fixture.Server.Id));
+                fixture.Server.Id, TestContext.Current.CancellationToken));
 
         ProxyConfigurationVersion current =
             fixture.Db.ProxyConfigurationVersionItems.Single(version => version.Id != previous.Id);
@@ -298,14 +309,14 @@ public sealed class Phase10ProxyServiceTests
 
         await Assert.ThrowsAsync<DomainException>(() =>
             fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
-                fixture.Server.Id));
+                fixture.Server.Id, TestContext.Current.CancellationToken));
         Assert.Empty(fixture.Db.ProxyConfigurationVersionItems);
 
         fixture.Server.ChangeStatus(ServerStatus.Reachable, fixture.Now);
         fixture.Locks.ShouldAcquire = false;
         await Assert.ThrowsAsync<DomainException>(() =>
             fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
-                fixture.Server.Id));
+                fixture.Server.Id, TestContext.Current.CancellationToken));
         Assert.Empty(fixture.Db.ProxyConfigurationVersionItems);
     }
 
@@ -334,7 +345,12 @@ public sealed class Phase10ProxyServiceTests
         fixture.Db.ProxyConfigurationVersionItems.Add(version);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            fixture.ProxyConfigurations.RollbackAsync(fixture.UserId, fixture.TeamId, fixture.Server.Id, version.Id));
+            fixture.ProxyConfigurations.RollbackAsync(
+                fixture.UserId,
+                fixture.TeamId,
+                fixture.Server.Id,
+                version.Id,
+                TestContext.Current.CancellationToken));
     }
 
     private sealed class ServiceFixture
