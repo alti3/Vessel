@@ -1,3 +1,4 @@
+using System.Text;
 using Vessel.Application.Processes;
 using Vessel.Infrastructure.Processes;
 using Vessel.Infrastructure.Security;
@@ -61,6 +62,24 @@ public sealed class DotNetProcessRunnerTests
 
         Assert.True(result.Succeeded);
         Assert.True(result.StandardOutput.Length > 0);
+    }
+
+    [Fact]
+    public async Task RunBinaryAsync_DoesNotRedactStandardOutputBytes()
+    {
+        ProcessBinaryResult result = await _runner.RunBinaryAsync(Shell(
+            OperatingSystem.IsWindows()
+                ? "echo token=super-secret & echo token=super-secret 1>&2"
+                : "echo token=super-secret; echo token=super-secret 1>&2",
+            new ProcessRedactionProfile(["super-secret"], []),
+            ProcessOutputMode.Binary), TestContext.Current.CancellationToken);
+
+        string stdout = Encoding.UTF8.GetString(result.StandardOutput.Span);
+        string stderr = Encoding.UTF8.GetString(result.StandardError.Span);
+
+        Assert.Contains("token=super-secret", stdout, StringComparison.Ordinal);
+        Assert.DoesNotContain("super-secret", stderr, StringComparison.Ordinal);
+        Assert.Contains("<REDACTED>", stderr, StringComparison.Ordinal);
     }
 
     [Fact]

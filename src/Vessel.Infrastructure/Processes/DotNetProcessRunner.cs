@@ -99,7 +99,7 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
                 process.Id,
                 startedAt,
                 exitedAt,
-                redactor.RedactUtf8(stdout, CreateRedactionContext(command)),
+                stdout,
                 redactor.RedactUtf8(stderr, CreateRedactionContext(command)));
         }
         catch (OperationCanceledException)
