@@ -13,6 +13,7 @@ public sealed class S3ObjectStorage : IObjectStorage
 {
     private readonly IAmazonS3 _client;
 
+    [Obsolete]
     public S3ObjectStorage(IOptionsMonitor<ObjectStorageOptions> options)
     {
         ObjectStorageOptions storageOptions = options.CurrentValue;
