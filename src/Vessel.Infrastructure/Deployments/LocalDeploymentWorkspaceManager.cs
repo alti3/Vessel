@@ -2,6 +2,7 @@ using System.Text;
 using Vessel.Application.Deployments;
 using Vessel.Application.Files;
 using Vessel.Domain;
+using Vessel.Infrastructure.Files;
 
 namespace Vessel.Infrastructure.Deployments;
 
@@ -35,14 +36,10 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await File.WriteAllTextAsync(path, contents, new UTF8Encoding(false), cancellationToken);
 
-        if (restrictToOwner && !OperatingSystem.IsWindows())
-            try
-            {
-                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
-            catch (PlatformNotSupportedException)
-            {
-            }
+        if (restrictToOwner)
+        {
+            OwnerOnlyFilePermissions.Apply(path);
+        }
     }
 
     public Task<string> ReadTextAsync(
