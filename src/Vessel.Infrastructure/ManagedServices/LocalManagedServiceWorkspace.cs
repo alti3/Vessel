@@ -1,6 +1,7 @@
 using Vessel.Application.Files;
 using Vessel.Application.ManagedServices;
 using Vessel.Domain;
+using Vessel.Infrastructure.Files;
 
 namespace Vessel.Infrastructure.ManagedServices;
 
@@ -33,15 +34,10 @@ public sealed class LocalManagedServiceWorkspace(IPathSafetyService paths) : IMa
         var destination = paths.EnsureOwnedRelativePath(root, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         await File.WriteAllTextAsync(destination, contents, cancellationToken);
-        if (restrictToOwner) RestrictToOwner(destination);
-    }
-
-    private static void RestrictToOwner(string path)
-    {
-        if (!OperatingSystem.IsWindows())
-            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        else
-            File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);
+        if (restrictToOwner)
+        {
+            OwnerOnlyFilePermissions.Apply(destination);
+        }
     }
 
     private Task<ManagedServiceWorkspace> PrepareAsync(string kind, Guid id, CancellationToken cancellationToken)
