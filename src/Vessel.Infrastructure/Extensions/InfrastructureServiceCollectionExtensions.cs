@@ -12,6 +12,7 @@ using Vessel.Application.Docker;
 using Vessel.Application.Files;
 using Vessel.Application.Git;
 using Vessel.Application.Jobs;
+using Vessel.Application.ManagedServices;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
@@ -28,6 +29,7 @@ using Vessel.Infrastructure.Files;
 using Vessel.Infrastructure.Git;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
+using Vessel.Infrastructure.ManagedServices;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
 using Vessel.Infrastructure.Proxy;
@@ -118,12 +120,14 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISecretVault, AesSecretVault>();
         services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
         services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
+        services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();
         services.TryAddSingleton<ISshClient, SshProcessClient>();
         services.TryAddSingleton<IProxyProvider, TraefikProxyProvider>();
+        services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
 
         RedisOptions redisOptions = configuration
@@ -142,14 +146,14 @@ public static class InfrastructureServiceCollectionExtensions
         if (objectStorageOptions.Enabled)
         {
             if (string.Equals(objectStorageOptions.Provider, "Local", StringComparison.OrdinalIgnoreCase))
-                services.TryAddSingleton<IObjectStorage>(provider =>
+                services.AddSingleton<IObjectStorage>(provider =>
                 {
                     var root = objectStorageOptions.LocalRootDirectory
                                ?? Path.Combine(AppContext.BaseDirectory, "storage", "objects");
                     return new LocalObjectStorage(root, provider.GetRequiredService<IPathSafetyService>());
                 });
             else
-                services.TryAddSingleton<IObjectStorage, S3ObjectStorage>();
+                services.AddSingleton<IObjectStorage, S3ObjectStorage>();
         }
 
         HangfireStorageOptions hangfireOptions = configuration

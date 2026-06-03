@@ -37,7 +37,19 @@ public static class WebApplicationExtensions
     public static WebApplication ScheduleVesselRecurringJobs(this WebApplication app)
     {
         IRecurringJobScheduler scheduler = app.Services.GetRequiredService<IRecurringJobScheduler>();
-        CertificateRecurringJobs.Register(scheduler);
+        try
+        {
+            CertificateRecurringJobs.Register(scheduler);
+        }
+        catch (BackgroundJobsUnavailableException exception)
+        {
+            Log.Warning(
+                exception,
+                "Recurring job registration skipped because Hangfire storage is disabled. RecurringJobId: {RecurringJobId}. MethodCall: {MethodCall}. CronExpression: {CronExpression}.",
+                exception.RecurringJobId,
+                exception.MethodCall,
+                exception.CronExpression);
+        }
 
         return app;
     }

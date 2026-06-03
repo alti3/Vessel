@@ -119,7 +119,7 @@ public sealed class TraefikProxyProviderTests
             new FakeProcessRunner(false, 1, "No such container: vessel-proxy"),
             new PathSafetyService());
 
-        ProxyApplyResult result = await provider.ReloadAsync(ServerId.New());
+        ProxyApplyResult result = await provider.ReloadAsync(ServerId.New(), TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.Contains("not running", result.Message, StringComparison.OrdinalIgnoreCase);
@@ -136,18 +136,18 @@ public sealed class TraefikProxyProviderTests
         var configPath = Path.Combine(AppContext.BaseDirectory, "proxy", "traefik", "dynamic",
             $"server-{serverId.Value:N}.yml");
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-        await File.WriteAllTextAsync(configPath, previous.Contents);
-        var originalContent = await File.ReadAllTextAsync(configPath);
+        await File.WriteAllTextAsync(configPath, previous.Contents, TestContext.Current.CancellationToken);
+        var originalContent = await File.ReadAllTextAsync(configPath, TestContext.Current.CancellationToken);
         ProxyConfigurationDocument current = provider.Generate(serverId,
         [
             new ProxyRoute(AppId.New(), serverId, "vessel-app", "app.example.com", 8080, true, true, false)
         ]);
 
-        ProxyApplyResult result = await provider.ApplyAsync(current, previous);
+        ProxyApplyResult result = await provider.ApplyAsync(current, previous, TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.True(processRunner.RunCount >= 2);
-        Assert.Equal(originalContent, await File.ReadAllTextAsync(configPath));
+        Assert.Equal(originalContent, await File.ReadAllTextAsync(configPath, TestContext.Current.CancellationToken));
     }
 
     private static TraefikProxyProvider CreateProvider()
@@ -177,6 +177,14 @@ public sealed class TraefikProxyProviderTests
         }
 
         public Task<ProcessBinaryResult> RunBinaryAsync(ProcessCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ProcessResult> RunTextWithInputAsync(
+            ProcessCommand command,
+            Stream standardInput,
             CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

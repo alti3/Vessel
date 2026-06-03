@@ -93,6 +93,45 @@ public readonly record struct DatabaseResourceId(Guid Value) : IStronglyTypedId
     }
 }
 
+public readonly record struct ServiceResourceId(Guid Value) : IStronglyTypedId
+{
+    public static ServiceResourceId New()
+    {
+        return new ServiceResourceId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct BackupScheduleId(Guid Value) : IStronglyTypedId
+{
+    public static BackupScheduleId New()
+    {
+        return new BackupScheduleId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct BackupExecutionId(Guid Value) : IStronglyTypedId
+{
+    public static BackupExecutionId New()
+    {
+        return new BackupExecutionId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct DeploymentId(Guid Value) : IStronglyTypedId
 {
     public static DeploymentId New()

@@ -40,6 +40,16 @@ public static class AuditActions
     public const string ProxyConfigurationRolledBack = "proxy_configuration.rolled_back";
     public const string CertificateIssuanceQueued = "certificate.issuance_queued";
     public const string DatabaseCreated = "database.created";
+    public const string DatabaseLifecycleActionQueued = "database.lifecycle_action_queued";
+    public const string DatabaseLifecycleActionCompleted = "database.lifecycle_action_completed";
+    public const string ServiceCreated = "service.created";
+    public const string ServiceProvisioned = "service.provisioned";
+    public const string BackupScheduleCreated = "backup.schedule_created";
+    public const string BackupQueued = "backup.queued";
+    public const string BackupCompleted = "backup.completed";
+    public const string BackupPruned = "backup.pruned";
+    public const string RestoreValidated = "backup.restore_validated";
+    public const string RestoreCompleted = "backup.restore_completed";
     public const string EnvironmentVariableCreated = "environment_variable.created";
     public const string SecretStored = "secret.stored";
     public const string SecretRevealed = "secret.revealed";

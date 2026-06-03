@@ -99,7 +99,7 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
                 process.Id,
                 startedAt,
                 exitedAt,
-                redactor.RedactUtf8(stdout, CreateRedactionContext(command)),
+                stdout,
                 redactor.RedactUtf8(stderr, CreateRedactionContext(command)));
         }
         catch (OperationCanceledException)
@@ -114,6 +114,59 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
                 exitedAt,
                 ReadOnlyMemory<byte>.Empty,
                 ReadOnlyMemory<byte>.Empty);
+        }
+    }
+
+    public async Task<ProcessResult> RunTextWithInputAsync(
+        ProcessCommand command,
+        Stream standardInput,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateCommand(command, ProcessOutputMode.Text);
+        if (!standardInput.CanRead) throw new InvalidOperationException("Process standard input stream is not readable.");
+
+        DateTimeOffset startedAt = timeProvider.GetUtcNow();
+        using CancellationTokenSource timeout = CreateTimeoutToken(command, cancellationToken);
+        ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
+        startInfo.RedirectStandardInput = true;
+        using Process process = Process.Start(startInfo)
+                                ?? throw new InvalidOperationException(
+                                    $"Failed to start process '{command.FileName}'.");
+
+        try
+        {
+            Task<string> stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            Task<string> stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+            await standardInput.CopyToAsync(process.StandardInput.BaseStream, timeout.Token);
+            await process.StandardInput.DisposeAsync();
+            await process.WaitForExitAsync(timeout.Token);
+
+            string standardOutput = await stdout;
+            string standardError = await stderr;
+            EnforceOutputLimit(standardOutput.Length + standardError.Length, command.MaxOutputBytes);
+
+            DateTimeOffset exitedAt = timeProvider.GetUtcNow();
+            return new ProcessResult(
+                command,
+                new ProcessExitInfo(process.ExitCode, false, false, null),
+                process.Id,
+                startedAt,
+                exitedAt,
+                Redact(standardOutput, command),
+                Redact(standardError, command));
+        }
+        catch (OperationCanceledException)
+        {
+            await TerminateAsync(process, command.TerminationPolicy ?? ProcessTerminationPolicy.Default);
+            DateTimeOffset exitedAt = timeProvider.GetUtcNow();
+            return new ProcessResult(
+                command,
+                new ProcessExitInfo(-1, true, !cancellationToken.IsCancellationRequested, null),
+                process.Id,
+                startedAt,
+                exitedAt,
+                string.Empty,
+                "Process timed out.");
         }
     }
 
@@ -176,7 +229,8 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         };
 
         if (OperatingSystem.IsWindows())
-            startInfo.KillOnParentExit = (command.TerminationPolicy ?? ProcessTerminationPolicy.Default).KillOnParentExit;
+            startInfo.KillOnParentExit =
+                (command.TerminationPolicy ?? ProcessTerminationPolicy.Default).KillOnParentExit;
 
         foreach (var argument in command.Arguments) startInfo.ArgumentList.Add(argument);
 

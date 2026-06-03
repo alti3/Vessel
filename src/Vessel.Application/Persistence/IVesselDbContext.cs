@@ -1,6 +1,7 @@
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
@@ -11,6 +12,7 @@ using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
@@ -42,6 +44,12 @@ public interface IVesselDbContext : IUnitOfWork
     IQueryable<ApplicationDomain> ApplicationDomains { get; }
 
     IQueryable<DatabaseResource> DatabaseResources { get; }
+
+    IQueryable<ServiceResource> ServiceResources { get; }
+
+    IQueryable<BackupSchedule> BackupSchedules { get; }
+
+    IQueryable<BackupExecution> BackupExecutions { get; }
 
     IQueryable<Deployment> Deployments { get; }
 
@@ -90,6 +98,12 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<AppEntity, AppId> ApplicationRepository { get; }
 
     IRepository<DatabaseResource, DatabaseResourceId> DatabaseResourceRepository { get; }
+
+    IRepository<ServiceResource, ServiceResourceId> ServiceResourceRepository { get; }
+
+    IRepository<BackupSchedule, BackupScheduleId> BackupScheduleRepository { get; }
+
+    IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; }
 
     IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 

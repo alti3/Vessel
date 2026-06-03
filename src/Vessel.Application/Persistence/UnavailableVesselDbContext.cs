@@ -1,6 +1,7 @@
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Common;
 using Vessel.Domain.Databases;
@@ -12,6 +13,7 @@ using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
@@ -34,6 +36,9 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IQueryable<AppEntity> Applications => Enumerable.Empty<AppEntity>().AsQueryable();
     public IQueryable<ApplicationDomain> ApplicationDomains => Enumerable.Empty<ApplicationDomain>().AsQueryable();
     public IQueryable<DatabaseResource> DatabaseResources => Enumerable.Empty<DatabaseResource>().AsQueryable();
+    public IQueryable<ServiceResource> ServiceResources => Enumerable.Empty<ServiceResource>().AsQueryable();
+    public IQueryable<BackupSchedule> BackupSchedules => Enumerable.Empty<BackupSchedule>().AsQueryable();
+    public IQueryable<BackupExecution> BackupExecutions => Enumerable.Empty<BackupExecution>().AsQueryable();
     public IQueryable<Deployment> Deployments => Enumerable.Empty<Deployment>().AsQueryable();
     public IQueryable<SecretReference> SecretReferences => Enumerable.Empty<SecretReference>().AsQueryable();
     public IQueryable<SecretValue> SecretValues => Enumerable.Empty<SecretValue>().AsQueryable();
@@ -84,6 +89,15 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
 
     public IRepository<DatabaseResource, DatabaseResourceId> DatabaseResourceRepository { get; } =
         new UnavailableRepository<DatabaseResource, DatabaseResourceId>();
+
+    public IRepository<ServiceResource, ServiceResourceId> ServiceResourceRepository { get; } =
+        new UnavailableRepository<ServiceResource, ServiceResourceId>();
+
+    public IRepository<BackupSchedule, BackupScheduleId> BackupScheduleRepository { get; } =
+        new UnavailableRepository<BackupSchedule, BackupScheduleId>();
+
+    public IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; } =
+        new UnavailableRepository<BackupExecution, BackupExecutionId>();
 
     public IRepository<Deployment, DeploymentId> DeploymentRepository { get; } =
         new UnavailableRepository<Deployment, DeploymentId>();
