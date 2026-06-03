@@ -23,5 +23,7 @@ public partial class _20260531123000_RemoveDeprecatedSwarmCapability : Migration
     /// <inheritdoc />
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        throw new NotSupportedException(
+            "This migration is not reversible: clearing the deprecated swarm capability bit is lossy.");
     }
 }

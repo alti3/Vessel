@@ -4,6 +4,7 @@
 @inject ResourceManagementService Resources
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject NavigationManager Navigation
+@inject ILogger<ServiceTemplates> Logger
 
 <PageTitle>Service templates | Vessel</PageTitle>
 <PageHeader Kicker="Managed services" Title="Service templates"
@@ -31,7 +32,7 @@
                 <label>Name
                     <InputText @bind-Value="Model.Name" name="name"/>
                 </label>
-                <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects)
+                <label>Project<select value="@Model.ProjectId" name="project" @onchange="OnProjectChangedAsync">@foreach (var project in Projects)
                         {
                             <option value="@project.Id">@project.Name</option>
                         }</select></label>
@@ -53,6 +54,10 @@
                                    name="@input.Key"/>
                     </label>
                 }
+                @if (CreateError is not null)
+                {
+                    <div class="validation-message">@CreateError</div>
+                }
                 <button class="button button-primary" type="submit">Create service</button>
             </div>
         </EditForm>
@@ -66,6 +71,7 @@
     private IReadOnlyList<ProjectSummary> Projects { get; set; } = [];
     private IReadOnlyList<EnvironmentSummary> Environments { get; set; } = [];
     private IReadOnlyList<ServerSummary> Servers { get; set; } = [];
+    private string? CreateError { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -76,8 +82,7 @@
         if (Projects.Count > 0)
         {
             Model.ProjectId = Projects[0].Id;
-            Environments = Resources.ListEnvironments(user.GetUserId(), user.GetTeamId(), new ProjectId(Model.ProjectId));
-            Model.EnvironmentId = Environments.FirstOrDefault()?.Id ?? Guid.Empty;
+            LoadEnvironments(user.GetUserId(), user.GetTeamId());
         }
 
         Model.ServerId = Servers.FirstOrDefault()?.Id ?? Guid.Empty;
@@ -86,6 +91,7 @@
     private void Select(ServiceTemplateSummary template)
     {
         Selected = template;
+        CreateError = null;
         Model.Name = template.Key;
         Model.Inputs.Clear();
         foreach (var input in template.Inputs.Where(input => input.DefaultValue is not null))
@@ -106,11 +112,51 @@
     private async Task CreateAsync()
     {
         if (Selected is null) return;
+        CreateError = null;
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-        var service = await ManagedServices.CreateServiceFromTemplateAsync(user.GetUserId(), user.GetTeamId(),
-            new CreateServiceFromTemplateRequest(Model.ProjectId, Model.EnvironmentId, Model.ServerId, Model.Name,
-                Selected.Key, Model.Inputs));
-        Navigation.NavigateTo($"/service-templates?created={service.Id}");
+        if (!ValidateSelection())
+        {
+            CreateError = "Select a valid project, environment, and server before creating the service.";
+            return;
+        }
+
+        try
+        {
+            var service = await ManagedServices.CreateServiceFromTemplateAsync(user.GetUserId(), user.GetTeamId(),
+                new CreateServiceFromTemplateRequest(Model.ProjectId, Model.EnvironmentId, Model.ServerId, Model.Name,
+                    Selected.Key, Model.Inputs));
+            Navigation.NavigateTo($"/service-templates?created={service.Id}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to create service template {TemplateKey}.", Selected.Key);
+            CreateError = "Failed to create service. Verify the inputs and try again.";
+        }
+    }
+
+    private async Task OnProjectChangedAsync(ChangeEventArgs args)
+    {
+        CreateError = null;
+        Model.ProjectId = Guid.TryParse(args.Value?.ToString(), out var projectId) ? projectId : Guid.Empty;
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        LoadEnvironments(user.GetUserId(), user.GetTeamId());
+    }
+
+    private void LoadEnvironments(UserId userId, TeamId teamId)
+    {
+        Environments = Model.ProjectId == Guid.Empty || Projects.All(project => project.Id != Model.ProjectId)
+            ? []
+            : Resources.ListEnvironments(userId, teamId, new ProjectId(Model.ProjectId));
+        Model.EnvironmentId = Environments.Any(environment => environment.Id == Model.EnvironmentId)
+            ? Model.EnvironmentId
+            : Environments.FirstOrDefault()?.Id ?? Guid.Empty;
+    }
+
+    private bool ValidateSelection()
+    {
+        return Projects.Any(project => project.Id == Model.ProjectId)
+               && Environments.Any(environment => environment.Id == Model.EnvironmentId)
+               && Servers.Any(server => server.Id == Model.ServerId);
     }
 
     private sealed class ServiceForm

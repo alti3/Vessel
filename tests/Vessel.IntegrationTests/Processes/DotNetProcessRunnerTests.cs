@@ -64,6 +64,20 @@ public sealed class DotNetProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunTextWithInputAsync_PipesStandardInput()
+    {
+        await using var input = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("restore-payload"));
+
+        ProcessResult result = await _runner.RunTextWithInputAsync(
+            Shell(OperatingSystem.IsWindows() ? "more" : "cat"),
+            input,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("restore-payload", result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunTextAsync_ReportsTimeout()
     {
         ProcessResult result = await _runner.RunTextAsync(Shell(

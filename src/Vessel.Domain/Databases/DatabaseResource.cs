@@ -80,12 +80,18 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
 
     public void MarkProvisioning(DateTimeOffset now)
     {
+        EnsureLifecycleState(
+            [DatabaseLifecycleState.NotProvisioned, DatabaseLifecycleState.Stopped, DatabaseLifecycleState.Failed],
+            DatabaseLifecycleState.Provisioning);
         LifecycleState = DatabaseLifecycleState.Provisioning;
         Touch(now);
     }
 
     public void MarkRunning(string containerName, string composeSnapshotReference, DateTimeOffset now)
     {
+        EnsureLifecycleState(
+            [DatabaseLifecycleState.Provisioning, DatabaseLifecycleState.Restarting],
+            DatabaseLifecycleState.Running);
         ContainerName = DomainValidation.Required(containerName, nameof(containerName), 160);
         ComposeSnapshotReference = DomainValidation.Required(composeSnapshotReference, nameof(composeSnapshotReference),
             512);
@@ -96,6 +102,9 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
 
     public void MarkStopped(DateTimeOffset now)
     {
+        EnsureLifecycleState(
+            [DatabaseLifecycleState.Running, DatabaseLifecycleState.Restarting],
+            DatabaseLifecycleState.Stopped);
         LifecycleState = DatabaseLifecycleState.Stopped;
         HealthState = DatabaseHealthState.Unknown;
         Touch(now);
@@ -103,12 +112,17 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
 
     public void MarkRestarting(DateTimeOffset now)
     {
+        EnsureLifecycleState([DatabaseLifecycleState.Running], DatabaseLifecycleState.Restarting);
         LifecycleState = DatabaseLifecycleState.Restarting;
         Touch(now);
     }
 
     public void MarkDeleted(DateTimeOffset now)
     {
+        EnsureLifecycleState(
+            [DatabaseLifecycleState.NotProvisioned, DatabaseLifecycleState.Provisioning, DatabaseLifecycleState.Running,
+                DatabaseLifecycleState.Stopped, DatabaseLifecycleState.Restarting, DatabaseLifecycleState.Failed],
+            DatabaseLifecycleState.Deleted);
         ContainerName = null;
         ComposeSnapshotReference = null;
         LifecycleState = DatabaseLifecycleState.Deleted;
@@ -118,6 +132,8 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
 
     public void MarkFailed(DateTimeOffset now)
     {
+        if (LifecycleState is DatabaseLifecycleState.Deleted)
+            throw new DomainException("Deleted databases cannot be marked failed.");
         LifecycleState = DatabaseLifecycleState.Failed;
         HealthState = DatabaseHealthState.Unhealthy;
         Touch(now);
@@ -143,5 +159,13 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
     {
         _backupPolicies.Add(new BackupPolicy(Id, cronExpression, retentionCount));
         Touch(now);
+    }
+
+    private void EnsureLifecycleState(
+        IReadOnlyCollection<DatabaseLifecycleState> allowedSourceStates,
+        DatabaseLifecycleState targetState)
+    {
+        if (!allowedSourceStates.Contains(LifecycleState))
+            throw new DomainException($"Cannot transition database from {LifecycleState} to {targetState}.");
     }
 }

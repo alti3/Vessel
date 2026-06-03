@@ -26,6 +26,22 @@ public sealed class Phase11DomainTests
     }
 
     [Fact]
+    public void DatabaseLifecycle_RejectsInvalidTransitions()
+    {
+        DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
+        DatabaseResource database = CreateDatabase(now);
+
+        Assert.Throws<DomainException>(() => database.MarkRunning("vessel-db", "docker-compose.yml", now));
+
+        database.MarkProvisioning(now);
+        database.MarkRunning("vessel-db", "docker-compose.yml", now.AddMinutes(1));
+        database.MarkDeleted(now.AddMinutes(2));
+
+        Assert.Throws<DomainException>(() => database.MarkProvisioning(now.AddMinutes(3)));
+        Assert.Throws<DomainException>(() => database.MarkFailed(now.AddMinutes(3)));
+    }
+
+    [Fact]
     public void BackupSchedule_ValidatesCronAndRetention()
     {
         DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
@@ -133,6 +149,17 @@ public sealed class Phase11DomainTests
         Assert.Null(execution.FailureReason);
     }
 
+    [Fact]
+    public void BackupExecution_MarkPrunedRejectsIncompleteExecutions()
+    {
+        DateTimeOffset now = new(2026, 5, 25, 12, 0, 0, TimeSpan.Zero);
+        var queued = CreateBackupExecutionWithStatus(BackupExecutionStatus.Queued, now);
+        var running = CreateBackupExecutionWithStatus(BackupExecutionStatus.Running, now);
+
+        Assert.Throws<DomainException>(() => queued.MarkPruned(now.AddMinutes(1)));
+        Assert.Throws<DomainException>(() => running.MarkPruned(now.AddMinutes(1)));
+    }
+
     private static DatabaseResource CreateDatabase(DateTimeOffset now)
     {
         return DatabaseResource.Create(
@@ -169,7 +196,8 @@ public sealed class Phase11DomainTests
                 execution.Fail("failed", now.AddSeconds(1));
                 return execution;
             case BackupExecutionStatus.Pruned:
-                execution.MarkPruned(now.AddSeconds(1));
+                MarkBackupSucceeded(execution, now);
+                execution.MarkPruned(now.AddSeconds(3));
                 return execution;
             case BackupExecutionStatus.RestoreValidated:
                 MarkBackupSucceeded(execution, now);

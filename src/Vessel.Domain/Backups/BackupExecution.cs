@@ -102,6 +102,9 @@ public sealed class BackupExecution : Entity<BackupExecutionId>
     public void MarkPruned(DateTimeOffset now)
     {
         if (Protected) throw new DomainException("Protected backup artifacts cannot be pruned.");
+        if (Status is not (BackupExecutionStatus.Succeeded or BackupExecutionStatus.Failed
+            or BackupExecutionStatus.RestoreFailed or BackupExecutionStatus.RestoreSucceeded))
+            throw new DomainException("Only completed backup executions can be pruned.");
         Status = BackupExecutionStatus.Pruned;
         Touch(now);
     }

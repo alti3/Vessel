@@ -1,5 +1,6 @@
 @page "/databases/{Id:guid}"
 @attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
 @inject ResourceManagementService Resources
 @inject ManagedDatabaseService ManagedDatabases
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -30,15 +31,20 @@
     </SettingsPanel>
     <SettingsPanel Title="Backup schedule" Description="Schedules are queued through Hangfire and enforce retention.">
         <EditForm Model="Schedule" OnValidSubmit="CreateScheduleAsync" FormName="create-backup-schedule">
+            <DataAnnotationsValidator/>
+            <ValidationSummary/>
             <div class="form-grid">
                 <label>Name
                     <InputText @bind-Value="Schedule.Name" name="name"/>
+                    <ValidationMessage For="() => Schedule.Name"/>
                 </label>
                 <label>Cron
                     <InputText @bind-Value="Schedule.CronExpression" name="cron"/>
+                    <ValidationMessage For="() => Schedule.CronExpression"/>
                 </label>
                 <label>Retention
                     <InputNumber @bind-Value="Schedule.RetentionCount" name="retention"/>
+                    <ValidationMessage For="() => Schedule.RetentionCount"/>
                 </label>
                 <button class="button button-primary" type="submit">Create schedule</button>
             </div>
@@ -105,8 +111,15 @@
 
     private sealed class ScheduleForm
     {
+        [Required]
+        [StringLength(80, MinimumLength = 1)]
         public string Name { get; set; } = "daily";
+
+        [Required]
+        [RegularExpression(@"^(\S+\s+){4}\S+$", ErrorMessage = "Cron expression must contain five fields.")]
         public string CronExpression { get; set; } = "0 2 * * *";
+
+        [Range(1, 365)]
         public int RetentionCount { get; set; } = 7;
     }
 

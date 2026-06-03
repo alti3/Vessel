@@ -182,6 +182,14 @@ public sealed class TraefikProxyProviderTests
             throw new NotSupportedException();
         }
 
+        public Task<ProcessResult> RunTextWithInputAsync(
+            ProcessCommand command,
+            Stream standardInput,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<ProcessExitInfo> RunAsync(ProcessCommand command, CancellationToken cancellationToken = default)
         {
             RunCount++;
