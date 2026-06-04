@@ -52,9 +52,12 @@ public sealed class InAppNotification : Entity<InAppNotificationId>
 
     public void Archive(DateTimeOffset now)
     {
+        if (Status == InAppNotificationStatus.Archived)
+            return;
+
         Status = InAppNotificationStatus.Archived;
         ReadAt ??= now;
-        ArchivedAt = now;
+        ArchivedAt ??= now;
         Touch(now);
     }
 }

@@ -16,13 +16,13 @@ public sealed class TelegramNotificationProvider(HttpClient httpClient) : INotif
         try
         {
             var secret = NotificationJson.ParseSecret<TelegramNotificationSecret>(target.SecretJson);
-            var url = $"https://api.telegram.org/bot{secret.BotToken}/sendMessage";
-            using var response = await httpClient.PostAsJsonAsync(url, new
+            using var response = await httpClient.PostAsJsonAsync($"/bot{secret.BotToken}/sendMessage", new
             {
                 chat_id = secret.ChatId,
                 message_thread_id = secret.ThreadId,
                 text = $"{notification.Title}\n{notification.Message}\n{notification.ResourceUrl}"
             }, cancellationToken);
+            await response.Content.ReadAsByteArrayAsync(cancellationToken);
 
             return response.IsSuccessStatusCode
                 ? NotificationDeliveryResult.Succeeded()

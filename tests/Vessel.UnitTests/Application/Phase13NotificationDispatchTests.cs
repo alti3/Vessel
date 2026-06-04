@@ -21,7 +21,7 @@ public sealed class Phase13NotificationDispatchTests
         var dispatcher = new RecordingDispatcher();
         var provider = new FailingProvider();
         var service = new NotificationDispatchService(dbContext, [provider], new TestSecretVault(),
-            dispatcher, new FakeTimeProvider(now));
+            new TestRedactor(), dispatcher, new FakeTimeProvider(now));
 
         var target = NotificationTarget.Create(teamId, new ResourceName("Ops webhook"), NotificationChannel.Webhook,
             SecretReferenceId.New(), now);
@@ -34,7 +34,7 @@ public sealed class Phase13NotificationDispatchTests
         dbContext.Targets.Add(target);
         dbContext.Events.Add(notificationEvent);
 
-        await service.DispatchAsync(notificationEvent.Id.Value);
+        await service.DispatchAsync(notificationEvent.Id.Value, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, provider.Calls);
         Assert.Single(dbContext.Attempts);
@@ -42,6 +42,44 @@ public sealed class Phase13NotificationDispatchTests
         Assert.Single(dispatcher.Scheduled);
         Assert.Equal(NotificationEventStatus.Failed, notificationEvent.Status);
         Assert.DoesNotContain("top-secret", dbContext.Attempts[0].FailureReason);
+        Assert.Contains("<REDACTED>", dbContext.Attempts[0].FailureReason);
+    }
+
+    [Fact]
+    public async Task Dispatch_skips_targets_with_prior_successful_delivery()
+    {
+        var teamId = TeamId.New();
+        var now = DateTimeOffset.Parse("2026-06-04T12:00:00Z");
+        var dbContext = new TestDbContext();
+        var dispatcher = new RecordingDispatcher();
+        var provider = new FailingProvider();
+        var service = new NotificationDispatchService(dbContext, [provider], new TestSecretVault(),
+            new TestRedactor(), dispatcher, new FakeTimeProvider(now));
+
+        var successfulTarget = NotificationTarget.Create(teamId, new ResourceName("Succeeded webhook"),
+            NotificationChannel.Webhook, SecretReferenceId.New(), now);
+        successfulTarget.Configure(new ResourceName("Succeeded webhook"), successfulTarget.CredentialsReferenceId, "{}",
+            new NotificationDeliveryPolicy(NotificationSeverity.Info, true, false, false), now);
+        var retryTarget = NotificationTarget.Create(teamId, new ResourceName("Retry webhook"),
+            NotificationChannel.Webhook, SecretReferenceId.New(), now);
+        retryTarget.Configure(new ResourceName("Retry webhook"), retryTarget.CredentialsReferenceId, "{}",
+            new NotificationDeliveryPolicy(NotificationSeverity.Info, true, false, false), now);
+        var notificationEvent = NotificationEvent.Create(teamId, null, "deployment.failed",
+            NotificationSeverity.Critical, NotificationTargetType.Deployment, "deployment-1", "Failed",
+            "Deployment failed.", "{}", "/deployments/1", now);
+        var successfulAttempt = NotificationDeliveryAttempt.Create(notificationEvent.Id, successfulTarget.Id,
+            NotificationChannel.Webhook, 1, now);
+        successfulAttempt.MarkSucceeded("provider-message", now);
+
+        dbContext.Targets.AddRange([successfulTarget, retryTarget]);
+        dbContext.Events.Add(notificationEvent);
+        dbContext.Attempts.Add(successfulAttempt);
+
+        await service.DispatchAsync(notificationEvent.Id.Value, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, provider.Calls);
+        Assert.Equal(2, dbContext.Attempts.Count);
+        Assert.Equal(retryTarget.Id, dbContext.Attempts[1].TargetId);
     }
 
     private sealed class FailingProvider : INotificationProvider
@@ -55,7 +93,24 @@ public sealed class Phase13NotificationDispatchTests
             CancellationToken cancellationToken = default)
         {
             Calls++;
-            return Task.FromResult(NotificationDeliveryResult.Failed("Webhook notification delivery failed with HTTP 500."));
+            return Task.FromResult(NotificationDeliveryResult.Failed($"Webhook failed: {target.SecretJson}"));
+        }
+    }
+
+    private sealed class TestRedactor : ISecretRedactor
+    {
+        public string Redact(string value, RedactionContext? context = null)
+        {
+            var redacted = value;
+            foreach (var secret in context?.SecretValues ?? [])
+                redacted = redacted.Replace(secret, "<REDACTED>", StringComparison.Ordinal);
+
+            return redacted.Replace("top-secret", "<REDACTED>", StringComparison.Ordinal);
+        }
+
+        public byte[] RedactUtf8(byte[] value, RedactionContext? context = null)
+        {
+            throw new NotSupportedException();
         }
     }
 

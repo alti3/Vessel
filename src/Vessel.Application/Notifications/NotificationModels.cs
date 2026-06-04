@@ -87,8 +87,11 @@ public sealed record NotificationDeliveryResult(bool Success, string? ProviderMe
         return new NotificationDeliveryResult(true, providerMessageId, null);
     }
 
-    public static NotificationDeliveryResult Failed(string failureReason)
+    public static NotificationDeliveryResult Failed(string? failureReason)
     {
-        return new NotificationDeliveryResult(false, null, failureReason);
+        var normalized = string.IsNullOrWhiteSpace(failureReason)
+            ? "Notification delivery failed."
+            : failureReason.Trim();
+        return new NotificationDeliveryResult(false, null, normalized);
     }
 }

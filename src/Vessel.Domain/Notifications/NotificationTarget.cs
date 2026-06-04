@@ -73,4 +73,10 @@ public sealed class NotificationTarget : Entity<NotificationTargetId>
         IsEnabled = false;
         Touch(now);
     }
+
+    public void Enable(DateTimeOffset now)
+    {
+        IsEnabled = true;
+        Touch(now);
+    }
 }

@@ -30,8 +30,8 @@ public sealed class NotificationEventService(
 
         await dbContext.NotificationEventRepository.AddAsync(notificationEvent, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await notificationCenter.PublishInAppAsync(notificationEvent, cancellationToken);
         backgroundJobs.Enqueue<DispatchNotificationJob>(job => job.RunAsync(notificationEvent.Id.Value, CancellationToken.None));
+        await notificationCenter.PublishInAppAsync(notificationEvent, cancellationToken);
 
         return notificationEvent.Id.Value;
     }

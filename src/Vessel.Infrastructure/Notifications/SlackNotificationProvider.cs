@@ -20,6 +20,7 @@ public sealed class SlackNotificationProvider(HttpClient httpClient) : INotifica
             {
                 text = $"*{notification.Title}*\n{notification.Message}\n{notification.ResourceUrl}"
             }, cancellationToken);
+            await response.Content.ReadAsByteArrayAsync(cancellationToken);
 
             return response.IsSuccessStatusCode
                 ? NotificationDeliveryResult.Succeeded()

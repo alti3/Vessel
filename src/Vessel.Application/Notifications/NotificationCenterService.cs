@@ -67,14 +67,16 @@ public sealed class NotificationCenterService(
             notificationEvent.TargetId, notificationEvent.Title, notificationEvent.Message,
             notificationEvent.ResourceUrl, inApp.Status, inApp.CreatedAt, inApp.ReadAt, inApp.ArchivedAt);
 
-        await realtimeNotifier.PublishAsync(
-            new RealtimeGroup(RealtimeGroupKind.Team, notificationEvent.TeamId.Value.ToString("D")),
-            new RealtimeMessage("notification.received", payload), cancellationToken);
-
         if (notificationEvent.UserId.HasValue)
         {
             await realtimeNotifier.PublishAsync(
                 new RealtimeGroup(RealtimeGroupKind.User, notificationEvent.UserId.Value.Value.ToString("D")),
+                new RealtimeMessage("notification.received", payload), cancellationToken);
+        }
+        else
+        {
+            await realtimeNotifier.PublishAsync(
+                new RealtimeGroup(RealtimeGroupKind.Team, notificationEvent.TeamId.Value.ToString("D")),
                 new RealtimeMessage("notification.received", payload), cancellationToken);
         }
     }

@@ -71,6 +71,8 @@ public sealed class NotificationTargetService(
             target.Configure(name, credentialsReferenceId, configurationJson, policy, now);
             if (!request.IsEnabled)
                 target.Disable(now);
+            else
+                target.Enable(now);
             await dbContext.NotificationTargetRepository.AddAsync(target, cancellationToken);
         }
         else
@@ -78,6 +80,8 @@ public sealed class NotificationTargetService(
             target.Configure(name, credentialsReferenceId, configurationJson, policy, now);
             if (!request.IsEnabled)
                 target.Disable(now);
+            else
+                target.Enable(now);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

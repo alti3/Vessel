@@ -135,10 +135,17 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IProxyProvider, TraefikProxyProvider>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddTransient<INotificationProvider, EmailNotificationProvider>();
-        services.AddHttpClient<INotificationProvider, HttpWebhookNotificationProvider>();
-        services.AddHttpClient<INotificationProvider, DiscordNotificationProvider>();
-        services.AddHttpClient<INotificationProvider, SlackNotificationProvider>();
-        services.AddHttpClient<INotificationProvider, TelegramNotificationProvider>();
+        services.AddHttpClient<INotificationProvider, HttpWebhookNotificationProvider>(client =>
+            client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<INotificationProvider, DiscordNotificationProvider>(client =>
+            client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<INotificationProvider, SlackNotificationProvider>(client =>
+            client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<INotificationProvider, TelegramNotificationProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.telegram.org");
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
 
         RedisOptions redisOptions = configuration

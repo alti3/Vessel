@@ -280,6 +280,9 @@ public sealed class Phase12OperationalTests
         public IQueryable<RegistryCredential> RegistryCredentials => Empty<RegistryCredential>();
         public IQueryable<ServerStatusSnapshot> ServerStatusSnapshots => ServerStatusSnapshotItems.AsQueryable();
         public IQueryable<NotificationTarget> NotificationTargets => Empty<NotificationTarget>();
+        public IQueryable<NotificationEvent> NotificationEvents => Empty<NotificationEvent>();
+        public IQueryable<InAppNotification> InAppNotifications => Empty<InAppNotification>();
+        public IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts => Empty<NotificationDeliveryAttempt>();
         public IQueryable<AuditLog> AuditLogs => Empty<AuditLog>();
         public IQueryable<SettingEntry> Settings => Empty<SettingEntry>();
         public IQueryable<PersonalAccessToken> PersonalAccessTokens => Empty<PersonalAccessToken>();

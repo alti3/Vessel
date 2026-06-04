@@ -77,6 +77,9 @@ public sealed class NotificationDeliveryAttempt : Entity<NotificationDeliveryAtt
 
     public void ScheduleRetry(string failureReason, DateTimeOffset retryAfter, DateTimeOffset now)
     {
+        if (retryAfter <= now)
+            throw new DomainException("Notification retry time must be in the future.");
+
         Status = NotificationDeliveryStatus.RetryScheduled;
         FailureReason = string.IsNullOrWhiteSpace(failureReason) ? "Notification delivery failed." : failureReason.Trim();
         RetryAfter = retryAfter;

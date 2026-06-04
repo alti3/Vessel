@@ -228,6 +228,9 @@ internal static class ValueObjectConversions
     private static NotificationDeliveryPolicy ParseNotificationDeliveryPolicy(string value)
     {
         var parts = value.Split('|');
+        if (parts.Length != 4)
+            throw new FormatException("Notification delivery policy format is invalid.");
+
         return new NotificationDeliveryPolicy((NotificationSeverity)int.Parse(parts[0], CultureInfo.InvariantCulture),
             bool.Parse(parts[1]), bool.Parse(parts[2]), bool.Parse(parts[3]));
     }

@@ -18,6 +18,7 @@ public sealed class Phase13NotificationDomainTests
 
         inApp.MarkRead(now.AddMinutes(1));
         inApp.Archive(now.AddMinutes(2));
+        inApp.Archive(now.AddMinutes(3));
 
         Assert.Equal(InAppNotificationStatus.Archived, inApp.Status);
         Assert.Equal(now.AddMinutes(1), inApp.ReadAt);
@@ -33,10 +34,20 @@ public sealed class Phase13NotificationDomainTests
 
         attempt.ScheduleRetry("Webhook notification delivery failed with HTTP 500.", now.AddMinutes(2), now);
         Assert.Equal(NotificationDeliveryStatus.RetryScheduled, attempt.Status);
-        Assert.DoesNotContain("super-secret", attempt.FailureReason);
 
         attempt.MarkFailed("Webhook notification delivery failed: HttpRequestException.", now.AddMinutes(3));
         Assert.Equal(NotificationDeliveryStatus.Failed, attempt.Status);
         Assert.Equal(now.AddMinutes(3), attempt.CompletedAt);
+    }
+
+    [Fact]
+    public void DeliveryAttempt_rejects_retry_times_that_are_not_in_the_future()
+    {
+        var now = DateTimeOffset.Parse("2026-06-04T12:00:00Z");
+        var attempt = NotificationDeliveryAttempt.Create(NotificationEventId.New(), NotificationTargetId.New(),
+            NotificationChannel.Webhook, 1, now);
+
+        Assert.Throws<Vessel.Domain.Common.DomainException>(() =>
+            attempt.ScheduleRetry("Webhook notification delivery failed.", now, now));
     }
 }

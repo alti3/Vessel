@@ -18,6 +18,17 @@ public partial class _20260604133232_Phase13Notifications : Migration
             nullable: false,
             defaultValue: "{}");
 
+        migrationBuilder.Sql("""
+            UPDATE vessel.notification_targets AS target
+            SET "Policy" = parsed.parts[1] || '|' || parsed.parts[2] || '|false|' || parsed.parts[3]
+            FROM (
+                SELECT "Id", string_to_array("Policy", '|') AS parts
+                FROM vessel.notification_targets
+            ) AS parsed
+            WHERE target."Id" = parsed."Id"
+              AND array_length(parsed.parts, 1) = 4;
+            """);
+
         migrationBuilder.CreateTable(
             name: "notification_events",
             schema: "vessel",

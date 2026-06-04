@@ -66,12 +66,11 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<NotificationTarget> NotificationTargets { get; }
 
-    IQueryable<NotificationEvent> NotificationEvents => Enumerable.Empty<NotificationEvent>().AsQueryable();
+    IQueryable<NotificationEvent> NotificationEvents { get; }
 
-    IQueryable<InAppNotification> InAppNotifications => Enumerable.Empty<InAppNotification>().AsQueryable();
+    IQueryable<InAppNotification> InAppNotifications { get; }
 
-    IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts =>
-        Enumerable.Empty<NotificationDeliveryAttempt>().AsQueryable();
+    IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts { get; }
 
     IQueryable<AuditLog> AuditLogs { get; }
 
