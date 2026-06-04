@@ -1,4 +1,5 @@
 using Vessel.Domain;
+using Vessel.Application.Monitoring;
 
 namespace Vessel.Application.Dashboard;
 
@@ -6,7 +7,7 @@ public sealed class EmptyDashboardOverviewQuery : IDashboardOverviewQuery
 {
     public DashboardOverview GetOverview(TeamId teamId)
     {
-        return new DashboardOverview(0, 0, 0, 0, 0, 0, 0, []);
+        return new DashboardOverview(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, []);
     }
 }
 
@@ -61,6 +62,14 @@ public sealed class EmptyNotificationCatalogQuery : INotificationCatalogQuery
 public sealed class EmptySettingsCatalogQuery : ISettingsCatalogQuery
 {
     public IReadOnlyList<SettingListItem> List(TeamId teamId)
+    {
+        return [];
+    }
+}
+
+public sealed class EmptyServerHealthQuery : IServerHealthQuery
+{
+    public IReadOnlyList<ServerHealthSnapshotModel> Latest(TeamId teamId)
     {
         return [];
     }

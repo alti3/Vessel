@@ -11,6 +11,7 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Teams;
+using Vessel.Domain.Terminals;
 using Vessel.Domain.Webhooks;
 using Vessel.Infrastructure.Persistence;
 using AppEntity = Vessel.Domain.Applications.Application;
@@ -65,6 +66,8 @@ public sealed class VesselDbContextModelTests
             migration => migration.EndsWith("Phase10ProxyDomainsTls", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("Phase11ManagedServicesBackups", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("Phase12TerminalLogsMonitoring", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -96,6 +99,20 @@ public sealed class VesselDbContextModelTests
         Assert.Contains("CancellationRequestedAt", script, StringComparison.Ordinal);
         Assert.Contains("WebhookEventId", script, StringComparison.Ordinal);
         Assert.Contains("PreviewId", script, StringComparison.Ordinal);
+        Assert.Contains("terminal_sessions", script, StringComparison.Ordinal);
+        Assert.Contains("IX_terminal_sessions_TeamId_Status_StartedAt", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Model_MapsPhase12TerminalSessions()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? terminalSession = context.Model.FindEntityType(typeof(TerminalSession));
+
+        Assert.Equal("terminal_sessions", terminalSession?.GetTableName());
+        Assert.Equal(240, terminalSession?.FindProperty(nameof(TerminalSession.Command))?.GetMaxLength());
+        Assert.Equal(512, terminalSession?.FindProperty(nameof(TerminalSession.FailureReason))?.GetMaxLength());
     }
 
     [Fact]

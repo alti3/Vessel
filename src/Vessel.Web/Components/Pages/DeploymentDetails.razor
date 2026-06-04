@@ -55,8 +55,20 @@ else
 
     <section class="section-stack">
         <PageHeader Kicker="Output" Title="Logs" Description="Redacted deployment logs persisted in order."/>
+        <div class="toolbar-row">
+            <input class="input" placeholder="Search logs" @bind="LogSearch" @bind:event="oninput"/>
+            <select class="input" @bind="LogStream">
+                <option value="">All streams</option>
+                <option value="system">System</option>
+                <option value="stdout">Stdout</option>
+                <option value="stderr">Stderr</option>
+            </select>
+            <button class="button button-secondary" type="button" @onclick="LoadLogs">Filter</button>
+            <button class="button button-secondary" type="button" @onclick="LoadMoreLogs" disabled="@(!LogPage?.HasMore ?? true)">More</button>
+            <a class="button button-secondary" href="@ExportLogsHref" target="_blank" rel="noopener">Export</a>
+        </div>
         <div class="log-panel">
-            @foreach (var line in Details.Logs)
+            @foreach (var line in Logs)
             {
                 <div class="log-line log-@line.Stream">
                     <span>@line.Sequence.ToString("0000")</span><code>@line.Message</code></div>
@@ -69,13 +81,31 @@ else
     [Parameter] public Guid Id { get; set; }
 
     private Vessel.Application.Deployments.DeploymentDetails? Details { get; set; }
+    private DeploymentLogPage? LogPage { get; set; }
+    private List<DeploymentLogEntry> Logs { get; } = [];
     private ClaimsPrincipal? User { get; set; }
     private string? Message { get; set; }
+    private string? LogSearch { get; set; }
+    private string? LogStream { get; set; }
+    private string ExportLogsHref
+    {
+        get
+        {
+            List<string> query = ["pageSize=1000"];
+            if (!string.IsNullOrWhiteSpace(LogSearch))
+                query.Add($"search={Uri.EscapeDataString(LogSearch)}");
+            if (!string.IsNullOrWhiteSpace(LogStream))
+                query.Add($"stream={Uri.EscapeDataString(LogStream)}");
+
+            return $"/api/v1/deployments/{Id:D}/logs/export?{string.Join('&', query)}";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         User = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         Load();
+        LoadLogs();
     }
 
     private async Task CancelAsync()
@@ -90,6 +120,29 @@ else
     {
         if (User is null) return;
         Details = DeploymentQuery.Get(User.GetUserId(), User.GetTeamId(), new DeploymentId(Id));
+    }
+
+    private void LoadLogs()
+    {
+        if (User is null) return;
+        LogPage = DeploymentQuery.GetLogs(
+            User.GetUserId(),
+            User.GetTeamId(),
+            new DeploymentId(Id),
+            new DeploymentLogQuery(Search: LogSearch, Stream: LogStream, PageSize: 200));
+        Logs.Clear();
+        Logs.AddRange(LogPage.Entries);
+    }
+
+    private void LoadMoreLogs()
+    {
+        if (User is null || LogPage?.NextSequence is null) return;
+        LogPage = DeploymentQuery.GetLogs(
+            User.GetUserId(),
+            User.GetTeamId(),
+            new DeploymentId(Id),
+            new DeploymentLogQuery(LogPage.NextSequence, LogSearch, LogStream, 200));
+        Logs.AddRange(LogPage.Entries);
     }
 
     private static string DeploymentTone(DeploymentStatus status)

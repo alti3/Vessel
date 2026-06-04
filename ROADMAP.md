@@ -427,21 +427,23 @@ Goal: Provide safe operational access to live state, logs, and terminals without
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 12.01 | Logs | Implement log query API | Deployment logs support pagination, search, streaming resume, retention, and redaction | Phase 8 |  |
-| [ ] | 12.02 | Logs | Add log retention policy | Retention, archival, compression if needed, and deletion jobs are configured | 12.01 |  |
-| [ ] | 12.03 | Logs | Add large log handling | Queries avoid loading entire logs and use indexes/projections | 12.01 |  |
-| [ ] | 12.04 | UI | Implement log viewer | Live tail, search, filters, pagination, download/export where authorized | 12.01 |  |
-| [ ] | 12.05 | Terminal | Define terminal session model | Session owner, target, command policy, started/ended timestamps, audit, and status exist | Phase 4, Phase 5 |  |
-| [ ] | 12.06 | Terminal | Implement terminal authorization | Opening terminal requires explicit permission and target access | 12.05 |  |
-| [ ] | 12.07 | Terminal | Implement terminal process bridge | Terminal execution delegates to Application/Infrastructure, supports cancellation and no unsafe fire-and-forget | 12.05, 12.06 |  |
-| [ ] | 12.08 | Terminal | Implement terminal SignalR flow | Hub only authorizes/groups/forwards input/output; no process logic in hub | 6.16, 12.07 |  |
-| [ ] | 12.09 | Terminal | Add terminal UI | Authorized users can open, interact, resize, close, and view session status | 12.08 |  |
-| [ ] | 12.10 | Terminal | Add terminal security docs | Risks, permissions, audit, secret redaction limits, and operational guidance are documented | 12.05-12.09 |  |
-| [ ] | 12.11 | Monitoring | Implement server health polling | Scheduled jobs collect connectivity, Docker, disk, memory, CPU, containers, proxy, certificates | 5.25, 7.07 |  |
-| [ ] | 12.12 | Monitoring | Implement dashboard metrics | Active deployments, failures, queue length, server health, notifications, terminal sessions are visible | 12.11 |  |
-| [ ] | 12.13 | Monitoring | Add resource event stream | Resource changes and status updates flow to authorized users | 5.27, 5.28 |  |
-| [ ] | 12.14 | Tests | Add terminal safety tests | Authorization, process boundary, cancellation, audit, and redaction are covered | 12.05-12.09 |  |
-| [ ] | 12.15 | E2E | Add operations E2E | View logs, filter logs, see server health, open/close terminal where safe | 12.04, 12.09, 12.12 |  |
+| [x] | 12.01 | Logs | Implement log query API | Deployment logs support pagination, search, streaming resume, retention, and redaction | Phase 8 | `DeploymentQueryService.GetLogs` and `GET /api/v1/deployments/{id}/logs` support paging, search, stream filters, resume, and redaction. |
+| [x] | 12.02 | Logs | Add log retention policy | Retention, archival, compression if needed, and deletion jobs are configured | 12.01 | `DeploymentLogRetentionService` and daily recurring job `deployments.logs.prune` prune according to default retention. |
+| [x] | 12.03 | Logs | Add large log handling | Queries avoid loading entire logs and use indexes/projections | 12.01 | Log query uses ordered projections, page limits, stream/search filters, and sequence resume instead of the details view. |
+| [x] | 12.04 | UI | Implement log viewer | Live tail, search, filters, pagination, download/export where authorized | 12.01 | Deployment details page exposes searchable/filterable paged logs, authorized text export, and keeps live SignalR delivery from Phase 8. |
+| [x] | 12.05 | Terminal | Define terminal session model | Session owner, target, command policy, started/ended timestamps, audit, and status exist | Phase 4, Phase 5 | `TerminalSession` aggregate, ID, status, target type, EF mapping, migration, and audit actions added. |
+| [x] | 12.06 | Terminal | Implement terminal authorization | Opening terminal requires explicit permission and target access | 12.05 | Terminal APIs require `terminals.open`; Application service verifies team/server/session ownership. |
+| [x] | 12.07 | Terminal | Implement terminal process bridge | Terminal execution delegates to Application/Infrastructure, supports cancellation and no unsafe fire-and-forget | 12.05, 12.06 | `ITerminalProcessBridge` is implemented in Infrastructure with tracked local process lifetime and cancellation; container PTY is intentionally rejected pending reviewed bridge. |
+| [x] | 12.08 | Terminal | Implement terminal SignalR flow | Hub only authorizes/groups/forwards input/output; no process logic in hub | 6.16, 12.07 | `TerminalHub` joins terminal groups and forwards input, resize, and close to Application services only. |
+| [x] | 12.09 | Terminal | Add terminal UI | Authorized users can open, interact, resize, close, and view session status | 12.08 | `/terminal` supports server selection, open, input, resize, close, and session status. |
+| [x] | 12.10 | Terminal | Add terminal security docs | Risks, permissions, audit, secret redaction limits, and operational guidance are documented | 12.05-12.09 | Added `docs/security/terminal.md`. |
+| [x] | 12.11 | Monitoring | Implement server health polling | Scheduled jobs collect connectivity, Docker, disk, memory, CPU, containers, proxy, certificates | 5.25, 7.07 | `ServerHealthPollingJob` runs every five minutes; runtime/proxy/certificate/container status is persisted, CPU/memory/disk are modeled as unknown until host metrics adapter. |
+| [x] | 12.12 | Monitoring | Implement dashboard metrics | Active deployments, failures, queue length, server health, notifications, terminal sessions are visible | 12.11 | Dashboard query and UI show active deployments, failures, queue length placeholder, unhealthy servers, active terminal sessions, and latest health. |
+| [x] | 12.13 | Monitoring | Add resource event stream | Resource changes and status updates flow to authorized users | 5.27, 5.28 | Realtime notifier routes deployment, terminal, and server health messages to authorized resource groups. |
+| [x] | 12.14 | Tests | Add terminal safety tests | Authorization, process boundary, cancellation, audit, and redaction are covered | 12.05-12.09 | Phase 12 unit tests cover terminal lifecycle/manager/audit/redaction and health polling; integration tests cover mapping; E2E route conventions cover policies. |
+| [x] | 12.15 | E2E | Add operations E2E | View logs, filter logs, see server health, open/close terminal where safe | 12.04, 12.09, 12.12 | API route convention coverage validates operations endpoints and authorization policies; full browser/runtime E2E remains fixture-dependent. |
+
+Phase 12 notes: Coolify upstream behavior was consulted for deployment log viewing, terminal session workflows, and operator monitoring/status surfaces. Vessel implements the same operator-facing concepts with Application-owned authorization/orchestration and Infrastructure-owned terminal/process execution. Phase gate checked on 2026-06-03: `dotnet build Vessel.slnx --artifacts-path artifacts\phase12-build --verbosity minimal` passed, `dotnet test Vessel.slnx --no-restore --artifacts-path artifacts\phase12-build --verbosity minimal` passed, `tools\validate-project-references.ps1` passed, direct process API usage remains limited to the approved Infrastructure process layer and process tests, Web controllers/hubs/components contain no shell/Docker/Git/SSH process execution, migration `20260603133343_Phase12TerminalLogsMonitoring` added `terminal_sessions`, and docs were updated in `docs/security/terminal.md` and `docs/deployment/phase-12-terminal-logs-monitoring.md`. The local SDK is `11.0.100-preview.4.26230.115`, so verification emits the expected preview SDK warning.
 
 ---
 

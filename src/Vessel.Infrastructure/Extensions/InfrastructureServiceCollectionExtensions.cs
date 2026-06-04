@@ -13,6 +13,7 @@ using Vessel.Application.Files;
 using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
@@ -20,6 +21,7 @@ using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Ssh;
 using Vessel.Application.Storage;
+using Vessel.Application.Terminals;
 using Vessel.Infrastructure.Auditing;
 using Vessel.Infrastructure.Configuration;
 using Vessel.Infrastructure.Dashboard;
@@ -111,6 +113,7 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddScoped<INotificationCatalogQuery>(provider =>
                 provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<ISettingsCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            services.AddScoped<IServerHealthQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
         }
 
         services.TryAddSingleton<IPasswordHasher, Argon2PasswordHasher>();
@@ -122,6 +125,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
         services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
+        services.TryAddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();

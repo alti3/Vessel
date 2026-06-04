@@ -17,6 +17,7 @@ using Vessel.Application.Deployments;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
@@ -24,6 +25,7 @@ using Vessel.Application.Redis;
 using Vessel.Application.Resources;
 using Vessel.Application.Security;
 using Vessel.Application.Storage;
+using Vessel.Application.Terminals;
 using Vessel.Application.Webhooks;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
@@ -87,7 +89,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ResourceManagementService>();
         services.AddScoped<StartDeploymentService>();
         services.AddScoped<DeploymentQueryService>();
+        services.AddScoped<DeploymentLogRetentionService>();
         services.AddScoped<IDeploymentRunner, DeploymentRunner>();
+        services.AddScoped<TerminalSessionManager>();
+        services.AddScoped<ServerHealthPollingService>();
+        services.AddScoped<ServerHealthPollingJob>();
         services.AddScoped<ManagedDatabaseService>();
         services.AddSingleton<ServiceTemplateCatalog>();
         services.AddScoped<DomainRoutingService>();
@@ -105,6 +111,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IDistributedLockManager, InMemoryDistributedLockManager>();
         services.TryAddSingleton<IBackgroundJobDispatcher, UnavailableBackgroundJobDispatcher>();
         services.TryAddSingleton<IRecurringJobScheduler, UnavailableRecurringJobScheduler>();
+        services.TryAddSingleton<ITerminalProcessBridge, UnavailableTerminalProcessBridge>();
         services.AddScoped<IRealtimeNotifier, SignalRRealtimeNotifier>();
         services.AddScoped<IDashboardOverviewQuery, EmptyDashboardOverviewQuery>();
         services.AddScoped<IProjectCatalogQuery, EmptyProjectCatalogQuery>();
@@ -114,6 +121,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDatabaseCatalogQuery, EmptyDatabaseCatalogQuery>();
         services.AddScoped<INotificationCatalogQuery, EmptyNotificationCatalogQuery>();
         services.AddScoped<ISettingsCatalogQuery, EmptySettingsCatalogQuery>();
+        services.AddScoped<IServerHealthQuery, EmptyServerHealthQuery>();
 
         return services;
     }

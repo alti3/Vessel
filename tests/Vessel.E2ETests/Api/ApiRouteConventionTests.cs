@@ -24,7 +24,9 @@ public sealed class ApiRouteConventionTests
             typeof(DatabasesController),
             typeof(NotificationsController),
             typeof(SettingsController),
-            typeof(ProxyConfigurationsController)
+            typeof(ProxyConfigurationsController),
+            typeof(TerminalsController),
+            typeof(ServerHealthController)
         ];
 
         foreach (Type controller in controllers)
@@ -56,6 +58,19 @@ public sealed class ApiRouteConventionTests
         AssertActionPolicy<ProxyConfigurationsController>(
             nameof(ProxyConfigurationsController.Rollback),
             VesselPermissions.ServersWrite);
+    }
+
+    [Fact]
+    public void Phase12ControllersProtectTerminalAndHealthEndpointsWithExpectedPolicies()
+    {
+        AssertActionPolicy<TerminalsController>(nameof(TerminalsController.Open), VesselPermissions.TerminalsOpen);
+        AssertActionPolicy<TerminalsController>(nameof(TerminalsController.Input), VesselPermissions.TerminalsOpen);
+        AssertActionPolicy<TerminalsController>(nameof(TerminalsController.Resize), VesselPermissions.TerminalsOpen);
+        AssertActionPolicy<TerminalsController>(nameof(TerminalsController.Close), VesselPermissions.TerminalsOpen);
+        AssertActionPolicy<ServerHealthController>(nameof(ServerHealthController.Latest), VesselPermissions.ServersRead);
+        AssertActionPolicy<ServerHealthController>(nameof(ServerHealthController.Poll), VesselPermissions.ServersWrite);
+        AssertActionPolicy<DeploymentsController>(nameof(DeploymentsController.Logs), VesselPermissions.DeploymentsReadLogs);
+        AssertActionPolicy<DeploymentsController>(nameof(DeploymentsController.ExportLogs), VesselPermissions.DeploymentsReadLogs);
     }
 
     [Fact]

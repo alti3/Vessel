@@ -1,8 +1,11 @@
 using Vessel.Application.Dashboard;
+using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
 using Vessel.Domain;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
+using Vessel.Domain.Servers;
+using Vessel.Domain.Terminals;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Infrastructure.Dashboard;
@@ -15,7 +18,8 @@ public sealed class EfDashboardQueries :
     IDeploymentCatalogQuery,
     IDatabaseCatalogQuery,
     INotificationCatalogQuery,
-    ISettingsCatalogQuery
+    ISettingsCatalogQuery,
+    IServerHealthQuery
 {
     private readonly IVesselDbContext _dbContext;
 
@@ -48,6 +52,13 @@ public sealed class EfDashboardQueries :
             DatabasesForTeam(teamId).Count(),
             DeploymentsForTeam(teamId).Count(deployment => deployment.Status == DeploymentStatus.InProgress),
             DeploymentsForTeam(teamId).Count(deployment => deployment.Status == DeploymentStatus.Failed),
+            _dbContext.Servers.Count(server => server.TeamId == teamId && server.Status == ServerStatus.Unreachable),
+            _dbContext.TerminalSessions.Count(session =>
+                session.TeamId == teamId
+                && (session.Status == TerminalSessionStatus.Opening
+                    || session.Status == TerminalSessionStatus.Connected
+                    || session.Status == TerminalSessionStatus.Closing)),
+            0,
             _dbContext.NotificationTargets.Count(target => target.TeamId == teamId),
             recentDeployments);
     }
@@ -124,6 +135,32 @@ public sealed class EfDashboardQueries :
                 setting.Scope.ToString(),
                 setting.Key,
                 setting.ResourceType))
+            .ToArray();
+    }
+
+    public IReadOnlyList<ServerHealthSnapshotModel> Latest(TeamId teamId)
+    {
+        return _dbContext.ServerStatusSnapshots
+            .Join(
+                _dbContext.Servers.Where(server => server.TeamId == teamId),
+                snapshot => snapshot.ServerId,
+                server => server.Id,
+                (snapshot, _) => snapshot)
+            .GroupBy(snapshot => snapshot.ServerId)
+            .Select(group => group
+                .OrderByDescending(snapshot => snapshot.CreatedAt)
+                .First())
+            .OrderByDescending(snapshot => snapshot.CreatedAt)
+            .Select(snapshot => new ServerHealthSnapshotModel(
+                snapshot.ServerId.Value,
+                snapshot.Status,
+                snapshot.CpuLoadPercent,
+                snapshot.MemoryUsedBytes,
+                snapshot.DiskUsedBytes,
+                snapshot.RunningContainers,
+                snapshot.ProxyHealthy,
+                snapshot.CertificatesHealthy,
+                snapshot.CreatedAt))
             .ToArray();
     }
 

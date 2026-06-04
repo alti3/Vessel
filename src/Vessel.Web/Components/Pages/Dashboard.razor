@@ -1,6 +1,7 @@
 @page "/"
 @attribute [Authorize]
 @inject IDashboardOverviewQuery DashboardQuery
+@inject IServerHealthQuery ServerHealthQuery
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Dashboard | Vessel</PageTitle>
@@ -67,6 +68,19 @@
                              Tone="@(Overview.FailedDeploymentCount > 0 ? "danger" : "success")"/>
             </div>
             <div class="signal-row">
+                <span>Unhealthy servers</span>
+                <StatusBadge Text="@Overview.UnhealthyServerCount.ToString()"
+                             Tone="@(Overview.UnhealthyServerCount > 0 ? "danger" : "success")"/>
+            </div>
+            <div class="signal-row">
+                <span>Terminal sessions</span>
+                <StatusBadge Text="@Overview.ActiveTerminalSessionCount.ToString()" Tone="warning"/>
+            </div>
+            <div class="signal-row">
+                <span>Queue length</span>
+                <StatusBadge Text="@Overview.QueueLength.ToString()" Tone="neutral"/>
+            </div>
+            <div class="signal-row">
                 <span>Notification targets</span>
                 <StatusBadge Text="@Overview.NotificationTargetCount.ToString()" Tone="neutral"/>
             </div>
@@ -92,6 +106,51 @@
             </a>
         </div>
     </div>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2>Server Health</h2>
+            <p>Latest collected runtime, proxy, and certificate status.</p>
+        </div>
+        <a class="button button-secondary" href="/servers">Servers</a>
+    </div>
+    @if (Health.Count == 0)
+    {
+        <EmptyState Title="No health snapshots"
+                    Description="Snapshots appear after scheduled or manual server health polling runs."/>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>Server</th>
+                    <th>Status</th>
+                    <th>Containers</th>
+                    <th>Proxy</th>
+                    <th>Certificates</th>
+                    <th>Collected</th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var item in Health)
+                {
+                    <tr>
+                        <td>@item.ServerId</td>
+                        <td><StatusBadge Text="@item.Status.ToString()" Tone="@(item.Status == ServerStatus.Reachable ? "success" : "danger")"/></td>
+                        <td>@item.RunningContainers</td>
+                        <td>@(item.ProxyHealthy ? "healthy" : "attention")</td>
+                        <td>@(item.CertificatesHealthy ? "healthy" : "attention")</td>
+                        <td>@item.CreatedAt.ToLocalTime().ToString("g")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
 </section>
 
 <section class="panel">
@@ -139,7 +198,8 @@
 </section>
 
 @code {
-    private DashboardOverview Overview { get; set; } = new(0, 0, 0, 0, 0, 0, 0, []);
+    private DashboardOverview Overview { get; set; } = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, []);
+    private IReadOnlyList<ServerHealthSnapshotModel> Health { get; set; } = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -147,6 +207,7 @@
         if (state.User.Identity?.IsAuthenticated == true)
         {
             Overview = DashboardQuery.GetOverview(state.User.GetTeamId());
+            Health = ServerHealthQuery.Latest(state.User.GetTeamId());
         }
     }
 

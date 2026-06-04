@@ -16,6 +16,7 @@ using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
+using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
 using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
@@ -69,6 +70,8 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
         Enumerable.Empty<ProxyConfigurationVersion>().AsQueryable();
 
     public IQueryable<Certificate> Certificates => Enumerable.Empty<Certificate>().AsQueryable();
+
+    public IQueryable<TerminalSession> TerminalSessions => Enumerable.Empty<TerminalSession>().AsQueryable();
 
     public IRepository<User, UserId> UserRepository { get; } = new UnavailableRepository<User, UserId>();
     public IRepository<Team, TeamId> TeamRepository { get; } = new UnavailableRepository<Team, TeamId>();
@@ -135,6 +138,9 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
 
     public IRepository<Certificate, CertificateId> CertificateRepository { get; } =
         new UnavailableRepository<Certificate, CertificateId>();
+
+    public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; } =
+        new UnavailableRepository<TerminalSession, TerminalSessionId>();
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

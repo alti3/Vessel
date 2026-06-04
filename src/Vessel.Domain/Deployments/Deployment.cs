@@ -147,6 +147,11 @@ public sealed class Deployment : Entity<DeploymentId>
         Touch(now);
     }
 
+    public void PruneLogLines(DateTimeOffset olderThan)
+    {
+        _logLines.RemoveAll(line => line.CreatedAt < olderThan);
+    }
+
     private void TransitionTo(DeploymentStatus nextStatus, DateTimeOffset now)
     {
         if (!CanTransition(Status, nextStatus))

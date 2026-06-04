@@ -145,6 +145,19 @@ public readonly record struct DeploymentId(Guid Value) : IStronglyTypedId
     }
 }
 
+public readonly record struct TerminalSessionId(Guid Value) : IStronglyTypedId
+{
+    public static TerminalSessionId New()
+    {
+        return new TerminalSessionId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct WebhookEventId(Guid Value) : IStronglyTypedId
 {
     public static WebhookEventId New()

@@ -1,9 +1,126 @@
 @page "/terminal"
 @attribute [Authorize]
+@using System.Security.Claims
+@using Vessel.Domain.Terminals
+@inject IServerCatalogQuery Servers
+@inject TerminalSessionManager TerminalSessions
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Terminal | Vessel</PageTitle>
 <PageHeader Kicker="Operations" Title="Terminal"
             Description="Authenticated host access for reviewed operational workflows."/>
 
-<EmptyState Title="Terminal unavailable"
-            Description="Interactive terminal support is intentionally gated until lifecycle, auditing, and authorization policies are implemented."/>
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="notice notice-info">@Message</div>
+}
+
+<section class="dashboard-grid">
+    <SettingsPanel Title="Open session" Description="Terminal access is audited and scoped to an authorized server.">
+        <div class="form-grid">
+            <label>Server
+                <select class="input" @bind="SelectedServerId">
+                    <option value="">Select server</option>
+                    @foreach (var server in ServerOptions)
+                    {
+                        <option value="@server.Id">@server.Name</option>
+                    }
+                </select>
+            </label>
+            <label>Columns <input class="input" type="number" min="20" max="300" @bind="Columns"/></label>
+            <label>Rows <input class="input" type="number" min="5" max="120" @bind="Rows"/></label>
+            <button class="button button-primary" type="button" @onclick="OpenAsync" disabled="@(!CanOpen)">Open</button>
+        </div>
+    </SettingsPanel>
+
+    <SettingsPanel Title="Session" Description="Resize, send input, or close the active session.">
+        @if (Session is null)
+        {
+            <EmptyState Title="No active session" Description="Open a terminal against a server to begin."/>
+        }
+        else
+        {
+            <div class="signal-list">
+                <div class="signal-row"><span>Status</span><StatusBadge Text="@Session.Status.ToString()" Tone="@SessionTone(Session.Status)"/></div>
+                <div class="signal-row"><span>Started</span><span>@Session.StartedAt.ToLocalTime().ToString("g")</span></div>
+                <div class="signal-row"><span>Size</span><span>@Session.Columns x @Session.Rows</span></div>
+            </div>
+            <div class="toolbar-row">
+                <button class="button button-secondary" type="button" @onclick="ResizeAsync">Resize</button>
+                <button class="button button-danger" type="button" @onclick="CloseAsync">Close</button>
+            </div>
+        }
+    </SettingsPanel>
+</section>
+
+<section class="section-stack">
+    <PageHeader Kicker="Terminal" Title="Input" Description="Input is forwarded through the audited terminal session manager."/>
+    <textarea class="input" rows="6" @bind="Input" placeholder="Type terminal input here"></textarea>
+    <button class="button button-secondary" type="button" @onclick="SendInputAsync" disabled="@(Session is null)">Send</button>
+</section>
+
+@code {
+    private ClaimsPrincipal? User { get; set; }
+    private IReadOnlyList<ServerListItem> ServerOptions { get; set; } = [];
+    private TerminalSessionDetails? Session { get; set; }
+    private Guid? SelectedServerId { get; set; }
+    private int Columns { get; set; } = 120;
+    private int Rows { get; set; } = 32;
+    private string? Input { get; set; }
+    private string? Message { get; set; }
+    private bool CanOpen => SelectedServerId.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        User = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        if (User?.Identity?.IsAuthenticated == true)
+            ServerOptions = Servers.List(User.GetTeamId());
+    }
+
+    private async Task OpenAsync()
+    {
+        if (User is null || SelectedServerId is null) return;
+        Session = await TerminalSessions.OpenAsync(
+            User.GetUserId(),
+            User.GetTeamId(),
+            new OpenTerminalSessionRequest(SelectedServerId.Value, TerminalTargetType.Server, null, Columns, Rows));
+        Message = Session.Status == TerminalSessionStatus.Failed
+            ? Session.FailureReason
+            : "Terminal session opened.";
+    }
+
+    private async Task SendInputAsync()
+    {
+        if (User is null || Session is null || string.IsNullOrEmpty(Input)) return;
+        await TerminalSessions.SendInputAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id), Input);
+        Input = null;
+        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
+    }
+
+    private async Task ResizeAsync()
+    {
+        if (User is null || Session is null) return;
+        await TerminalSessions.ResizeAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id), Columns, Rows);
+        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
+    }
+
+    private async Task CloseAsync()
+    {
+        if (User is null || Session is null) return;
+        await TerminalSessions.CloseAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
+        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
+        Message = "Terminal session closed.";
+    }
+
+    private static string SessionTone(TerminalSessionStatus status)
+    {
+        return status switch
+        {
+            TerminalSessionStatus.Connected => "success",
+            TerminalSessionStatus.Failed => "danger",
+            TerminalSessionStatus.Canceled => "warning",
+            TerminalSessionStatus.Closing => "warning",
+            _ => "info"
+        };
+    }
+}
