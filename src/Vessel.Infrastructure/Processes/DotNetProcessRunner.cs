@@ -213,6 +213,49 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         }
     }
 
+    public Task<IInteractiveProcess> StartInteractiveAsync(
+        ProcessCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateCommand(command, ProcessOutputMode.None);
+        CancellationTokenSource lifetime = CreateTimeoutToken(command, cancellationToken);
+        try
+        {
+            lifetime.Token.ThrowIfCancellationRequested();
+        }
+        catch
+        {
+            lifetime.Dispose();
+            throw;
+        }
+
+        ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
+        startInfo.RedirectStandardInput = true;
+        ProcessTerminationPolicy policy = command.TerminationPolicy ?? ProcessTerminationPolicy.Default;
+        Process process;
+        try
+        {
+            process = Process.Start(startInfo)
+                      ?? throw new InvalidOperationException($"Failed to start process '{command.FileName}'.");
+        }
+        catch
+        {
+            lifetime.Dispose();
+            throw;
+        }
+
+        CancellationTokenRegistration registration = lifetime.Token.Register(
+            static state =>
+            {
+                var (process, policy) = ((Process Process, ProcessTerminationPolicy Policy))state!;
+                KillIfRunning(process, policy.KillProcessTree);
+            },
+            (process, policy));
+
+        return Task.FromResult<IInteractiveProcess>(
+            new DotNetInteractiveProcess(process, policy, lifetime, registration));
+    }
+
     private static ProcessStartInfo CreateStartInfo(
         ProcessCommand command,
         bool redirectOutput,
@@ -303,5 +346,77 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
         if (!process.HasExited)
             process.Kill(policy.KillProcessTree);
+    }
+
+    private static void KillIfRunning(Process process, bool entireProcessTree)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private sealed class DotNetInteractiveProcess(
+        Process process,
+        ProcessTerminationPolicy policy,
+        CancellationTokenSource lifetime,
+        CancellationTokenRegistration registration) : IInteractiveProcess
+    {
+        public int Id => process.Id;
+
+        public bool HasExited => process.HasExited;
+
+        public int ExitCode => process.ExitCode;
+
+        public StreamWriter StandardInput => process.StandardInput;
+
+        public StreamReader StandardOutput => process.StandardOutput;
+
+        public StreamReader StandardError => process.StandardError;
+
+        public Task WaitForExitAsync(CancellationToken cancellationToken = default)
+        {
+            if (!cancellationToken.CanBeCanceled)
+                return process.WaitForExitAsync(lifetime.Token);
+
+            CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+                lifetime.Token,
+                cancellationToken);
+            return WaitForExitAndDisposeTokenAsync(process, linked);
+        }
+
+        public void Kill(bool entireProcessTree)
+        {
+            process.Kill(entireProcessTree);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                if (!process.HasExited)
+                    await TerminateAsync(process, policy);
+            }
+            finally
+            {
+                registration.Dispose();
+                lifetime.Dispose();
+                process.Dispose();
+            }
+        }
+
+        private static async Task WaitForExitAndDisposeTokenAsync(
+            Process process,
+            CancellationTokenSource linked)
+        {
+            using (linked)
+            {
+                await process.WaitForExitAsync(linked.Token);
+            }
+        }
     }
 }

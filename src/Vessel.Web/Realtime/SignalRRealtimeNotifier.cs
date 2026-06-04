@@ -4,11 +4,23 @@ using Vessel.Web.Hubs;
 
 namespace Vessel.Web.Realtime;
 
-public sealed class SignalRRealtimeNotifier(IHubContext<VesselRealtimeHub> hubContext) : IRealtimeNotifier
+public sealed class SignalRRealtimeNotifier(
+    IHubContext<VesselRealtimeHub> hubContext,
+    IHubContext<DeploymentLogHub> deploymentLogHubContext,
+    IHubContext<TerminalHub> terminalHubContext,
+    IHubContext<ServerStatusHub> serverStatusHubContext) : IRealtimeNotifier
 {
     public Task PublishAsync(RealtimeGroup group, RealtimeMessage message,
         CancellationToken cancellationToken = default)
     {
-        return hubContext.Clients.Group(group.ToString()).SendAsync(message.Type, message.Payload, cancellationToken);
+        IClientProxy clients = group.Kind switch
+        {
+            RealtimeGroupKind.Deployment => deploymentLogHubContext.Clients.Group(group.ToString()),
+            RealtimeGroupKind.Terminal => terminalHubContext.Clients.Group(group.ToString()),
+            RealtimeGroupKind.Server => serverStatusHubContext.Clients.Group(group.ToString()),
+            _ => hubContext.Clients.Group(group.ToString())
+        };
+
+        return clients.SendAsync(message.Type, message.Payload, cancellationToken);
     }
 }

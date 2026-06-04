@@ -17,6 +17,7 @@ using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
+using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
 using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
@@ -43,6 +44,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         BackupScheduleRepository = new EfRepository<BackupSchedule, BackupScheduleId>(this);
         BackupExecutionRepository = new EfRepository<BackupExecution, BackupExecutionId>(this);
         DeploymentRepository = new EfRepository<Deployment, DeploymentId>(this);
+        TerminalSessionRepository = new EfRepository<TerminalSession, TerminalSessionId>(this);
         SecretReferenceRepository = new EfRepository<SecretReference, SecretReferenceId>(this);
         SecretValueRepository = new EfRepository<SecretValue, SecretValueId>(this);
         EnvironmentVariableRepository = new EfRepository<EnvironmentVariable, EnvironmentVariableId>(this);
@@ -86,6 +88,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public DbSet<BackupExecution> BackupExecutionSet => Set<BackupExecution>();
 
     public DbSet<Deployment> DeploymentSet => Set<Deployment>();
+
+    public DbSet<TerminalSession> TerminalSessionSet => Set<TerminalSession>();
 
     public DbSet<SecretReference> SecretReferenceSet => Set<SecretReference>();
 
@@ -144,6 +148,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<Deployment> Deployments => DeploymentSet;
 
+    public IQueryable<TerminalSession> TerminalSessions => TerminalSessionSet;
+
     public IQueryable<SecretReference> SecretReferences => SecretReferenceSet;
 
     public IQueryable<SecretValue> SecretValues => SecretValueSet;
@@ -197,6 +203,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
+    public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; }
+
     public IRepository<SecretReference, SecretReferenceId> SecretReferenceRepository { get; }
 
     public IRepository<SecretValue, SecretValueId> SecretValueRepository { get; }
@@ -235,6 +243,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ConfigureManagedServices(modelBuilder);
         ConfigureBackups(modelBuilder);
         ConfigureDeployments(modelBuilder);
+        ConfigureTerminals(modelBuilder);
         ConfigureSecrets(modelBuilder);
         ConfigureEnvironmentVariables(modelBuilder);
         ConfigureRegistryCredentials(modelBuilder);
@@ -833,6 +842,40 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.HasOne<SecretReference>()
                 .WithMany()
                 .HasForeignKey(secret => secret.SecretReferenceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureTerminals(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<TerminalSession>(builder =>
+        {
+            builder.ToTable("terminal_sessions");
+            builder.HasKey(session => session.Id);
+            builder.Property(session => session.Id).HasTerminalSessionIdConversion();
+            builder.Property(session => session.TeamId).HasTeamIdConversion();
+            builder.Property(session => session.OwnerUserId).HasUserIdConversion();
+            builder.Property(session => session.ServerId).HasServerIdConversion();
+            builder.Property(session => session.TargetType).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(session => session.ContainerName).HasMaxLength(255);
+            builder.Property(session => session.Command).HasMaxLength(240).IsRequired();
+            builder.Property(session => session.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(session => session.FailureReason).HasMaxLength(512);
+            builder.Property(session => session.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(session => session.DomainEvents);
+            builder.HasIndex(session => new { session.TeamId, session.Status, session.StartedAt });
+            builder.HasIndex(session => new { session.OwnerUserId, session.StartedAt });
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(session => session.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(session => session.OwnerUserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<Server>()
+                .WithMany()
+                .HasForeignKey(session => session.ServerId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

@@ -55,4 +55,10 @@ public static class AuditActions
     public const string SecretRevealed = "secret.revealed";
     public const string SecretRotated = "secret.rotated";
     public const string RegistryCredentialCreated = "registry_credential.created";
+    public const string TerminalSessionOpened = "terminal.session_opened";
+    public const string TerminalSessionClosed = "terminal.session_closed";
+    public const string TerminalSessionFailed = "terminal.session_failed";
+    public const string TerminalSessionInput = "terminal.input";
+    public const string ServerHealthPolled = "server.health_polled";
+    public const string DeploymentLogsPruned = "deployment.logs_pruned";
 }

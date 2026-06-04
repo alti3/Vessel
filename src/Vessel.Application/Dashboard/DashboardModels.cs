@@ -53,6 +53,9 @@ public sealed record DashboardOverview(
     int DatabaseCount,
     int ActiveDeploymentCount,
     int FailedDeploymentCount,
+    int UnhealthyServerCount,
+    int ActiveTerminalSessionCount,
+    int QueueLength,
     int NotificationTargetCount,
     IReadOnlyList<DeploymentListItem> RecentDeployments);
 

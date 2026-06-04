@@ -15,6 +15,7 @@ using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
+using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
 using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
@@ -68,6 +69,8 @@ public interface IVesselDbContext : IUnitOfWork
     IQueryable<AuditLog> AuditLogs { get; }
 
     IQueryable<SettingEntry> Settings { get; }
+
+    IQueryable<TerminalSession> TerminalSessions { get; }
 
     IQueryable<PersonalAccessToken> PersonalAccessTokens { get; }
 
@@ -128,4 +131,6 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository { get; }
 
     IRepository<Certificate, CertificateId> CertificateRepository { get; }
+
+    IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; }
 }

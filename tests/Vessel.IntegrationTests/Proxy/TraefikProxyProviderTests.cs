@@ -203,5 +203,12 @@ public sealed class TraefikProxyProviderTests
             await Task.CompletedTask;
             yield break;
         }
+
+        public Task<IInteractiveProcess> StartInteractiveAsync(
+            ProcessCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 }

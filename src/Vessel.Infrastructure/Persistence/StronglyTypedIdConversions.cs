@@ -34,6 +34,9 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<DeploymentId, Guid> DeploymentId = new(id => id.Value,
         value => new DeploymentId(value));
 
+    public static readonly ValueConverter<TerminalSessionId, Guid> TerminalSessionId = new(id => id.Value,
+        value => new TerminalSessionId(value));
+
     public static readonly ValueConverter<WebhookEventId, Guid> WebhookEventId = new(id => id.Value,
         value => new WebhookEventId(value));
 
@@ -138,6 +141,12 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<DeploymentId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(DeploymentId);
+    }
+
+    public static PropertyBuilder<TerminalSessionId> HasTerminalSessionIdConversion(
+        this PropertyBuilder<TerminalSessionId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(TerminalSessionId);
     }
 
     public static PropertyBuilder<WebhookEventId> HasWebhookEventIdConversion(

@@ -24,6 +24,7 @@ using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
+using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
 using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Webhooks;
@@ -507,6 +508,8 @@ public sealed class Phase10ProxyServiceTests
 
         public IQueryable<Certificate> Certificates => CertificateItems.AsQueryable();
 
+        public IQueryable<TerminalSession> TerminalSessions => Array.Empty<TerminalSession>().AsQueryable();
+
         public IRepository<User, UserId> UserRepository => new ListRepository<User, UserId>(UserItems);
         public IRepository<Team, TeamId> TeamRepository => new ListRepository<Team, TeamId>(TeamItems);
 
@@ -573,6 +576,9 @@ public sealed class Phase10ProxyServiceTests
 
         public IRepository<Certificate, CertificateId> CertificateRepository =>
             new ListRepository<Certificate, CertificateId>(CertificateItems);
+
+        public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository =>
+            new EmptyRepository<TerminalSession, TerminalSessionId>();
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
