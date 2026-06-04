@@ -109,6 +109,25 @@ public sealed class DotNetProcessRunnerTests
         Assert.True(result.ExitInfo.Canceled);
     }
 
+    [Fact]
+    public async Task StartInteractiveAsync_KillsProcessWhenTimeoutExpires()
+    {
+        await using IInteractiveProcess process = await _runner.StartInteractiveAsync(Shell(
+            OperatingSystem.IsWindows()
+                ? "ping -n 6 127.0.0.1 >nul"
+                : "sleep 5",
+            outputMode: ProcessOutputMode.None,
+            timeout: TimeSpan.FromMilliseconds(200)), TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            process.WaitForExitAsync(TestContext.Current.CancellationToken));
+
+        for (int attempt = 0; attempt < 20 && !process.HasExited; attempt++)
+            await Task.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
+
+        Assert.True(process.HasExited);
+    }
+
     private static ProcessCommand Shell(
         string command,
         ProcessRedactionProfile? redaction = null,

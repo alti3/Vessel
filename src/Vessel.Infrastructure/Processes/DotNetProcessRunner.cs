@@ -218,14 +218,42 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         CancellationToken cancellationToken = default)
     {
         ValidateCommand(command, ProcessOutputMode.None);
-        cancellationToken.ThrowIfCancellationRequested();
+        CancellationTokenSource lifetime = CreateTimeoutToken(command, cancellationToken);
+        try
+        {
+            lifetime.Token.ThrowIfCancellationRequested();
+        }
+        catch
+        {
+            lifetime.Dispose();
+            throw;
+        }
 
         ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
         startInfo.RedirectStandardInput = true;
-        var process = Process.Start(startInfo)
+        ProcessTerminationPolicy policy = command.TerminationPolicy ?? ProcessTerminationPolicy.Default;
+        Process process;
+        try
+        {
+            process = Process.Start(startInfo)
                       ?? throw new InvalidOperationException($"Failed to start process '{command.FileName}'.");
+        }
+        catch
+        {
+            lifetime.Dispose();
+            throw;
+        }
 
-        return Task.FromResult<IInteractiveProcess>(new DotNetInteractiveProcess(process));
+        CancellationTokenRegistration registration = lifetime.Token.Register(
+            static state =>
+            {
+                var (process, policy) = ((Process Process, ProcessTerminationPolicy Policy))state!;
+                KillIfRunning(process, policy.KillProcessTree);
+            },
+            (process, policy));
+
+        return Task.FromResult<IInteractiveProcess>(
+            new DotNetInteractiveProcess(process, policy, lifetime, registration));
     }
 
     private static ProcessStartInfo CreateStartInfo(
@@ -320,7 +348,23 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             process.Kill(policy.KillProcessTree);
     }
 
-    private sealed class DotNetInteractiveProcess(Process process) : IInteractiveProcess
+    private static void KillIfRunning(Process process, bool entireProcessTree)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private sealed class DotNetInteractiveProcess(
+        Process process,
+        ProcessTerminationPolicy policy,
+        CancellationTokenSource lifetime,
+        CancellationTokenRegistration registration) : IInteractiveProcess
     {
         public int Id => process.Id;
 
@@ -336,7 +380,13 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
         public Task WaitForExitAsync(CancellationToken cancellationToken = default)
         {
-            return process.WaitForExitAsync(cancellationToken);
+            if (!cancellationToken.CanBeCanceled)
+                return process.WaitForExitAsync(lifetime.Token);
+
+            CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+                lifetime.Token,
+                cancellationToken);
+            return WaitForExitAndDisposeTokenAsync(process, linked);
         }
 
         public void Kill(bool entireProcessTree)
@@ -344,10 +394,29 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
             process.Kill(entireProcessTree);
         }
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
-            process.Dispose();
-            return ValueTask.CompletedTask;
+            try
+            {
+                if (!process.HasExited)
+                    await TerminateAsync(process, policy);
+            }
+            finally
+            {
+                registration.Dispose();
+                lifetime.Dispose();
+                process.Dispose();
+            }
+        }
+
+        private static async Task WaitForExitAndDisposeTokenAsync(
+            Process process,
+            CancellationTokenSource linked)
+        {
+            using (linked)
+            {
+                await process.WaitForExitAsync(linked.Token);
+            }
         }
     }
 }
