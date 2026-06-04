@@ -70,6 +70,15 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<NotificationTargetId, Guid> NotificationTargetId =
         new(id => id.Value, value => new NotificationTargetId(value));
 
+    public static readonly ValueConverter<NotificationEventId, Guid> NotificationEventId =
+        new(id => id.Value, value => new NotificationEventId(value));
+
+    public static readonly ValueConverter<InAppNotificationId, Guid> InAppNotificationId =
+        new(id => id.Value, value => new InAppNotificationId(value));
+
+    public static readonly ValueConverter<NotificationDeliveryAttemptId, Guid> NotificationDeliveryAttemptId =
+        new(id => id.Value, value => new NotificationDeliveryAttemptId(value));
+
     public static readonly ValueConverter<AuditLogId, Guid> AuditLogId = new(id => id.Value,
         value => new AuditLogId(value));
 
@@ -213,6 +222,24 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<NotificationTargetId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(NotificationTargetId);
+    }
+
+    public static PropertyBuilder<NotificationEventId> HasNotificationEventIdConversion(
+        this PropertyBuilder<NotificationEventId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(NotificationEventId);
+    }
+
+    public static PropertyBuilder<InAppNotificationId> HasInAppNotificationIdConversion(
+        this PropertyBuilder<InAppNotificationId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(InAppNotificationId);
+    }
+
+    public static PropertyBuilder<NotificationDeliveryAttemptId> HasNotificationDeliveryAttemptIdConversion(
+        this PropertyBuilder<NotificationDeliveryAttemptId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(NotificationDeliveryAttemptId);
     }
 
     public static PropertyBuilder<AuditLogId> HasAuditLogIdConversion(this PropertyBuilder<AuditLogId> propertyBuilder)

@@ -66,6 +66,13 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<NotificationTarget> NotificationTargets { get; }
 
+    IQueryable<NotificationEvent> NotificationEvents => Enumerable.Empty<NotificationEvent>().AsQueryable();
+
+    IQueryable<InAppNotification> InAppNotifications => Enumerable.Empty<InAppNotification>().AsQueryable();
+
+    IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts =>
+        Enumerable.Empty<NotificationDeliveryAttempt>().AsQueryable();
+
     IQueryable<AuditLog> AuditLogs { get; }
 
     IQueryable<SettingEntry> Settings { get; }
@@ -119,6 +126,18 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository { get; }
 
     IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; }
+
+    IRepository<NotificationTarget, NotificationTargetId> NotificationTargetRepository =>
+        throw new InvalidOperationException("Notification target persistence is not available.");
+
+    IRepository<NotificationEvent, NotificationEventId> NotificationEventRepository =>
+        throw new InvalidOperationException("Notification event persistence is not available.");
+
+    IRepository<InAppNotification, InAppNotificationId> InAppNotificationRepository =>
+        throw new InvalidOperationException("In-app notification persistence is not available.");
+
+    IRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId> NotificationDeliveryAttemptRepository =>
+        throw new InvalidOperationException("Notification delivery attempt persistence is not available.");
 
     IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 

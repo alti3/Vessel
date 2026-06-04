@@ -148,8 +148,8 @@ internal static class ValueObjectConversions
     private static string FormatNotificationDeliveryPolicy(NotificationDeliveryPolicy value)
     {
         return string.Join('|', ((int)value.MinimumSeverity).ToString(CultureInfo.InvariantCulture),
-            value.DeploymentEventsEnabled.ToString(), value.ServerEventsEnabled.ToString(),
-            value.SecurityEventsEnabled.ToString());
+            value.DeploymentEventsEnabled.ToString(), value.BackupEventsEnabled.ToString(),
+            value.ServerEventsEnabled.ToString());
     }
 
     private static string FormatAuditTarget(AuditTarget value)

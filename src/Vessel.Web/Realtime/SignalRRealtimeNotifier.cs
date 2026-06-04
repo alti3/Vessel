@@ -8,7 +8,8 @@ public sealed class SignalRRealtimeNotifier(
     IHubContext<VesselRealtimeHub> hubContext,
     IHubContext<DeploymentLogHub> deploymentLogHubContext,
     IHubContext<TerminalHub> terminalHubContext,
-    IHubContext<ServerStatusHub> serverStatusHubContext) : IRealtimeNotifier
+    IHubContext<ServerStatusHub> serverStatusHubContext,
+    IHubContext<NotificationHub> notificationHubContext) : IRealtimeNotifier
 {
     public Task PublishAsync(RealtimeGroup group, RealtimeMessage message,
         CancellationToken cancellationToken = default)
@@ -18,6 +19,7 @@ public sealed class SignalRRealtimeNotifier(
             RealtimeGroupKind.Deployment => deploymentLogHubContext.Clients.Group(group.ToString()),
             RealtimeGroupKind.Terminal => terminalHubContext.Clients.Group(group.ToString()),
             RealtimeGroupKind.Server => serverStatusHubContext.Clients.Group(group.ToString()),
+            RealtimeGroupKind.Team or RealtimeGroupKind.User => notificationHubContext.Clients.Group(group.ToString()),
             _ => hubContext.Clients.Group(group.ToString())
         };
 

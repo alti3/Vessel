@@ -301,6 +301,45 @@ public readonly record struct NotificationTargetId(Guid Value) : IStronglyTypedI
     }
 }
 
+public readonly record struct NotificationEventId(Guid Value) : IStronglyTypedId
+{
+    public static NotificationEventId New()
+    {
+        return new NotificationEventId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct InAppNotificationId(Guid Value) : IStronglyTypedId
+{
+    public static InAppNotificationId New()
+    {
+        return new InAppNotificationId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct NotificationDeliveryAttemptId(Guid Value) : IStronglyTypedId
+{
+    public static NotificationDeliveryAttemptId New()
+    {
+        return new NotificationDeliveryAttemptId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct AuditLogId(Guid Value) : IStronglyTypedId
 {
     public static AuditLogId New()
