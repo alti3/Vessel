@@ -1,3 +1,4 @@
+using System.Text;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Persistence;
@@ -106,7 +107,7 @@ public sealed class TerminalSessionManager(
     {
         if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.TerminalsOpen))
             throw new UnauthorizedAccessException($"Missing required permission '{VesselPermissions.TerminalsOpen}'.");
-        if (!authorization.CanAccessTerminalSession(actorUserId, sessionId))
+        if (!authorization.CanAccessTerminalSession(actorUserId, teamId, sessionId))
             throw new UnauthorizedAccessException("Terminal session is outside the active team.");
 
         TerminalSession session = dbContext.TerminalSessions.SingleOrDefault(session => session.Id == sessionId)
@@ -123,7 +124,8 @@ public sealed class TerminalSessionManager(
     {
         TerminalSession session = GetWritableSession(actorUserId, teamId, sessionId);
         if (string.IsNullOrEmpty(data)) return;
-        if (data.Length > _policy.MaxInputBytes)
+        int inputBytes = Encoding.UTF8.GetByteCount(data);
+        if (inputBytes > _policy.MaxInputBytes)
             throw new InvalidOperationException("Terminal input exceeded the configured maximum chunk size.");
 
         session.RecordInput(timeProvider.GetUtcNow());
@@ -134,7 +136,7 @@ public sealed class TerminalSessionManager(
             AuditActions.TerminalSessionInput,
             new AuditTarget("terminal_session", session.Id.Value.ToString("D")),
             null,
-            new Dictionary<string, object?> { ["bytes"] = data.Length },
+            new Dictionary<string, object?> { ["bytes"] = inputBytes },
             cancellationToken);
         await bridge.SendInputAsync(sessionId, data, cancellationToken);
     }
@@ -181,13 +183,13 @@ public sealed class TerminalSessionManager(
     {
         if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.TerminalsOpen))
             throw new UnauthorizedAccessException($"Missing required permission '{VesselPermissions.TerminalsOpen}'.");
-        if (!authorization.CanAccessTerminalSession(actorUserId, sessionId))
+        if (!authorization.CanAccessTerminalSession(actorUserId, teamId, sessionId))
             throw new UnauthorizedAccessException("Terminal session is outside the active team.");
 
         TerminalSession session = dbContext.TerminalSessions.SingleOrDefault(session => session.Id == sessionId)
                                   ?? throw new InvalidOperationException("Terminal session was not found.");
-        if (TerminalSession.IsTerminal(session.Status))
-            throw new InvalidOperationException("Terminal session has ended.");
+        if (session.Status != TerminalSessionStatus.Connected)
+            throw new InvalidOperationException("Terminal session is not connected.");
         return session;
     }
 

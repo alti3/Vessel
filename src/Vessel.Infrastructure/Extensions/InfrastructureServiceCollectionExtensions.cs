@@ -125,7 +125,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
         services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
-        services.TryAddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();
+        services.AddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();

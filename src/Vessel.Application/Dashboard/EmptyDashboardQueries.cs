@@ -1,5 +1,5 @@
-using Vessel.Domain;
 using Vessel.Application.Monitoring;
+using Vessel.Domain;
 
 namespace Vessel.Application.Dashboard;
 

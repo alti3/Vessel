@@ -73,7 +73,11 @@ public sealed class ServerHealthPollingService(
             runtimeReachable = true;
             nextStatus = ServerStatus.Reachable;
         }
-        catch
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
         {
             nextStatus = ServerStatus.Unreachable;
         }

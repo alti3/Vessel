@@ -50,7 +50,7 @@ public sealed class VesselAuthorizationService
         return teamId.HasValue && CanAccessTeam(userId, teamId.Value);
     }
 
-    public bool CanAccessTerminalSession(UserId userId, TerminalSessionId terminalSessionId)
+    public bool CanAccessTerminalSession(UserId userId, TeamId teamId, TerminalSessionId terminalSessionId)
     {
         var session = _unitOfWork.TerminalSessions
             .Where(session => session.Id == terminalSessionId)
@@ -58,8 +58,9 @@ public sealed class VesselAuthorizationService
             .SingleOrDefault();
 
         return session is not null
+               && session.TeamId == teamId
                && session.OwnerUserId == userId
-               && CanAccessTeam(userId, session.TeamId);
+               && CanAccessTeam(userId, teamId);
     }
 
     public bool CanAccessApplication(UserId userId, ApplicationId applicationId)

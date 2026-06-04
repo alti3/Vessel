@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Text;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Deployments;
@@ -65,6 +66,30 @@ public sealed class Phase12OperationalTests
     }
 
     [Fact]
+    public void TerminalSession_ClosingDoesNotAcceptInputResizeOrReconnect()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        TerminalSession session = TerminalSession.Open(
+            TeamId.New(),
+            UserId.New(),
+            ServerId.New(),
+            TerminalTargetType.Server,
+            null,
+            "pwsh",
+            120,
+            32,
+            now);
+
+        session.MarkConnected(now.AddSeconds(1));
+        session.BeginClose(now.AddSeconds(2));
+        session.MarkConnected(now.AddSeconds(3));
+
+        Assert.Equal(TerminalSessionStatus.Closing, session.Status);
+        Assert.Throws<DomainException>(() => session.Resize(80, 24, now.AddSeconds(4)));
+        Assert.Throws<DomainException>(() => session.RecordInput(now.AddSeconds(5)));
+    }
+
+    [Fact]
     public void DeploymentLogQuery_PaginatesFiltersAndRedacts()
     {
         Scenario scenario = Scenario.Create();
@@ -111,13 +136,31 @@ public sealed class Phase12OperationalTests
         TerminalSessionDetails details = await manager.OpenAsync(
             scenario.User.Id,
             scenario.Team.Id,
-            new OpenTerminalSessionRequest(scenario.Server.Id.Value));
-        await manager.SendInputAsync(scenario.User.Id, scenario.Team.Id, new TerminalSessionId(details.Id), "ls\n");
-        await manager.ResizeAsync(scenario.User.Id, scenario.Team.Id, new TerminalSessionId(details.Id), 80, 24);
-        await manager.CloseAsync(scenario.User.Id, scenario.Team.Id, new TerminalSessionId(details.Id));
+            new OpenTerminalSessionRequest(scenario.Server.Id.Value),
+            cancellationToken: TestContext.Current.CancellationToken);
+        await manager.SendInputAsync(
+            scenario.User.Id,
+            scenario.Team.Id,
+            new TerminalSessionId(details.Id),
+            "é\n",
+            TestContext.Current.CancellationToken);
+        await manager.ResizeAsync(
+            scenario.User.Id,
+            scenario.Team.Id,
+            new TerminalSessionId(details.Id),
+            80,
+            24,
+            TestContext.Current.CancellationToken);
+        await manager.CloseAsync(
+            scenario.User.Id,
+            scenario.Team.Id,
+            new TerminalSessionId(details.Id),
+            TestContext.Current.CancellationToken);
 
         Assert.Equal(1, bridge.OpenCount);
-        Assert.Equal(["ls\n"], bridge.Inputs);
+        Assert.Equal(["é\n"], bridge.Inputs);
+        AuditRecord inputAudit = Assert.Single(audit.Records, record => record.Action == AuditActions.TerminalSessionInput);
+        Assert.Equal(Encoding.UTF8.GetByteCount("é\n"), inputAudit.Metadata["bytes"]);
         Assert.Contains(audit.Records, record => record.Action == AuditActions.TerminalSessionOpened);
         Assert.Contains(audit.Records, record => record.Action == AuditActions.TerminalSessionClosed);
         Assert.Contains(realtime.Messages, message => message.Message.Type == "terminal.status");
@@ -137,7 +180,8 @@ public sealed class Phase12OperationalTests
             new TestAuditWriter(),
             TimeProvider.System);
 
-        ServerHealthPollingResult result = await service.PollAsync(scenario.Server.Id);
+        ServerHealthPollingResult result =
+            await service.PollAsync(scenario.Server.Id, TestContext.Current.CancellationToken);
 
         Assert.True(result.RuntimeReachable);
         Assert.Equal(ServerStatus.Reachable, scenario.Server.Status);

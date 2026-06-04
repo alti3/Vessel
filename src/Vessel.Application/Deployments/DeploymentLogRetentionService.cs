@@ -1,6 +1,5 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Persistence;
-using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Deployments;
 
@@ -16,12 +15,14 @@ public sealed class DeploymentLogRetentionService(
         CancellationToken cancellationToken = default)
     {
         DateTimeOffset cutoff = timeProvider.GetUtcNow().Subtract(options.RetentionPeriod);
+        if (options.BatchSize == 0) return new DeploymentLogRetentionResult(0, cutoff);
+
         int deleted = 0;
 
         Deployment[] candidates = dbContext.Deployments
             .Where(deployment => deployment.FinishedAt.HasValue && deployment.FinishedAt.Value < cutoff)
             .OrderBy(deployment => deployment.FinishedAt)
-            .Take(Math.Max(1, options.BatchSize))
+            .Take(options.BatchSize)
             .ToArray();
 
         foreach (Deployment deployment in candidates)

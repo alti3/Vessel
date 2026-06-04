@@ -26,7 +26,7 @@ public sealed class TerminalHub : AuthorizedResourceHub
     {
         var sessionId = new TerminalSessionId(terminalSessionId);
         var user = Context.User!;
-        if (!_authorizationService.CanAccessTerminalSession(user.GetUserId(), sessionId)) return false;
+        if (!_authorizationService.CanAccessTerminalSession(user.GetUserId(), user.GetTeamId(), sessionId)) return false;
 
         await Groups.AddToGroupAsync(
             Context.ConnectionId,

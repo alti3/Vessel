@@ -213,6 +213,21 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         }
     }
 
+    public Task<IInteractiveProcess> StartInteractiveAsync(
+        ProcessCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateCommand(command, ProcessOutputMode.None);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
+        startInfo.RedirectStandardInput = true;
+        var process = Process.Start(startInfo)
+                      ?? throw new InvalidOperationException($"Failed to start process '{command.FileName}'.");
+
+        return Task.FromResult<IInteractiveProcess>(new DotNetInteractiveProcess(process));
+    }
+
     private static ProcessStartInfo CreateStartInfo(
         ProcessCommand command,
         bool redirectOutput,
@@ -303,5 +318,36 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
         if (!process.HasExited)
             process.Kill(policy.KillProcessTree);
+    }
+
+    private sealed class DotNetInteractiveProcess(Process process) : IInteractiveProcess
+    {
+        public int Id => process.Id;
+
+        public bool HasExited => process.HasExited;
+
+        public int ExitCode => process.ExitCode;
+
+        public StreamWriter StandardInput => process.StandardInput;
+
+        public StreamReader StandardOutput => process.StandardOutput;
+
+        public StreamReader StandardError => process.StandardError;
+
+        public Task WaitForExitAsync(CancellationToken cancellationToken = default)
+        {
+            return process.WaitForExitAsync(cancellationToken);
+        }
+
+        public void Kill(bool entireProcessTree)
+        {
+            process.Kill(entireProcessTree);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            process.Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 }

@@ -1,16 +1,16 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
+using Vessel.Application.Processes;
 using Vessel.Application.Terminals;
 using Vessel.Domain;
 using Vessel.Domain.Terminals;
 
 namespace Vessel.Infrastructure.Processes;
 
-public sealed class InteractiveTerminalProcessBridge : ITerminalProcessBridge, IAsyncDisposable
+public sealed class InteractiveTerminalProcessBridge(IProcessRunner processRunner) : ITerminalProcessBridge, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<TerminalSessionId, TerminalProcessHandle> _sessions = new();
 
-    public Task OpenAsync(
+    public async Task OpenAsync(
         TerminalBridgeOpenRequest request,
         Func<TerminalOutputChunk, CancellationToken, Task> onOutput,
         Func<TerminalSessionId, string?, CancellationToken, Task> onExit,
@@ -19,59 +19,47 @@ public sealed class InteractiveTerminalProcessBridge : ITerminalProcessBridge, I
         if (request.TargetType == TerminalTargetType.Container)
             throw new InvalidOperationException("Container terminal sessions require a reviewed docker exec PTY bridge.");
 
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = request.Command,
-            UseShellExecute = false,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-
+        List<string> arguments = [];
         if (OperatingSystem.IsWindows() && request.Command.EndsWith("pwsh", StringComparison.OrdinalIgnoreCase))
         {
-            startInfo.ArgumentList.Add("-NoLogo");
-            startInfo.ArgumentList.Add("-NoExit");
-            startInfo.ArgumentList.Add("-Command");
-            startInfo.ArgumentList.Add("-");
+            arguments.Add("-NoLogo");
+            arguments.Add("-NoExit");
+            arguments.Add("-Command");
+            arguments.Add("-");
         }
-
-        var process = new Process
-        {
-            StartInfo = startInfo,
-            EnableRaisingEvents = true
-        };
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(request.MaxLifetime);
 
-        var handle = new TerminalProcessHandle(process, cts);
-        if (!_sessions.TryAdd(request.SessionId, handle))
-        {
-            process.Dispose();
-            cts.Dispose();
-            throw new InvalidOperationException("Terminal session is already open.");
-        }
+        var command = new ProcessCommand(
+            request.Command,
+            arguments,
+            Timeout: request.MaxLifetime,
+            OutputMode: ProcessOutputMode.None,
+            TerminationPolicy: new ProcessTerminationPolicy(TimeSpan.FromMilliseconds(100), true, true));
 
+        IInteractiveProcess process;
         try
         {
-            if (!process.Start())
-                throw new InvalidOperationException("Terminal process did not start.");
+            process = await processRunner.StartInteractiveAsync(command, cancellationToken);
         }
         catch
         {
-            _sessions.TryRemove(request.SessionId, out _);
-            process.Dispose();
             cts.Dispose();
             throw;
+        }
+
+        var handle = new TerminalProcessHandle(process, cts);
+        if (!_sessions.TryAdd(request.SessionId, handle))
+        {
+            await process.DisposeAsync();
+            cts.Dispose();
+            throw new InvalidOperationException("Terminal session is already open.");
         }
 
         _ = PumpAsync(request.SessionId, process.StandardOutput, "stdout", onOutput, cts.Token);
         _ = PumpAsync(request.SessionId, process.StandardError, "stderr", onOutput, cts.Token);
         _ = WaitForExitAsync(request.SessionId, process, onExit, cts);
-
-        return Task.CompletedTask;
     }
 
     public async Task SendInputAsync(
@@ -131,7 +119,7 @@ public sealed class InteractiveTerminalProcessBridge : ITerminalProcessBridge, I
 
     private async Task WaitForExitAsync(
         TerminalSessionId sessionId,
-        Process process,
+        IInteractiveProcess process,
         Func<TerminalSessionId, string?, CancellationToken, Task> onExit,
         CancellationTokenSource cts)
     {
@@ -152,7 +140,7 @@ public sealed class InteractiveTerminalProcessBridge : ITerminalProcessBridge, I
         {
             _sessions.TryRemove(sessionId, out _);
             await onExit(sessionId, reason, CancellationToken.None);
-            process.Dispose();
+            await process.DisposeAsync();
             cts.Dispose();
         }
     }
@@ -165,7 +153,7 @@ public sealed class InteractiveTerminalProcessBridge : ITerminalProcessBridge, I
             if (!handle.Process.HasExited)
             {
                 handle.Process.StandardInput.Close();
-                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
             }
 
             if (!handle.Process.HasExited)
@@ -173,10 +161,10 @@ public sealed class InteractiveTerminalProcessBridge : ITerminalProcessBridge, I
         }
         finally
         {
-            handle.Process.Dispose();
+            await handle.Process.DisposeAsync();
             handle.Cancellation.Dispose();
         }
     }
 
-    private sealed record TerminalProcessHandle(Process Process, CancellationTokenSource Cancellation);
+    private sealed record TerminalProcessHandle(IInteractiveProcess Process, CancellationTokenSource Cancellation);
 }

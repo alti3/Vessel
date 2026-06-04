@@ -46,8 +46,8 @@
                 <div class="signal-row"><span>Size</span><span>@Session.Columns x @Session.Rows</span></div>
             </div>
             <div class="toolbar-row">
-                <button class="button button-secondary" type="button" @onclick="ResizeAsync">Resize</button>
-                <button class="button button-danger" type="button" @onclick="CloseAsync">Close</button>
+                <button class="button button-secondary" type="button" @onclick="ResizeAsync" disabled="@(!CanInteract)">Resize</button>
+                <button class="button button-danger" type="button" @onclick="CloseAsync" disabled="@(!CanInteract)">Close</button>
             </div>
         }
     </SettingsPanel>
@@ -56,7 +56,7 @@
 <section class="section-stack">
     <PageHeader Kicker="Terminal" Title="Input" Description="Input is forwarded through the audited terminal session manager."/>
     <textarea class="input" rows="6" @bind="Input" placeholder="Type terminal input here"></textarea>
-    <button class="button button-secondary" type="button" @onclick="SendInputAsync" disabled="@(Session is null)">Send</button>
+    <button class="button button-secondary" type="button" @onclick="SendInputAsync" disabled="@(!CanInteract)">Send</button>
 </section>
 
 @code {
@@ -69,6 +69,7 @@
     private string? Input { get; set; }
     private string? Message { get; set; }
     private bool CanOpen => SelectedServerId.HasValue;
+    private bool CanInteract => Session?.Status == TerminalSessionStatus.Connected;
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,24 +92,27 @@
 
     private async Task SendInputAsync()
     {
-        if (User is null || Session is null || string.IsNullOrEmpty(Input)) return;
-        await TerminalSessions.SendInputAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id), Input);
+        if (User is null || !CanInteract || string.IsNullOrWhiteSpace(Input)) return;
+        TerminalSessionDetails session = Session!;
+        await TerminalSessions.SendInputAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(session.Id), Input);
         Input = null;
-        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
+        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(session.Id));
     }
 
     private async Task ResizeAsync()
     {
-        if (User is null || Session is null) return;
-        await TerminalSessions.ResizeAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id), Columns, Rows);
-        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
+        if (User is null || !CanInteract) return;
+        TerminalSessionDetails session = Session!;
+        await TerminalSessions.ResizeAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(session.Id), Columns, Rows);
+        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(session.Id));
     }
 
     private async Task CloseAsync()
     {
-        if (User is null || Session is null) return;
-        await TerminalSessions.CloseAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
-        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(Session.Id));
+        if (User is null || !CanInteract) return;
+        TerminalSessionDetails session = Session!;
+        await TerminalSessions.CloseAsync(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(session.Id));
+        Session = TerminalSessions.Get(User.GetUserId(), User.GetTeamId(), new TerminalSessionId(session.Id));
         Message = "Terminal session closed.";
     }
 

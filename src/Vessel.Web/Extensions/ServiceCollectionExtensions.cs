@@ -121,7 +121,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDatabaseCatalogQuery, EmptyDatabaseCatalogQuery>();
         services.AddScoped<INotificationCatalogQuery, EmptyNotificationCatalogQuery>();
         services.AddScoped<ISettingsCatalogQuery, EmptySettingsCatalogQuery>();
-        services.AddScoped<IServerHealthQuery, EmptyServerHealthQuery>();
+        services.TryAddScoped<IServerHealthQuery, EmptyServerHealthQuery>();
 
         return services;
     }

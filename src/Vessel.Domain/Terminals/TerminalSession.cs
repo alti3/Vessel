@@ -94,14 +94,15 @@ public sealed class TerminalSession : Entity<TerminalSessionId>
 
     public void MarkConnected(DateTimeOffset now)
     {
-        if (IsTerminal(Status)) return;
+        if (IsTerminal(Status) || Status == TerminalSessionStatus.Closing) return;
         Status = TerminalSessionStatus.Connected;
         RecordActivity(now);
     }
 
     public void Resize(int columns, int rows, DateTimeOffset now)
     {
-        if (IsTerminal(Status)) throw new DomainException("Cannot resize a terminal session that has ended.");
+        if (Status != TerminalSessionStatus.Connected)
+            throw new DomainException("Can only resize a connected terminal session.");
         if (columns is < 20 or > 300) throw new DomainException("Terminal columns must be between 20 and 300.");
         if (rows is < 5 or > 120) throw new DomainException("Terminal rows must be between 5 and 120.");
         Columns = columns;
@@ -111,7 +112,8 @@ public sealed class TerminalSession : Entity<TerminalSessionId>
 
     public void RecordInput(DateTimeOffset now)
     {
-        if (IsTerminal(Status)) throw new DomainException("Cannot write to a terminal session that has ended.");
+        if (Status != TerminalSessionStatus.Connected)
+            throw new DomainException("Can only write to a connected terminal session.");
         RecordActivity(now);
     }
 

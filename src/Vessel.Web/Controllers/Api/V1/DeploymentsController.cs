@@ -62,6 +62,7 @@ public sealed class DeploymentsController : ControllerBase
 
     [HttpGet("{deploymentId:guid}/logs/export")]
     [Authorize(Policy = VesselPermissions.DeploymentsReadLogs)]
+    [EnableRateLimiting("api")]
     public FileContentResult ExportLogs(
         Guid deploymentId,
         [FromQuery] int? afterSequence,
@@ -79,12 +80,21 @@ public sealed class DeploymentsController : ControllerBase
         string text = string.Join(
             Environment.NewLine,
             page.Entries.Select(entry =>
-                $"{entry.Sequence}\t{entry.CreatedAt:O}\t{entry.Stream}\t{entry.Message}"));
+                $"{entry.Sequence}\t{entry.CreatedAt:O}\t{entry.Stream}\t{EscapeTsv(entry.Message)}"));
 
         return File(
             Encoding.UTF8.GetBytes(text),
             "text/plain; charset=utf-8",
             $"deployment-{deploymentId:D}-logs.txt");
+    }
+
+    private static string EscapeTsv(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
     [HttpPost]
