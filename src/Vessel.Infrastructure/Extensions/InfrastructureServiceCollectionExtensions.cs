@@ -14,6 +14,7 @@ using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
 using Vessel.Application.Monitoring;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
@@ -32,6 +33,7 @@ using Vessel.Infrastructure.Git;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.ManagedServices;
+using Vessel.Infrastructure.Notifications;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
 using Vessel.Infrastructure.Proxy;
@@ -132,6 +134,23 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ISshClient, SshProcessClient>();
         services.TryAddSingleton<IProxyProvider, TraefikProxyProvider>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
+        services.AddTransient<INotificationProvider, EmailNotificationProvider>();
+        services.AddHttpClient<INotificationProvider, HttpWebhookNotificationProvider>(
+            nameof(HttpWebhookNotificationProvider),
+            client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<INotificationProvider, DiscordNotificationProvider>(
+            nameof(DiscordNotificationProvider),
+            client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<INotificationProvider, SlackNotificationProvider>(
+            nameof(SlackNotificationProvider),
+            client => client.Timeout = TimeSpan.FromSeconds(30));
+        services.AddHttpClient<INotificationProvider, TelegramNotificationProvider>(
+            nameof(TelegramNotificationProvider),
+            client =>
+            {
+                client.BaseAddress = new Uri("https://api.telegram.org");
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
 
         RedisOptions redisOptions = configuration

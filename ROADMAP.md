@@ -67,6 +67,19 @@ Completed a gate pass for Phase 11.
 - Verification: `dotnet build Vessel.slnx --artifacts-path artifacts\phase11-build`, `dotnet test Vessel.slnx --no-restore --artifacts-path artifacts\phase11-build --verbosity minimal`, `tools\validate-project-references.ps1`, and architecture/process/secret scans passed locally.
 - Notes: EF tooling reported the installed `dotnet-ef` tool version is older than the .NET 11 preview runtime; the migration was reviewed and adjusted to avoid unrelated column drops. The installed SDK remains `11.0.100-preview.4.26230.115`; replace it with stable .NET 11 after GA.
 
+### Phase Gate Pass - 2026-06-04 - Phase 13
+
+Completed a gate pass for Phase 13.
+
+- Architecture boundaries: `tools\validate-project-references.ps1` passed; notification orchestration lives in Application, HTTP/SMTP provider implementations live in Infrastructure, Domain owns notification invariants, and Web controllers/components remain thin callers.
+- Coolify reference: inspected upstream notification classes, channel implementations, send jobs, Livewire notification pages, notification settings views, and notification settings migrations for email, Discord, Telegram, Slack, Pushover, and outbound webhooks.
+- Process/runtime boundaries: direct process APIs remain limited to `src/Vessel.Infrastructure/Processes/DotNetProcessRunner.cs`; notification providers do not run Docker, Git, SSH, shell, or process APIs.
+- Secrets: external target credentials are stored through `ISecretVault`, the UI treats secret JSON as write-only, API/list models do not return secret values, and delivery attempt failures persist safe provider summaries without credentials.
+- Tests: Phase 13 unit tests cover in-app read/archive state, delivery attempt retry/failure state, dispatch routing, retry scheduling, and secret-safe failure metadata; full unit, integration, and E2E tests passed.
+- Docs: `docs/deployment/phase-13-notifications-event-delivery.md` documents behavior, channels, security, upstream areas consulted, and verification.
+- Verification: `dotnet build Vessel.slnx --no-restore --artifacts-path artifacts\phase13-build -m:1`, `dotnet test Vessel.slnx --no-restore --artifacts-path artifacts\phase13-build --verbosity minimal`, focused Phase 13 tests, `tools\validate-project-references.ps1`, and architecture/process/secret scans passed locally.
+- Notes: EF tooling again reported installed `dotnet-ef` `10.0.8` is older than the .NET 11 preview runtime. The installed SDK remains `11.0.100-preview.4.26230.115`; replace it with stable .NET 11 after GA.
+
 ---
 
 ## Phase 0: Product Framing and Repository Governance
@@ -453,18 +466,18 @@ Goal: Deliver reliable in-app and external notifications with retry, audit, and 
 
 | Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
 |---|---:|---|---|---|---|---|
-| [ ] | 13.01 | Notifications | Define notification event model | Event type, severity, target, channel, payload, delivery status, attempts, and ownership are stored | Phase 3 |  |
-| [ ] | 13.02 | Notifications | Implement in-app notifications | Database-backed notifications show unread/read/archive state | 13.01 |  |
-| [ ] | 13.03 | Notifications | Implement email provider | Configurable SMTP/provider sends queued notifications with retries | 13.01 |  |
-| [ ] | 13.04 | Notifications | Implement webhook provider | Outbound webhooks sign payloads where configured and record delivery attempts | 13.01 |  |
-| [ ] | 13.05 | Notifications | Implement Discord provider | Discord-compatible webhook messages support deployment/resource events | 13.01 |  |
-| [ ] | 13.06 | Notifications | Implement Telegram provider | Bot/channel configuration supports deployment/resource events | 13.01 |  |
-| [ ] | 13.07 | Notifications | Implement Slack-compatible provider | Slack-compatible webhook messages support deployment/resource events | 13.01 |  |
-| [ ] | 13.08 | Jobs | Add notification dispatch job | Queue dispatch, retry, and failure state are implemented | 5.25, 13.01 |  |
-| [ ] | 13.09 | UI | Add notification settings UI | Team/project/user notification rules and channels can be configured | 13.01-13.07 |  |
-| [ ] | 13.10 | UI | Add notification center | User can view, mark read, archive, and navigate to resource context | 13.02 |  |
-| [ ] | 13.11 | Realtime | Stream in-app notifications | Authorized users receive new notifications through SignalR | 6.18, 13.02 |  |
-| [ ] | 13.12 | Tests | Add notification tests | Routing, retries, redaction, delivery attempts, and provider failures are covered | 13.01-13.08 |  |
+| [x] | 13.01 | Notifications | Define notification event model | Event type, severity, target, channel, payload, delivery status, attempts, and ownership are stored | Phase 3 | Added notification events, in-app notifications, delivery attempts, EF mappings, and migration. |
+| [x] | 13.02 | Notifications | Implement in-app notifications | Database-backed notifications show unread/read/archive state | 13.01 | Added in-app persistence, list/read/archive service methods, API, UI center, and realtime publish. |
+| [x] | 13.03 | Notifications | Implement email provider | Configurable SMTP/provider sends queued notifications with retries | 13.01 | SMTP provider reads encrypted target secret JSON and records safe delivery attempts. |
+| [x] | 13.04 | Notifications | Implement webhook provider | Outbound webhooks sign payloads where configured and record delivery attempts | 13.01 | Generic webhook provider posts JSON and signs with `X-Vessel-Signature` when a secret is configured. |
+| [x] | 13.05 | Notifications | Implement Discord provider | Discord-compatible webhook messages support deployment/resource events | 13.01 | Discord incoming webhook provider added. |
+| [x] | 13.06 | Notifications | Implement Telegram provider | Bot/channel configuration supports deployment/resource events | 13.01 | Telegram bot `sendMessage` provider added. |
+| [x] | 13.07 | Notifications | Implement Slack-compatible provider | Slack-compatible webhook messages support deployment/resource events | 13.01 | Slack-compatible incoming webhook provider added. |
+| [x] | 13.08 | Jobs | Add notification dispatch job | Queue dispatch, retry, and failure state are implemented | 5.25, 13.01 | `DispatchNotificationJob` delegates to Application dispatch service with retry scheduling. |
+| [x] | 13.09 | UI | Add notification settings UI | Team/project/user notification rules and channels can be configured | 13.01-13.07 | Notifications page now configures channel targets and event toggles. |
+| [x] | 13.10 | UI | Add notification center | User can view, mark read, archive, and navigate to resource context | 13.02 | Notifications page lists in-app notifications and supports read/archive. |
+| [x] | 13.11 | Realtime | Stream in-app notifications | Authorized users receive new notifications through SignalR | 6.18, 13.02 | In-app creation publishes to authorized team/user notification hub groups. |
+| [x] | 13.12 | Tests | Add notification tests | Routing, retries, redaction, delivery attempts, and provider failures are covered | 13.01-13.08 | Added Phase 13 domain and dispatch tests; docs record verification. |
 
 ---
 

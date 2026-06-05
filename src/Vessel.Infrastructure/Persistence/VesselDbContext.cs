@@ -50,6 +50,11 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         EnvironmentVariableRepository = new EfRepository<EnvironmentVariable, EnvironmentVariableId>(this);
         RegistryCredentialRepository = new EfRepository<RegistryCredential, RegistryCredentialId>(this);
         ServerStatusSnapshotRepository = new EfRepository<ServerStatusSnapshot, ServerStatusSnapshotId>(this);
+        NotificationTargetRepository = new EfRepository<NotificationTarget, NotificationTargetId>(this);
+        NotificationEventRepository = new EfRepository<NotificationEvent, NotificationEventId>(this);
+        InAppNotificationRepository = new EfRepository<InAppNotification, InAppNotificationId>(this);
+        NotificationDeliveryAttemptRepository =
+            new EfRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId>(this);
         WebhookEventRepository = new EfRepository<WebhookEvent, WebhookEventId>(this);
         ApplicationWebhookConfigurationRepository =
             new EfRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>(this);
@@ -102,6 +107,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public DbSet<ServerStatusSnapshot> ServerStatusSnapshotSet => Set<ServerStatusSnapshot>();
 
     public DbSet<NotificationTarget> NotificationTargetSet => Set<NotificationTarget>();
+
+    public DbSet<NotificationEvent> NotificationEventSet => Set<NotificationEvent>();
+
+    public DbSet<InAppNotification> InAppNotificationSet => Set<InAppNotification>();
+
+    public DbSet<NotificationDeliveryAttempt> NotificationDeliveryAttemptSet => Set<NotificationDeliveryAttempt>();
 
     public DbSet<AuditLog> AuditLogSet => Set<AuditLog>();
 
@@ -162,6 +173,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<NotificationTarget> NotificationTargets => NotificationTargetSet;
 
+    public IQueryable<NotificationEvent> NotificationEvents => NotificationEventSet;
+
+    public IQueryable<InAppNotification> InAppNotifications => InAppNotificationSet;
+
+    public IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts => NotificationDeliveryAttemptSet;
+
     public IQueryable<AuditLog> AuditLogs => AuditLogSet;
 
     public IQueryable<SettingEntry> Settings => SettingSet;
@@ -214,6 +231,17 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public IRepository<RegistryCredential, RegistryCredentialId> RegistryCredentialRepository { get; }
 
     public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; }
+
+    public IRepository<NotificationTarget, NotificationTargetId> NotificationTargetRepository { get; }
+
+    public IRepository<NotificationEvent, NotificationEventId> NotificationEventRepository { get; }
+
+    public IRepository<InAppNotification, InAppNotificationId> InAppNotificationRepository { get; }
+
+    public IRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId> NotificationDeliveryAttemptRepository
+    {
+        get;
+    }
 
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
@@ -978,8 +1006,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(target => target.CredentialsReferenceId)
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new SecretReferenceId(value.Value) : null);
+            builder.Property(target => target.ConfigurationJson).HasColumnType("jsonb").IsRequired();
             builder.Property(target => target.Policy).HasConversion(ValueObjectConversions.NotificationDeliveryPolicy)
                 .HasMaxLength(64).IsRequired();
+            builder.Property(target => target.IsEnabled).IsRequired();
             builder.Property(target => target.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(target => target.DomainEvents);
             builder.HasIndex(target => new { target.TeamId, target.Name }).IsUnique();
@@ -991,6 +1021,98 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(target => target.CredentialsReferenceId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<NotificationEvent>(builder =>
+        {
+            builder.ToTable("notification_events");
+            builder.HasKey(notification => notification.Id);
+            builder.Property(notification => notification.Id).HasNotificationEventIdConversion();
+            builder.Property(notification => notification.TeamId).HasTeamIdConversion();
+            builder.Property(notification => notification.UserId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new UserId(value.Value) : null);
+            builder.Property(notification => notification.EventType).HasMaxLength(120).IsRequired();
+            builder.Property(notification => notification.Severity).HasConversion<string>().HasMaxLength(32)
+                .IsRequired();
+            builder.Property(notification => notification.TargetType).HasConversion<string>().HasMaxLength(32)
+                .IsRequired();
+            builder.Property(notification => notification.TargetId).HasMaxLength(160);
+            builder.Property(notification => notification.Title).HasMaxLength(255).IsRequired();
+            builder.Property(notification => notification.Message).HasMaxLength(2000).IsRequired();
+            builder.Property(notification => notification.PayloadJson).HasColumnType("jsonb").IsRequired();
+            builder.Property(notification => notification.ResourceUrl).HasMaxLength(2048);
+            builder.Property(notification => notification.Status).HasConversion<string>().HasMaxLength(32)
+                .IsRequired();
+            builder.Property(notification => notification.FailureReason).HasMaxLength(512);
+            builder.Property(notification => notification.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(notification => notification.DomainEvents);
+            builder.HasIndex(notification => new { notification.TeamId, notification.CreatedAt });
+            builder.HasIndex(notification => new { notification.TeamId, notification.Status, notification.CreatedAt });
+            builder.HasIndex(notification => new { notification.EventType, notification.CreatedAt });
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(notification => notification.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(notification => notification.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<InAppNotification>(builder =>
+        {
+            builder.ToTable("in_app_notifications");
+            builder.HasKey(notification => notification.Id);
+            builder.Property(notification => notification.Id).HasInAppNotificationIdConversion();
+            builder.Property(notification => notification.EventId).HasNotificationEventIdConversion();
+            builder.Property(notification => notification.TeamId).HasTeamIdConversion();
+            builder.Property(notification => notification.UserId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new UserId(value.Value) : null);
+            builder.Property(notification => notification.Status).HasConversion<string>().HasMaxLength(32)
+                .IsRequired();
+            builder.Property(notification => notification.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(notification => notification.DomainEvents);
+            builder.HasIndex(notification => new { notification.TeamId, notification.Status, notification.CreatedAt });
+            builder.HasIndex(notification => new { notification.UserId, notification.Status, notification.CreatedAt });
+            builder.HasOne<NotificationEvent>()
+                .WithMany()
+                .HasForeignKey(notification => notification.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(notification => notification.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(notification => notification.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<NotificationDeliveryAttempt>(builder =>
+        {
+            builder.ToTable("notification_delivery_attempts");
+            builder.HasKey(attempt => attempt.Id);
+            builder.Property(attempt => attempt.Id).HasNotificationDeliveryAttemptIdConversion();
+            builder.Property(attempt => attempt.EventId).HasNotificationEventIdConversion();
+            builder.Property(attempt => attempt.TargetId).HasNotificationTargetIdConversion();
+            builder.Property(attempt => attempt.Channel).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(attempt => attempt.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(attempt => attempt.FailureReason).HasMaxLength(512);
+            builder.Property(attempt => attempt.ProviderMessageId).HasMaxLength(255);
+            builder.Property(attempt => attempt.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(attempt => attempt.DomainEvents);
+            builder.HasIndex(attempt => new { attempt.EventId, attempt.TargetId, attempt.AttemptNumber }).IsUnique();
+            builder.HasIndex(attempt => new { attempt.Status, attempt.RetryAfter });
+            builder.HasOne<NotificationEvent>()
+                .WithMany()
+                .HasForeignKey(attempt => attempt.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<NotificationTarget>()
+                .WithMany()
+                .HasForeignKey(attempt => attempt.TargetId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 

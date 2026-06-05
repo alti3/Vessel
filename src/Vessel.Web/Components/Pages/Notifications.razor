@@ -1,34 +1,200 @@
 @page "/notifications"
 @attribute [Authorize]
-@inject INotificationCatalogQuery NotificationQuery
+@inject NotificationTargetService TargetService
+@inject NotificationCenterService CenterService
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Notifications | Vessel</PageTitle>
 <PageHeader Kicker="Events" Title="Notifications"
-            Description="In-app and external notification targets for operational events."/>
+            Description="In-app and external notification targets for deployment, backup, and server events."/>
 
-@if (Items.Count == 0)
-{
-    <EmptyState Title="No notification targets"
-                Description="Notification channels will appear here as providers are implemented."/>
-}
-else
-{
-    <div class="resource-grid">
-        @foreach (var item in Items)
+<div class="settings-grid">
+    <section class="settings-panel">
+        <div class="panel-header">
+            <h2>Notification Center</h2>
+            <span class="muted">@InAppItems.Count item(s)</span>
+        </div>
+        @if (InAppItems.Count == 0)
         {
-            <ResourceCard Href="@($"/notifications/{item.Id}")" IconName="bell" Title="@item.Name"
-                          Description="@item.Channel.ToString()"/>
+            <EmptyState Title="No notifications" Description="Operational events will appear here."/>
+        }
+        else
+        {
+            <div class="stack-list">
+                @foreach (var item in InAppItems)
+                {
+                    <article class="list-row">
+                        <div>
+                            <div class="row-title">@item.Title</div>
+                            <div class="muted">@item.Message</div>
+                            <div class="meta-row">
+                                <StatusBadge Text="@item.Severity.ToString()" Tone="@SeverityTone(item.Severity)"/>
+                                <span>@item.EventType</span>
+                                <span>@item.CreatedAt.ToLocalTime().ToString("g")</span>
+                            </div>
+                        </div>
+                        <div class="row-actions">
+                            @if (item.Status == InAppNotificationStatus.Unread)
+                            {
+                                <button class="button button-secondary" @onclick="() => MarkRead(item.Id)">Read</button>
+                            }
+                            <button class="button button-secondary" @onclick="() => Archive(item.Id)">Archive</button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="settings-panel">
+        <div class="panel-header">
+            <h2>Targets</h2>
+            <span class="muted">@Targets.Count configured</span>
+        </div>
+        @if (Targets.Count == 0)
+        {
+            <EmptyState Title="No notification targets" Description="Add a channel to receive external notifications."/>
+        }
+        else
+        {
+            <div class="resource-grid">
+                @foreach (var item in Targets)
+                {
+                    <ResourceCard Href="/notifications" IconName="bell" Title="@item.Name"
+                                  Description="@($"{item.Channel} · {(item.IsEnabled ? "enabled" : "disabled")}")"/>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+<section class="settings-panel">
+    <div class="panel-header">
+        <h2>Configure Channel</h2>
+        @if (!string.IsNullOrWhiteSpace(FormMessage))
+        {
+            <StatusBadge Text="@FormMessage" Tone="neutral"/>
         }
     </div>
-}
+
+    <EditForm Model="Form" OnValidSubmit="SaveTarget">
+        <DataAnnotationsValidator/>
+        <div class="form-grid">
+            <label>
+                Name
+                <InputText @bind-Value="Form.Name" class="input"/>
+            </label>
+            <label>
+                Channel
+                <InputSelect @bind-Value="Form.Channel" class="input">
+                    <option value="@NotificationChannel.Email">Email</option>
+                    <option value="@NotificationChannel.Webhook">Webhook</option>
+                    <option value="@NotificationChannel.Discord">Discord</option>
+                    <option value="@NotificationChannel.Telegram">Telegram</option>
+                    <option value="@NotificationChannel.Slack">Slack</option>
+                    <option value="@NotificationChannel.InApp">In-app</option>
+                </InputSelect>
+            </label>
+            <label>
+                Minimum severity
+                <InputSelect @bind-Value="Form.MinimumSeverity" class="input">
+                    <option value="@NotificationSeverity.Info">Info</option>
+                    <option value="@NotificationSeverity.Warning">Warning</option>
+                    <option value="@NotificationSeverity.Critical">Critical</option>
+                </InputSelect>
+            </label>
+            <label class="checkbox-row">
+                <InputCheckbox @bind-Value="Form.IsEnabled"/>
+                Enabled
+            </label>
+        </div>
+
+        <div class="toggle-row">
+            <label><InputCheckbox @bind-Value="Form.DeploymentEvents"/> Deployment events</label>
+            <label><InputCheckbox @bind-Value="Form.BackupEvents"/> Backup events</label>
+            <label><InputCheckbox @bind-Value="Form.ServerEvents"/> Server events</label>
+        </div>
+
+        <label>
+            Public configuration JSON
+            <InputTextArea @bind-Value="Form.ConfigurationJson" class="input textarea"/>
+        </label>
+        <label>
+            Secret JSON
+            <InputTextArea @bind-Value="Form.SecretJson" class="input textarea" placeholder="@SecretPlaceholder"/>
+        </label>
+
+        <div class="form-actions">
+            <button class="button button-primary" type="submit">Save target</button>
+        </div>
+    </EditForm>
+</section>
 
 @code {
-    private IReadOnlyList<NotificationTargetListItem> Items { get; set; } = [];
+    private IReadOnlyList<Vessel.Application.Notifications.NotificationTargetListItem> Targets { get; set; } = [];
+    private IReadOnlyList<InAppNotificationListItem> InAppItems { get; set; } = [];
+    private NotificationTargetForm Form { get; } = new();
+    private string? FormMessage { get; set; }
+
+    private const string SecretPlaceholder = """{"webhookUrl":"https://hooks.slack.com/..."} or {"url":"https://example.test","secret":"..."}""";
 
     protected override async Task OnInitializedAsync()
     {
-        Items = NotificationQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+        await Refresh();
     }
 
+    private async Task SaveTarget()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        await TargetService.UpsertTargetAsync(state.User.GetTeamId(), state.User.GetUserId(),
+            new UpsertNotificationTargetRequest(Form.Name, Form.Channel, Form.IsEnabled, Form.MinimumSeverity,
+                Form.DeploymentEvents, Form.BackupEvents, Form.ServerEvents, Form.ConfigurationJson, Form.SecretJson));
+        Form.SecretJson = null;
+        FormMessage = "Saved";
+        await Refresh();
+    }
+
+    private async Task MarkRead(Guid id)
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        await CenterService.MarkReadAsync(state.User.GetTeamId(), state.User.GetUserId(), new InAppNotificationId(id));
+        await Refresh();
+    }
+
+    private async Task Archive(Guid id)
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        await CenterService.ArchiveAsync(state.User.GetTeamId(), state.User.GetUserId(), new InAppNotificationId(id));
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Targets = TargetService.ListTargets(user.GetTeamId());
+        InAppItems = CenterService.ListInApp(user.GetTeamId(), user.GetUserId());
+    }
+
+    private static string SeverityTone(NotificationSeverity severity)
+    {
+        return severity switch
+        {
+            NotificationSeverity.Critical => "danger",
+            NotificationSeverity.Warning => "warning",
+            _ => "neutral"
+        };
+    }
+
+    private sealed class NotificationTargetForm
+    {
+        public string Name { get; set; } = "Operations";
+        public NotificationChannel Channel { get; set; } = NotificationChannel.Email;
+        public bool IsEnabled { get; set; } = true;
+        public NotificationSeverity MinimumSeverity { get; set; } = NotificationSeverity.Info;
+        public bool DeploymentEvents { get; set; } = true;
+        public bool BackupEvents { get; set; } = true;
+        public bool ServerEvents { get; set; } = true;
+        public string? ConfigurationJson { get; set; } = "{}";
+        public string? SecretJson { get; set; }
+    }
 }

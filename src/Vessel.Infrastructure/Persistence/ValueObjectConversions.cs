@@ -148,8 +148,8 @@ internal static class ValueObjectConversions
     private static string FormatNotificationDeliveryPolicy(NotificationDeliveryPolicy value)
     {
         return string.Join('|', ((int)value.MinimumSeverity).ToString(CultureInfo.InvariantCulture),
-            value.DeploymentEventsEnabled.ToString(), value.ServerEventsEnabled.ToString(),
-            value.SecurityEventsEnabled.ToString());
+            value.DeploymentEventsEnabled.ToString(), value.BackupEventsEnabled.ToString(),
+            value.ServerEventsEnabled.ToString());
     }
 
     private static string FormatAuditTarget(AuditTarget value)
@@ -228,6 +228,9 @@ internal static class ValueObjectConversions
     private static NotificationDeliveryPolicy ParseNotificationDeliveryPolicy(string value)
     {
         var parts = value.Split('|');
+        if (parts.Length != 4)
+            throw new FormatException("Notification delivery policy format is invalid.");
+
         return new NotificationDeliveryPolicy((NotificationSeverity)int.Parse(parts[0], CultureInfo.InvariantCulture),
             bool.Parse(parts[1]), bool.Parse(parts[2]), bool.Parse(parts[3]));
     }

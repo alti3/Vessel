@@ -493,6 +493,12 @@ public sealed class Phase10ProxyServiceTests
             Array.Empty<ServerStatusSnapshot>().AsQueryable();
 
         public IQueryable<NotificationTarget> NotificationTargets => Array.Empty<NotificationTarget>().AsQueryable();
+        public IQueryable<NotificationEvent> NotificationEvents => Array.Empty<NotificationEvent>().AsQueryable();
+        public IQueryable<InAppNotification> InAppNotifications => Array.Empty<InAppNotification>().AsQueryable();
+
+        public IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts =>
+            Array.Empty<NotificationDeliveryAttempt>().AsQueryable();
+
         public IQueryable<AuditLog> AuditLogs => Array.Empty<AuditLog>().AsQueryable();
         public IQueryable<SettingEntry> Settings => Array.Empty<SettingEntry>().AsQueryable();
         public IQueryable<PersonalAccessToken> PersonalAccessTokens => Array.Empty<PersonalAccessToken>().AsQueryable();

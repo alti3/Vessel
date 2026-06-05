@@ -18,7 +18,8 @@ public sealed record RealtimeGroup(RealtimeGroupKind Kind, string Id)
 {
     public override string ToString()
     {
-        return $"{Kind.ToString().ToLowerInvariant()}:{Id}";
+        var prefix = Kind == RealtimeGroupKind.Team ? "tenant" : Kind.ToString().ToLowerInvariant();
+        return $"{prefix}:{Id}";
     }
 }
 

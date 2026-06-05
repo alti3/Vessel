@@ -25,7 +25,7 @@ using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Application.Persistence;
 
-public sealed class UnavailableVesselDbContext : IVesselDbContext
+public class UnavailableVesselDbContext : IVesselDbContext
 {
     public IQueryable<User> Users => Enumerable.Empty<User>().AsQueryable();
     public IQueryable<Team> Teams => Enumerable.Empty<Team>().AsQueryable();
@@ -52,7 +52,16 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IQueryable<ServerStatusSnapshot> ServerStatusSnapshots =>
         Enumerable.Empty<ServerStatusSnapshot>().AsQueryable();
 
-    public IQueryable<NotificationTarget> NotificationTargets => Enumerable.Empty<NotificationTarget>().AsQueryable();
+    public virtual IQueryable<NotificationTarget> NotificationTargets =>
+        Enumerable.Empty<NotificationTarget>().AsQueryable();
+
+    public virtual IQueryable<NotificationEvent> NotificationEvents => Enumerable.Empty<NotificationEvent>().AsQueryable();
+
+    public virtual IQueryable<InAppNotification> InAppNotifications => Enumerable.Empty<InAppNotification>().AsQueryable();
+
+    public virtual IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts =>
+        Enumerable.Empty<NotificationDeliveryAttempt>().AsQueryable();
+
     public IQueryable<AuditLog> AuditLogs => Enumerable.Empty<AuditLog>().AsQueryable();
     public IQueryable<SettingEntry> Settings => Enumerable.Empty<SettingEntry>().AsQueryable();
 
@@ -120,6 +129,20 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IRepository<ServerStatusSnapshot, ServerStatusSnapshotId> ServerStatusSnapshotRepository { get; } =
         new UnavailableRepository<ServerStatusSnapshot, ServerStatusSnapshotId>();
 
+    public virtual IRepository<NotificationTarget, NotificationTargetId> NotificationTargetRepository { get; } =
+        new UnavailableRepository<NotificationTarget, NotificationTargetId>();
+
+    public virtual IRepository<NotificationEvent, NotificationEventId> NotificationEventRepository { get; } =
+        new UnavailableRepository<NotificationEvent, NotificationEventId>();
+
+    public virtual IRepository<InAppNotification, InAppNotificationId> InAppNotificationRepository { get; } =
+        new UnavailableRepository<InAppNotification, InAppNotificationId>();
+
+    public virtual IRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId>
+        NotificationDeliveryAttemptRepository
+    { get; } =
+        new UnavailableRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId>();
+
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; } =
         new UnavailableRepository<WebhookEvent, WebhookEventId>();
 
@@ -142,7 +165,7 @@ public sealed class UnavailableVesselDbContext : IVesselDbContext
     public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; } =
         new UnavailableRepository<TerminalSession, TerminalSessionId>();
 
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public virtual Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         throw new InvalidOperationException("Vessel database persistence is disabled.");
     }
