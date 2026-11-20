@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Vessel.Application.Email;
 using Vessel.Application.Notifications;
 using Vessel.Application.OutboundRequests;
+using Vessel.Infrastructure.Email;
 using Vessel.Infrastructure.OutboundRequests;
 
 namespace Vessel.Infrastructure.Notifications;
@@ -25,6 +27,18 @@ internal static class NotificationServiceCollectionExtensions
 
         // Added (not TryAdded) so it replaces any host-level fallback registration.
         services.AddScoped<INotificationEventPublisher, BackgroundNotificationEventPublisher>();
+        services.TryAddScoped<INotificationThrottle, EfNotificationThrottle>();
+
+        // NTF-06 / SEC-08: MailKit SMTP over a policy-checked, pinned socket; Resend over its fixed HTTPS API.
+        services.TryAddSingleton<PinnedSocketConnector>();
+        services.TryAddSingleton<ISmtpEmailTransport, MailKitSmtpTransport>();
+        services.AddHttpClient<IResendEmailTransport, ResendEmailTransport>(ResendEmailTransport.HttpClientName,
+                client =>
+                {
+                    client.BaseAddress = new Uri("https://api.resend.com/");
+                    client.Timeout = ProviderTimeout;
+                })
+            .RemoveAllLoggers();
 
         services.AddTransient<INotificationProvider, EmailNotificationProvider>();
         AddGuardedProvider<HttpWebhookNotificationProvider>(services, client => client.Timeout = ProviderTimeout);

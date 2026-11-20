@@ -43,11 +43,12 @@ public sealed class HttpWebhookNotificationProvider(HttpClient httpClient) : INo
                 ? NotificationDeliveryResult.Succeeded(response.Headers.TryGetValues("X-Request-Id", out var values)
                     ? values.FirstOrDefault()
                     : null)
-                : NotificationDeliveryResult.Failed($"Webhook notification delivery failed with HTTP {(int)response.StatusCode}.");
+                : NotificationDeliveryResult.FromHttpStatus("Webhook", (int)response.StatusCode,
+                    NotificationHttpFailures.WebhookConfigurationStatuses);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or UriFormatException or JsonException)
+        catch (Exception ex) when (NotificationHttpFailures.IsHandled(ex, cancellationToken))
         {
-            return NotificationDeliveryResult.Failed($"Webhook notification delivery failed: {ex.GetType().Name}.");
+            return NotificationHttpFailures.FromException("Webhook", ex, cancellationToken);
         }
     }
 

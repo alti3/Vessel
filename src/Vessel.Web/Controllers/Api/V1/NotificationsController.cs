@@ -37,6 +37,13 @@ public sealed class NotificationsController : ControllerBase
         return Guard(() => Ok(_targets.ListTargets(User.GetTeamId(), User.GetUserId())));
     }
 
+    /// <summary>The notification event catalog: keys, defaults, always-deliver events, and throttling (NTF-05).</summary>
+    [HttpGet("event-types")]
+    public ActionResult<IReadOnlyList<NotificationEventCatalogItem>> ListEvents()
+    {
+        return Guard(() => Ok(_targets.ListEventCatalog(User.GetTeamId(), User.GetUserId())));
+    }
+
     [HttpPut("targets")]
     [Authorize(Policy = VesselPermissions.NotificationsWrite)]
     public async Task<ActionResult<NotificationTargetListItem>> UpsertTarget(

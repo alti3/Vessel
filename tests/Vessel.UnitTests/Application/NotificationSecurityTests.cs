@@ -156,8 +156,8 @@ public sealed class NotificationSecurityTests
         Assert.Contains(fixture.Audit.Records, record => record.Action == AuditActions.NotificationTargetTested);
 
         var provider = new RecordingProvider();
-        var dispatch = new NotificationDispatchService(fixture.Db, [provider], fixture.Vault, new PassthroughRedactor(),
-            fixture.Jobs, TimeProvider.System);
+        var dispatch = Notifications.NotificationTestKit.CreateDispatch(fixture.Db, [provider], fixture.Vault,
+            new PassthroughRedactor(), fixture.Jobs, TimeProvider.System);
         await dispatch.DispatchAsync(testEvent.Id.Value, TestContext.Current.CancellationToken);
 
         Assert.Equal([underTest.Id.Value], provider.TargetIds);
@@ -225,7 +225,8 @@ public sealed class NotificationSecurityTests
             fixture.Center = new NotificationCenterService(fixture.Db, authorization, new NullRealtime(),
                 TimeProvider.System);
             fixture.Events = new NotificationEventService(fixture.Db, fixture.Center, fixture.Jobs,
-                new PassthroughRedactor(), TimeProvider.System);
+                new PassthroughRedactor(), new Notifications.InMemoryNotificationThrottle(TimeProvider.System),
+                TimeProvider.System);
             fixture.Targets = new NotificationTargetService(fixture.Db, authorization, fixture.Vault, fixture.Policy,
                 fixture.Events, fixture.Audit, TimeProvider.System);
             return fixture;
