@@ -1,35 +1,28 @@
 # .NET SDK Status
 
-Last checked: 2026-05-18
+Last checked: 2026-11-20
 
-The repository is configured for .NET 11 preview because the user explicitly approved beginning work against the preview SDK before stable GA.
+.NET 11 reached general availability on 2026-11-10 (runtime `11.0.0`, SDK `11.0.100`, STS support phase). The repository now targets the stable release:
 
-The configured SDK in `global.json` is:
+- `global.json` pins SDK `11.0.100` with `rollForward: latestFeature` and `allowPrerelease: false`.
+- `Directory.Build.props` uses `LangVersion` `latest` (no preview language features).
+- All `Microsoft.*`, EF Core, and Npgsql packages are on their `11.0.0` stable releases.
 
-- `11.0.100-preview.4.26230.115`
+## Preview-to-GA Migration Notes
 
-This should be replaced with the stable .NET 11 SDK after official GA.
+- EF Core 11 previews generated a `LatestMigrationId` override in `VesselDbContextModelSnapshot`. The GA `ModelSnapshot` type no longer exposes that member, so the generated override was removed. New migrations regenerate the snapshot with the GA tooling.
+- `SSH.NET` moved from `2025.1.0` to `2026.0.1` because the older version has two published high-severity advisories (`GHSA-mggc-4xg6-vcxf`, `GHSA-q939-rpr3-3284`) reported by `dotnet restore` (`NU1903`).
 
-## Local SDK Visibility
+## Local Verification
 
-The local development environment now exposes .NET 11 through `dotnet --info`.
+The SDK can be installed per-user without root:
 
-Installed SDKs reported by `dotnet --info`:
+```bash
+curl -fsSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+bash dotnet-install.sh --version 11.0.100 --install-dir "$HOME/.dotnet"
+```
 
-- `10.0.204`
-- `10.0.300`
-- `11.0.100-preview.4.26230.115`
-
-Installed runtimes reported by `dotnet --info`:
-
-- `Microsoft.AspNetCore.App 10.0.8`
-- `Microsoft.AspNetCore.App 11.0.0-preview.4.26230.115`
-- `Microsoft.NETCore.App 10.0.8`
-- `Microsoft.NETCore.App 11.0.0-preview.4.26230.115`
-- `Microsoft.WindowsDesktop.App 10.0.8`
-- `Microsoft.WindowsDesktop.App 11.0.0-preview.4.26230.115`
-
-Local verification now succeeds with the configured preview SDK:
+Verification commands:
 
 - `dotnet restore Vessel.slnx`
 - `dotnet build Vessel.slnx --no-restore`

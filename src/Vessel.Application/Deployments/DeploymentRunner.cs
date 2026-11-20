@@ -330,7 +330,10 @@ public sealed class DeploymentRunner(
         builder.AppendLine("      vessel.managed: \"true\"");
         builder.AppendLine($"      vessel.application: \"{application.Id.Value:D}\"");
         builder.AppendLine("    networks:");
-        builder.AppendLine($"      - {networkName}");
+        builder.AppendLine($"      {networkName}:");
+        builder.AppendLine("        aliases:");
+        // Stable per-application alias used by proxy upstreams; never the user-controlled display name.
+        builder.AppendLine($"          - {ProxyNaming.UpstreamAlias(application.Id)}");
         builder.AppendLine("    ports:");
         builder.AppendLine($"      - \"{port}:{port}\"");
         builder.AppendLine("    restart: unless-stopped");

@@ -742,6 +742,13 @@ public sealed class Phase10ProxyServiceTests
 
         public List<ProxyConfigurationDocument> RolledBackDocuments { get; } = [];
 
+        public List<ProxyRouteRejection> RouteRejections { get; } = [];
+
+        public IReadOnlyList<ProxyRouteRejection> ValidateRoutes(IReadOnlyList<ProxyRoute> routes)
+        {
+            return RouteRejections;
+        }
+
         public ProxyConfigurationDocument Generate(ServerId serverId, IReadOnlyList<ProxyRoute> routes)
         {
             GeneratedRoutes = routes.ToList();

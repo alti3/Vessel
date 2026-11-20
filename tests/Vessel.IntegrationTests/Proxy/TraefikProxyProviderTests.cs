@@ -5,6 +5,7 @@ using Vessel.Domain;
 using Vessel.Domain.Proxy;
 using Vessel.Infrastructure.Files;
 using Vessel.Infrastructure.Proxy;
+using YamlDotNet.RepresentationModel;
 using AppId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.IntegrationTests.Proxy;
@@ -47,10 +48,78 @@ public sealed class TraefikProxyProviderTests
         Assert.Contains("Host(`www.example.com`)", document.Contents, StringComparison.Ordinal);
         Assert.Contains("- websecure", document.Contents, StringComparison.Ordinal);
         Assert.Contains("- web", document.Contents, StringComparison.Ordinal);
-        Assert.Contains("url: \"http://vessel-app:9090\"", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("http://vessel-app:9090", document.Contents, StringComparison.Ordinal);
         Assert.Contains("redirectRegex:", document.Contents, StringComparison.Ordinal);
-        Assert.Contains("replacement: \"https://app.example.com$${1}\"", document.Contents, StringComparison.Ordinal);
-        Assert.True(provider.Validate(document).Succeeded);
+        ProxyValidationResult validation = provider.Validate(document);
+        Assert.True(validation.Succeeded, string.Join("; ", validation.Errors));
+    }
+
+    [Fact]
+    public void Generate_EmitsParseableYamlWithLiteralCaptureGroupReplacement()
+    {
+        TraefikProxyProvider provider = CreateProvider();
+        var serverId = ServerId.New();
+        var applicationId = AppId.New();
+
+        ProxyConfigurationDocument document = provider.Generate(serverId,
+        [
+            new ProxyRoute(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false),
+            new ProxyRoute(applicationId, serverId, "vessel-app", "www.example.com", 8080, true, false, true)
+        ]);
+
+        var yaml = new YamlStream();
+        yaml.Load(new StringReader(document.Contents));
+        var root = (YamlMappingNode)yaml.Documents[0].RootNode;
+        var middlewares = (YamlMappingNode)((YamlMappingNode)root["http"])["middlewares"];
+        YamlMappingNode redirect = middlewares.Children
+            .Where(pair => ((YamlScalarNode)pair.Key).Value!.EndsWith("-canonical", StringComparison.Ordinal))
+            .Select(pair => (YamlMappingNode)((YamlMappingNode)pair.Value)["redirectRegex"])
+            .Single();
+
+        Assert.Equal(@"^https?://www\.example\.com(.*)", ((YamlScalarNode)redirect["regex"]).Value);
+        Assert.Equal("https://app.example.com${1}", ((YamlScalarNode)redirect["replacement"]).Value);
+        Assert.Equal("false", ((YamlScalarNode)redirect["permanent"]).Value);
+        Assert.DoesNotContain("$${1}", document.Contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generate_AddsHttpRouterThatRedirectsTlsHostsToHttps()
+    {
+        TraefikProxyProvider provider = CreateProvider();
+        var serverId = ServerId.New();
+        var applicationId = AppId.New();
+
+        ProxyConfigurationDocument document = provider.Generate(serverId,
+        [
+            new ProxyRoute(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false)
+        ]);
+
+        var key = ProxyNaming.RouterKey(applicationId, "app.example.com");
+        Assert.Contains($"{key}-https:", document.Contents, StringComparison.Ordinal);
+        Assert.Contains($"{key}-http:", document.Contents, StringComparison.Ordinal);
+        Assert.Contains(ProxyNaming.RedirectToHttpsMiddleware + ":", document.Contents, StringComparison.Ordinal);
+        Assert.Contains("redirectScheme:", document.Contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RouterKey_IsStableAndDistinguishesPunctuationAndLastCharacter()
+    {
+        var applicationId = AppId.New();
+
+        Assert.Equal(ProxyNaming.RouterKey(applicationId, "api.test"),
+            ProxyNaming.RouterKey(applicationId, "API.test"));
+        Assert.NotEqual(ProxyNaming.RouterKey(applicationId, "api.test"),
+            ProxyNaming.RouterKey(applicationId, "api-test"));
+        Assert.NotEqual(ProxyNaming.RouterKey(applicationId, "a.example.com"),
+            ProxyNaming.RouterKey(applicationId, "a.example.co"));
+        Assert.NotEqual(ProxyNaming.RouterKey(applicationId, "app.example.com"),
+            ProxyNaming.RouterKey(AppId.New(), "app.example.com"));
+    }
+
+    [Fact]
+    public void UpstreamAlias_IsUniquePerApplication()
+    {
+        Assert.NotEqual(ProxyNaming.UpstreamAlias(AppId.New()), ProxyNaming.UpstreamAlias(AppId.New()));
     }
 
     [Fact]
@@ -66,7 +135,26 @@ public sealed class TraefikProxyProviderTests
     }
 
     [Fact]
-    public void Validate_RejectsDuplicateHostsAndSecretLikeContent()
+    public void ValidateRoutes_QuarantinesOnlyTheInvalidRoutes()
+    {
+        TraefikProxyProvider provider = CreateProvider();
+        var serverId = ServerId.New();
+        var good = new ProxyRoute(AppId.New(), serverId, "vessel-app-a", "good.example.com", 8080, true, true, false);
+        var badHost = new ProxyRoute(AppId.New(), serverId, "vessel-app-b", "-bad.example.com", 8080, true, true,
+            false);
+        var dangling = new ProxyRoute(AppId.New(), serverId, "vessel-app-c", "www.other.com", 8080, true, false, true);
+        var duplicate = new ProxyRoute(AppId.New(), serverId, "vessel-app-d", "good.example.com", 8080, true, true,
+            false);
+
+        IReadOnlyList<ProxyRouteRejection> rejections =
+            provider.ValidateRoutes([good, badHost, dangling, duplicate]);
+
+        Assert.Equal(3, rejections.Count);
+        Assert.DoesNotContain(rejections, rejection => rejection.Route == good);
+    }
+
+    [Fact]
+    public void Validate_RejectsDuplicateHostsInvalidYamlAndPrivateKeys()
     {
         TraefikProxyProvider provider = CreateProvider();
         var serverId = ServerId.New();
@@ -77,14 +165,32 @@ public sealed class TraefikProxyProviderTests
         ];
         ProxyConfigurationDocument document = provider.Generate(serverId, routes) with
         {
-            Contents = "http:\n  routers: {}\n  services: {}\n  password: super-secret\n"
+            Contents = "http:\n  routers: {}\n  services: {}\n  key: \"-----BEGIN PRIVATE KEY-----\"\n"
         };
 
         ProxyValidationResult result = provider.Validate(document);
 
         Assert.False(result.Succeeded);
-        Assert.Contains(result.Errors, error => error.Contains("configured more than once", StringComparison.Ordinal));
-        Assert.Contains(result.Errors, error => error.Contains("secret-like", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.Contains("more than one resource", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.Contains("private key", StringComparison.Ordinal));
+
+        ProxyValidationResult invalidYaml =
+            provider.Validate(document with { Contents = "http:\n  routers: \"\\.\"\n", Routes = [] });
+        Assert.False(invalidYaml.Succeeded);
+        Assert.Contains(invalidYaml.Errors, error => error.Contains("not valid YAML", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_AllowsBasicAuthStyleContentWithoutSecretHeuristics()
+    {
+        TraefikProxyProvider provider = CreateProvider();
+        var document = new ProxyConfigurationDocument(ServerId.New(), ProxyProviderKind.Traefik, "v1",
+            "http:\n  routers: {}\n  services: {}\n  middlewares:\n    auth:\n      basicAuth:\n        usersFile: /etc/password-hashes\n",
+            "hash", []);
+
+        ProxyValidationResult result = provider.Validate(document);
+
+        Assert.True(result.Succeeded, string.Join("; ", result.Errors));
     }
 
     [Fact]
