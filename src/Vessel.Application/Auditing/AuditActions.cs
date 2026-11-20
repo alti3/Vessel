@@ -62,4 +62,5 @@ public static class AuditActions
     public const string ServerHealthPolled = "server.health_polled";
     public const string DeploymentLogsPruned = "deployment.logs_pruned";
     public const string NotificationTargetConfigured = "notification.target_configured";
+    public const string NotificationTargetTested = "notification.target_tested";
 }

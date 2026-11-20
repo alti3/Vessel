@@ -47,8 +47,10 @@ Vessel uses explicit policy names:
 - `secrets.write`
 - `settings.manage`
 - `teams.manage`
+- `notifications.read`
+- `notifications.write`
 
-Owners and admins receive all permissions. Members receive read-oriented resource permissions plus deployment start/cancel and deployment log access. Secret read/write requires explicit permission and must not be inferred from route IDs alone.
+Owners and admins receive all permissions. Members receive read-oriented resource permissions plus deployment start/cancel, deployment log access, and `notifications.read`. Only owners and admins can change notification targets or send test notifications (`notifications.write`). Secret read/write requires explicit permission and must not be inferred from route IDs alone.
 
 ## Audit
 

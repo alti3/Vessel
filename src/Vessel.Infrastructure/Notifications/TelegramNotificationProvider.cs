@@ -16,6 +16,9 @@ public sealed class TelegramNotificationProvider(HttpClient httpClient) : INotif
         try
         {
             var secret = NotificationJson.ParseSecret<TelegramNotificationSecret>(target.SecretJson);
+            // The token is part of the request path; a strict format check prevents path injection.
+            if (!NotificationCredentialFormats.IsValidTelegramBotToken(secret.BotToken))
+                return NotificationDeliveryResult.Failed("Telegram bot token has an invalid format.");
             using var response = await httpClient.PostAsJsonAsync($"/bot{secret.BotToken}/sendMessage", new
             {
                 chat_id = secret.ChatId,

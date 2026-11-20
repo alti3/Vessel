@@ -1,6 +1,7 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Jobs;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -21,7 +22,8 @@ public sealed class CertificateManagementService(
     ProxyConfigurationService proxyConfiguration,
     IAuditWriter auditWriter,
     ISecretRedactor redactor,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
 {
     public IReadOnlyList<CertificateSummary> List(UserId actorUserId, TeamId teamId, AppId applicationId)
     {
@@ -92,11 +94,22 @@ public sealed class CertificateManagementService(
                                                       ?? throw new InvalidOperationException(
                                                           "Application was not found.");
 
-        await proxyConfiguration.ApplyForDeploymentAsync(
-            null,
-            certificate.TeamId,
-            application.ServerId,
-            cancellationToken);
+        try
+        {
+            await proxyConfiguration.ApplyForDeploymentAsync(
+                null,
+                certificate.TeamId,
+                application.ServerId,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await notifications.PublishAsync(certificate.TeamId,
+                OperationalNotifications.CertificateFailed(certificate.Id.Value, certificate.ApplicationId.Value,
+                    certificate.Host, renewal: false),
+                CancellationToken.None);
+            throw;
+        }
 
         return ToSummary(certificate);
     }
@@ -109,6 +122,7 @@ public sealed class CertificateManagementService(
                                   (certificate.RenewalDueAt != null && certificate.RenewalDueAt <= now))
             .ToArray();
         var renewed = 0;
+        List<Certificate> failed = [];
         foreach (Certificate certificate in due)
         {
             await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
@@ -125,11 +139,19 @@ public sealed class CertificateManagementService(
             }
             catch (Exception ex)
             {
+                // Announce only the transition into Failed; a certificate that stays failed is re-polled every
+                // run and must not raise a new alert each time.
+                if (certificate.Status != CertificateStatus.Failed) failed.Add(certificate);
                 certificate.MarkFailed(redactor.Redact(ex.Message), now);
             }
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        foreach (Certificate certificate in failed)
+            await notifications.PublishAsync(certificate.TeamId,
+                OperationalNotifications.CertificateFailed(certificate.Id.Value, certificate.ApplicationId.Value,
+                    certificate.Host, renewal: true),
+                CancellationToken.None);
         return renewed;
     }
 

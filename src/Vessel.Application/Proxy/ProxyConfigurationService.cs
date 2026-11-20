@@ -1,5 +1,6 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -20,7 +21,8 @@ public sealed class ProxyConfigurationService(
     IDistributedLockManager locks,
     IAuditWriter auditWriter,
     ISecretRedactor redactor,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
 {
     public IReadOnlyList<ProxyConfigurationSummary> ListVersions(UserId actorUserId, TeamId teamId, ServerId serverId)
     {
@@ -92,6 +94,9 @@ public sealed class ProxyConfigurationService(
             version.MarkValidationFailed(string.Join("; ", validation.Errors.Select(error => redactor.Redact(error))),
                 now);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await notifications.PublishAsync(teamId,
+                OperationalNotifications.ProxyApplyFailed(serverId.Value, server.Name.Value, "validation"),
+                CancellationToken.None);
             throw new DomainException(version.ValidationError ?? "Proxy configuration validation failed.");
         }
 
@@ -111,6 +116,9 @@ public sealed class ProxyConfigurationService(
             if (previousDocument is not null) await proxyProvider.RollbackAsync(previousDocument, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            await notifications.PublishAsync(teamId,
+                OperationalNotifications.ProxyApplyFailed(serverId.Value, server.Name.Value, "apply"),
+                CancellationToken.None);
             throw new DomainException(version.ApplyError ?? "Proxy configuration apply failed.");
         }
 
