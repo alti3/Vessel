@@ -1,3 +1,4 @@
+using Vessel.Domain.Access;
 using Vessel.Domain.Common;
 using Vessel.Domain.ValueObjects;
 
@@ -65,12 +66,16 @@ public sealed class Team : Entity<TeamId>
         Touch(now);
     }
 
-    public void AddMember(UserId userId, TeamRole role, DateTimeOffset now)
+    public void AddMember(
+        UserId userId,
+        TeamRole role,
+        DateTimeOffset now,
+        IReadOnlyList<AccessGrant>? accessGrants = null)
     {
         if (_memberships.Any(member => member.UserId == userId))
             throw new DomainException("User is already a member of this team.");
 
-        _memberships.Add(new TeamMembership(Id, userId, role, now));
+        _memberships.Add(new TeamMembership(Id, userId, role, now, AccessGrant.Normalize(accessGrants)));
         Touch(now);
         AddDomainEvent(new TeamMemberAddedEvent(Id, userId, role, now));
     }
@@ -87,6 +92,26 @@ public sealed class Team : Entity<TeamId>
         membership.ChangeRole(role, now);
         Touch(now);
         AddDomainEvent(new TeamMemberRoleChangedEvent(Id, userId, role, now));
+    }
+
+    public TeamRole GetMemberRole(UserId userId)
+    {
+        return FindMembership(userId).Role;
+    }
+
+    /// <summary>
+    ///     Replaces the access grants of a <see cref="TeamRole.Member" />. <c>null</c> restores the default team-wide
+    ///     read access. Owners and admins are unrestricted, so their grants cannot be edited.
+    /// </summary>
+    public void SetMemberAccess(UserId userId, IReadOnlyList<AccessGrant>? grants, DateTimeOffset now)
+    {
+        TeamMembership membership = FindMembership(userId);
+        if (membership.Role != TeamRole.Member)
+            throw new DomainException("Access grants apply to members only; owners and admins are unrestricted.");
+
+        membership.SetAccessGrants(AccessGrant.Normalize(grants), now);
+        Touch(now);
+        AddDomainEvent(new TeamMemberAccessChangedEvent(Id, userId, now));
     }
 
     public void RemoveMember(UserId userId, DateTimeOffset now)

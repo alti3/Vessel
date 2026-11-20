@@ -20,6 +20,8 @@ public sealed class IdentityManagementSecurityTests
     [InlineData(TokenScopeMapper.Write)]
     [InlineData(TokenScopeMapper.WriteSensitive)]
     [InlineData(TokenScopeMapper.ReadSensitive)]
+    [InlineData(TokenScopeMapper.Deploy)]
+    [InlineData(TokenScopeMapper.Delete)]
     public async Task Member_CannotMintTokenAboveTheirRole(string scope)
     {
         var fixture = CrossTeamFixture.Create();
@@ -37,8 +39,9 @@ public sealed class IdentityManagementSecurityTests
         var fixture = CrossTeamFixture.Create();
         VesselTokenService tokens = CreateTokenService(fixture);
 
-        await tokens.CreateAsync(fixture.Actor.Id, fixture.TeamB.Id, "ci", [TokenScopeMapper.Read,
-            TokenScopeMapper.Deploy], null, null, null, Ct);
+        // IAM-03: a member without grants is read-only, so only read tokens can be minted.
+        await tokens.CreateAsync(fixture.Actor.Id, fixture.TeamB.Id, "ci", [TokenScopeMapper.Read], null, null,
+            null, Ct);
 
         Assert.Single(fixture.Store.Set<PersonalAccessToken>());
     }
@@ -161,7 +164,8 @@ public sealed class IdentityManagementSecurityTests
             [TokenScopeMapper.Read], null, null, null, Ct);
         CreatedToken teamAToken = await tokens.CreateAsync(fixture.Actor.Id, fixture.TeamA.Id, "a",
             [TokenScopeMapper.Read], null, null, null, Ct);
-        var teams = new VesselTeamService(fixture.Store.Context, new SequentialTokenGenerator(), new NullAuditWriter());
+        var teams = new VesselTeamService(fixture.Store.Context, new SequentialTokenGenerator(), new NullAuditWriter(),
+            new AccessResolver(fixture.Store.Context, NoApiTokenAccessContext.Instance));
 
         await teams.RemoveMemberAsync(fixture.OwnerOfB.Id, fixture.TeamB.Id, fixture.Actor.Id, null, Ct);
 
@@ -228,7 +232,9 @@ public sealed class IdentityManagementSecurityTests
 
     private static VesselTokenService CreateTokenService(CrossTeamFixture fixture)
     {
-        return new VesselTokenService(fixture.Store.Context, new SequentialTokenGenerator(), new NullAuditWriter());
+        return new VesselTokenService(fixture.Store.Context, new SequentialTokenGenerator(), new NullAuditWriter(),
+            new AccessResolver(fixture.Store.Context, NoApiTokenAccessContext.Instance),
+            NoApiTokenAccessContext.Instance);
     }
 
     private static VesselAuthenticationService CreateAuthenticationService(CrossTeamFixture fixture)

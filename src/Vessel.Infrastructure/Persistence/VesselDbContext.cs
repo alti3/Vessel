@@ -64,6 +64,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             new EfRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(this);
         CertificateRepository = new EfRepository<Certificate, CertificateId>(this);
         ServerProxySettingsRepository = new EfRepository<ServerProxySettings, ServerId>(this);
+        SettingRepository = new EfRepository<SettingEntry, SettingId>(this);
     }
 
     public DbSet<User> UserSet => Set<User>();
@@ -272,6 +273,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
 
+    public IRepository<SettingEntry, SettingId> SettingRepository { get; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("vessel");
@@ -329,6 +332,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(token => token.Name).HasMaxLength(255).IsRequired();
             builder.Property(token => token.TokenHash).HasMaxLength(128).IsRequired();
             builder.Property(token => token.Scopes).HasMaxLength(512).IsRequired();
+            builder.Property(token => token.AccessGrants).HasAccessGrantsConversion();
             builder.Property(token => token.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(token => token.DomainEvents);
             builder.HasIndex(token => token.TokenHash).IsUnique();
@@ -371,6 +375,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(membership => membership.TeamId).HasTeamIdConversion();
             builder.Property(membership => membership.UserId).HasUserIdConversion();
             builder.Property(membership => membership.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(membership => membership.AccessGrants).HasAccessGrantsConversion();
             builder.Property(membership => membership.ConcurrencyStamp).IsConcurrencyToken();
             builder.HasIndex(membership => membership.UserId);
             builder.HasOne<User>()
@@ -389,6 +394,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasMaxLength(320).IsRequired();
             builder.Property(invitation => invitation.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(invitation => invitation.TokenHash).HasMaxLength(128).IsRequired();
+            builder.Property(invitation => invitation.AccessGrants).HasAccessGrantsConversion();
             builder.Property(invitation => invitation.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(invitation => invitation.DomainEvents);
             builder.HasIndex(invitation => invitation.TokenHash).IsUnique();

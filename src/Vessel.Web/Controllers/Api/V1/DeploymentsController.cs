@@ -15,12 +15,12 @@ namespace Vessel.Web.Controllers.Api.V1;
 [Route("api/v1/deployments")]
 public sealed class DeploymentsController : ControllerBase
 {
-    private readonly IDeploymentCatalogQuery _deployments;
+    private readonly AccessScopedCatalog _deployments;
     private readonly DeploymentQueryService _details;
     private readonly StartDeploymentService _starter;
 
     public DeploymentsController(
-        IDeploymentCatalogQuery deployments,
+        AccessScopedCatalog deployments,
         StartDeploymentService starter,
         DeploymentQueryService details)
     {
@@ -33,7 +33,7 @@ public sealed class DeploymentsController : ControllerBase
     [Authorize(Policy = VesselPermissions.DeploymentsReadLogs)]
     public ActionResult<IReadOnlyList<DeploymentListItem>> List()
     {
-        return Ok(_deployments.List(User.GetTeamId()));
+        return Ok(_deployments.ListDeployments(User.GetUserId(), User.GetTeamId()));
     }
 
     [HttpGet("{deploymentId:guid}")]

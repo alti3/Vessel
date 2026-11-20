@@ -49,8 +49,8 @@ public sealed class ApplicationWebhookConfigurationService(
         CancellationToken cancellationToken = default)
     {
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsWrite);
-        if (string.IsNullOrWhiteSpace(request.Secret) || request.Secret.Length > 512)
-            throw new DomainException("Webhook secret is required and cannot exceed 512 characters.");
+        // SEC-07: new or changed manual webhook secrets need at least 16 characters (existing rows keep working).
+        var secret = new WebhookSecret(request.Secret);
 
         (ProjectId projectId, EnvironmentId environmentId) = ApplicationProject(applicationId);
         ApplicationWebhookConfiguration? existing = dbContext.ApplicationWebhookConfigurations
@@ -64,7 +64,7 @@ public sealed class ApplicationWebhookConfigurationService(
                 teamId,
                 SecretScope.Application,
                 $"webhook:{request.Provider.ToString().ToLowerInvariant()}",
-                request.Secret,
+                secret.Value,
                 new SecretPolicy(false, false, false),
                 new SecretTarget(projectId, environmentId, ApplicationId: applicationId),
                 cancellationToken);
@@ -74,7 +74,7 @@ public sealed class ApplicationWebhookConfigurationService(
         }
         else
         {
-            await secretVault.ReplaceAsync(existing.SecretReferenceId, request.Secret, cancellationToken);
+            await secretVault.ReplaceAsync(existing.SecretReferenceId, secret.Value, cancellationToken);
             existing.SetEnabled(request.Enabled, now);
             existing.ReplaceSecret(existing.SecretReferenceId, now);
         }

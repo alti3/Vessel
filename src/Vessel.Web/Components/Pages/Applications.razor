@@ -1,6 +1,6 @@
 @page "/applications"
 @attribute [Authorize]
-@inject IApplicationCatalogQuery ApplicationQuery
+@inject Vessel.Application.Authorization.AccessScopedCatalog Catalog
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Applications | Vessel</PageTitle>
@@ -33,7 +33,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        Items = ApplicationQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Items = Catalog.ListApplications(user.GetUserId(), user.GetTeamId());
     }
 
 }

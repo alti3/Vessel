@@ -237,6 +237,52 @@ public sealed class VesselDbContextModelTests
             ?.FindProperty(nameof(BackupExecution.HasRestorableArtifact)));
     }
 
+    [Fact]
+    public void Model_StoresAccessGrantsAsJsonbAndTracksPausedTokens()
+    {
+        using VesselDbContext context = CreateContext();
+
+        foreach (Type entity in new[]
+                 {
+                     typeof(TeamMembership), typeof(TeamInvitation), typeof(Vessel.Domain.Users.PersonalAccessToken)
+                 })
+        {
+            IProperty? grants = context.Model.FindEntityType(entity)?.FindProperty("AccessGrants");
+            Assert.NotNull(grants);
+            Assert.Equal("jsonb", grants.GetColumnType());
+            Assert.True(grants.IsNullable);
+        }
+
+        IProperty? pausedAt = context.Model.FindEntityType(typeof(Vessel.Domain.Users.PersonalAccessToken))
+            ?.FindProperty(nameof(Vessel.Domain.Users.PersonalAccessToken.PausedAt));
+        Assert.NotNull(pausedAt);
+        Assert.True(pausedAt.IsNullable);
+    }
+
+    [Fact]
+    public void AccessGrantColumns_RoundTripAndDropUnknownValues()
+    {
+        using VesselDbContext context = CreateContext();
+        IProperty grants = context.Model.FindEntityType(typeof(TeamMembership))!.FindProperty("AccessGrants")!;
+        var converter = grants.GetValueConverter()!;
+        var projectId = Guid.NewGuid();
+        IReadOnlyList<Vessel.Domain.Access.AccessGrant> value =
+        [
+            Vessel.Domain.Access.AccessGrant.Team(Vessel.Domain.Access.AccessLevel.Read),
+            new(Vessel.Domain.Access.AccessScope.Project, projectId,
+                [Vessel.Domain.Access.AccessLevel.Write, Vessel.Domain.Access.AccessLevel.Deploy])
+        ];
+
+        var json = (string)converter.ConvertToProvider(value)!;
+        var restored = (IReadOnlyList<Vessel.Domain.Access.AccessGrant>)converter.ConvertFromProvider(json)!;
+        var tampered = (IReadOnlyList<Vessel.Domain.Access.AccessGrant>)converter.ConvertFromProvider(
+            """[{"scope":"galaxy","target":null,"levels":["read"]},{"scope":"team","levels":["read","sudo"]}]""")!;
+
+        Assert.Contains("\"write\"", json, StringComparison.Ordinal);
+        Assert.Equal(value, restored);
+        Assert.Equal([Vessel.Domain.Access.AccessGrant.Team(Vessel.Domain.Access.AccessLevel.Read)], tampered);
+    }
+
     private static VesselDbContext CreateContext()
     {
         DbContextOptions<VesselDbContext> options = new DbContextOptionsBuilder<VesselDbContext>()

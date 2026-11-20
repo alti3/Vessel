@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Vessel.Application.Auditing;
+using Vessel.Application.Authorization;
+using Vessel.Application.Instance;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
 using Vessel.Domain;
@@ -49,6 +51,17 @@ public sealed class VesselAuthenticationService
     {
         PasswordPolicy.Validate(password);
         var emailAddress = new EmailAddress(email);
+        // IAM-06: self-service registration is closed once the first (bootstrap) account exists, unless an instance
+        // administrator opens it or the email holds a pending invitation.
+        if (!new InstanceSettingsService(_unitOfWork, new VesselAuthorizationService(_unitOfWork), _auditWriter,
+                TimeProvider.System).CanRegister(emailAddress.Value))
+        {
+            await _auditWriter.RecordAsync(null, null, AuditActions.RegistrationRejected,
+                new AuditTarget("user", emailAddress.Value), correlationId,
+                new Dictionary<string, object?> { ["email"] = emailAddress.Value }, cancellationToken);
+            throw new RegistrationClosedException();
+        }
+
         if (_unitOfWork.Users.Any(user => user.Email == emailAddress))
             throw new InvalidOperationException("A user with this email already exists.");
 

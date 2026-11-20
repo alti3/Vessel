@@ -17,7 +17,8 @@ public sealed class WebhookReceiptService(
     IBackgroundJobDispatcher backgroundJobs,
     ISecretVault secretVault,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    WebhookFailureThrottle? failureThrottle = null)
 {
     private const int MaxPayloadBytes = 256 * 1024;
 
@@ -73,6 +74,25 @@ public sealed class WebhookReceiptService(
                 request.PayloadJson, cancellationToken);
         if (verifiedApplications.Count == 0)
         {
+            // SEC-07: count distinct failed attempts per provider + client address + repository + branch. Correctly
+            // signed deliveries never reach this branch, so they are processed even while the scope is locked.
+            if (failureThrottle is not null)
+            {
+                var scopeKey = WebhookFailureThrottle.ScopeKey(request.Provider, request.ClientAddress,
+                    parsed?.Repository, parsed?.Branch);
+                if (await failureThrottle.IsLockedAsync(scopeKey, cancellationToken))
+                    return new WebhookReceiptResult(Guid.Empty, request.Provider, eventType,
+                        WebhookEventStatus.Rejected, WebhookSignatureStatus.Failed,
+                        "Too many failed webhook authentication attempts. Try again later.",
+                        (int)failureThrottle.RetryAfter().TotalSeconds);
+
+                await failureThrottle.RecordFailureAsync(scopeKey,
+                    WebhookFailureThrottle.AttemptIdentity(request.Provider,
+                        WebhookApplicationMatching.SuppliedCredential(request.Provider, request.Headers,
+                            request.PayloadJson), rawBody),
+                    cancellationToken);
+            }
+
             webhookEvent.Reject("Webhook signature or token verification failed.", now);
             await dbContext.WebhookEventRepository.AddAsync(webhookEvent, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);

@@ -52,7 +52,9 @@ public sealed class ManagedDatabaseService(
         DatabaseLifecycleAction action,
         CancellationToken cancellationToken = default)
     {
-        Require(actorUserId, teamId, VesselPermissions.ProjectsWrite);
+        // Start/stop/restart are deploy-level actions (IAM-04) and honour resource-scoped grants (IAM-05).
+        authorization.Demand(actorUserId, teamId, ResourceRef.Database(databaseId),
+            VesselPermissions.ResourcesLifecycle);
         DatabaseResource database = await GetDatabaseForTeamAsync(teamId, databaseId, cancellationToken);
         var jobId = jobs.Enqueue<RunDatabaseLifecycleJob>(job =>
             job.RunAsync(database.Id.Value, action, CancellationToken.None));

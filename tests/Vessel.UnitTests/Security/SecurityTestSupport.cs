@@ -122,6 +122,9 @@ public sealed class SecurityServiceFactory(InMemoryVesselDb store)
 
     public List<object> Stubs { get; } = [];
 
+    /// <summary>The request token layer seen by services built here (none by default).</summary>
+    public IApiTokenAccessContext TokenContext { get; set; } = NoApiTokenAccessContext.Instance;
+
     public T Get<T>()
     {
         return (T)Get(typeof(T));
@@ -131,6 +134,14 @@ public sealed class SecurityServiceFactory(InMemoryVesselDb store)
     {
         if (type == typeof(IVesselDbContext)) return store.Context;
         if (type == typeof(TimeProvider)) return TimeProvider.System;
+        if (type == typeof(IApiTokenAccessContext)) return TokenContext;
+        if (type == typeof(IAccessResolver)) return Get(typeof(AccessResolver));
+        if (type == typeof(ITokenGenerator))
+        {
+            if (!_instances.TryGetValue(type, out object? generator))
+                _instances[type] = generator = new SequentialTokenGenerator();
+            return generator;
+        }
         if (_instances.TryGetValue(type, out object? existing)) return existing;
 
         object instance;

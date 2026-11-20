@@ -20,6 +20,7 @@ public static class NotificationEventTypes
     public const string CertificateIssuanceFailed = "certificate.issuance_failed";
     public const string CertificateRenewalFailed = "certificate.renewal_failed";
     public const string ProxyApplyFailed = "proxy.apply_failed";
+    public const string ApiTokenFailing = "security.api_token_failing";
 
     /// <summary>Operator-triggered test send; routed only to the target under test.</summary>
     public const string Test = "notification.test";

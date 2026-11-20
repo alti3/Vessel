@@ -156,7 +156,8 @@ public static class InfrastructureServiceCollectionExtensions
         if (redisOptions.Enabled)
         {
             services.TryAddSingleton<RedisConnectionProvider>();
-            services.TryAddSingleton<IRedisCache, RedisCache>();
+            // Replaces the in-process fallback the Web host registers when Redis is disabled.
+            services.AddSingleton<IRedisCache, RedisCache>();
             services.AddSingleton<IDistributedLockManager, RedisDistributedLockManager>();
         }
 

@@ -163,6 +163,55 @@ public sealed class WebhookTenantIsolationTests
         Assert.NotEqual(WebhookEventStatus.Processed, result.Status);
     }
 
+    [Fact]
+    public async Task Failure_throttle_locks_repeated_distinct_failures_but_never_blocks_valid_signatures()
+    {
+        var scenario = new Scenario();
+        scenario.AddApplication("https://github.com/org/app.git", VictimSecret, autoDeploy: false);
+        var throttle = new WebhookFailureThrottle(new Vessel.Application.Redis.InMemoryRedisCache(
+            new FixedTime(scenario.Now)), new FixedTime(scenario.Now));
+
+        for (var attempt = 0; attempt < WebhookFailureThrottle.MaxFailures; attempt++)
+        {
+            WebhookReceiptResult failed = await scenario.ReceiveThrottledPushAsync("org/app", $"guess-{attempt}",
+                $"guess-{attempt}", throttle, "203.0.113.7");
+            Assert.False(failed.Throttled);
+            Assert.Equal(WebhookEventStatus.Rejected, failed.Status);
+        }
+
+        WebhookReceiptResult locked = await scenario.ReceiveThrottledPushAsync("org/app", "guess-next",
+            "guess-next", throttle, "203.0.113.7");
+        Assert.True(locked.Throttled);
+        Assert.NotNull(locked.RetryAfterSeconds);
+
+        // A correctly signed delivery from the same address and repository is still accepted.
+        WebhookReceiptResult valid = await scenario.ReceiveThrottledPushAsync("org/app", VictimSecret, "valid",
+            throttle, "203.0.113.7");
+        Assert.False(valid.Throttled);
+        Assert.Equal(WebhookSignatureStatus.Verified, valid.SignatureStatus);
+
+        // Another repository behind the same (shared egress) address has its own bucket.
+        WebhookReceiptResult otherRepository = await scenario.ReceiveThrottledPushAsync("org/other", "guess",
+            "other-repo", throttle, "203.0.113.7");
+        Assert.False(otherRepository.Throttled);
+    }
+
+    [Fact]
+    public async Task Failure_throttle_counts_a_repeated_identical_attempt_once()
+    {
+        var scenario = new Scenario();
+        scenario.AddApplication("https://github.com/org/app.git", VictimSecret, autoDeploy: false);
+        var throttle = new WebhookFailureThrottle(new Vessel.Application.Redis.InMemoryRedisCache(
+            new FixedTime(scenario.Now)), new FixedTime(scenario.Now));
+        var scope = WebhookFailureThrottle.ScopeKey(WebhookProvider.GitHub, "198.51.100.1", "org/app", "main");
+
+        for (var attempt = 0; attempt < WebhookFailureThrottle.MaxFailures * 2; attempt++)
+            await throttle.RecordFailureAsync(scope, "hmac:same-payload:same-signature",
+                TestContext.Current.CancellationToken);
+
+        Assert.False(await throttle.IsLockedAsync(scope, TestContext.Current.CancellationToken));
+    }
+
     private sealed class Scenario
     {
         private readonly Dictionary<SecretReferenceId, string> _secrets = [];
@@ -245,20 +294,28 @@ public sealed class WebhookTenantIsolationTests
             return service.ProcessAsync(webhookEvent.Id, TestContext.Current.CancellationToken);
         }
 
+        /// <summary>SEC-07 helper: a push with a unique delivery id through the failure throttle.</summary>
+        public Task<WebhookReceiptResult> ReceiveThrottledPushAsync(string repository, string signingSecret,
+            string deliveryId, WebhookFailureThrottle throttle, string clientAddress, string commit = Commit)
+        {
+            return ReceiveAsync(PushBody(repository, commit), signingSecret, "push", deliveryId, throttle,
+                clientAddress);
+        }
+
         private Task<WebhookReceiptResult> ReceiveAsync(string body, string signingSecret, string eventType,
-            string deliveryId)
+            string deliveryId, WebhookFailureThrottle? throttle = null, string? clientAddress = null)
         {
             var signature = "sha256=" + Convert.ToHexString(
                 HMACSHA256.HashData(Encoding.UTF8.GetBytes(signingSecret), Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
             var service = new WebhookReceiptService(Db, new NullDispatcher(), new Vault(_secrets),
-                new NullAuditWriter(), new FixedTime(Now));
+                new NullAuditWriter(), new FixedTime(Now), throttle);
             return service.ReceiveAsync(new WebhookReceiptRequest(WebhookProvider.GitHub,
                 new Dictionary<string, string>
                 {
                     ["X-GitHub-Event"] = eventType,
                     ["X-GitHub-Delivery"] = deliveryId,
                     ["X-Hub-Signature-256"] = signature
-                }, body), TestContext.Current.CancellationToken);
+                }, body, clientAddress), TestContext.Current.CancellationToken);
         }
     }
 

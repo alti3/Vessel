@@ -40,7 +40,7 @@ public sealed class DatabasesController : ControllerBase
     }
 
     [HttpPost("{databaseId:guid}/lifecycle/{action}")]
-    [Authorize(Policy = VesselPermissions.ProjectsWrite)]
+    [Authorize(Policy = VesselPermissions.ResourcesLifecycle)]
     public async Task<ActionResult<DatabaseLifecycleResult>> Lifecycle(
         Guid databaseId,
         DatabaseLifecycleAction action,

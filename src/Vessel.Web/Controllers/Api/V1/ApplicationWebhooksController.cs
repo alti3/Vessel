@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vessel.Application.Authorization;
 using Vessel.Application.Webhooks;
+using Vessel.Domain.Common;
 using Vessel.Web.Security;
 using AppId = Vessel.Domain.ApplicationId;
 
@@ -25,12 +26,20 @@ public sealed class ApplicationWebhooksController(ApplicationWebhookConfiguratio
         ConfigureApplicationWebhookRequest request,
         CancellationToken cancellationToken)
     {
-        return Ok(await webhooks.ConfigureAsync(
-            User.GetUserId(),
-            User.GetTeamId(),
-            new AppId(applicationId),
-            request,
-            cancellationToken));
+        try
+        {
+            return Ok(await webhooks.ConfigureAsync(
+                User.GetUserId(),
+                User.GetTeamId(),
+                new AppId(applicationId),
+                request,
+                cancellationToken));
+        }
+        catch (DomainException exception)
+        {
+            // SEC-07: e.g. a new or changed manual webhook secret shorter than 16 characters.
+            return Problem(exception.Message, statusCode: StatusCodes.Status400BadRequest);
+        }
     }
 
     [HttpGet("git/refs")]

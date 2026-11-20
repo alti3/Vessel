@@ -208,7 +208,7 @@ public sealed class HostExecutionBoundaryTests
     }
 
     [Fact]
-    public async Task Registration_FirstUserIsInstanceAdmin_LaterUsersAreNot()
+    public async Task Registration_FirstUserIsInstanceAdmin_LaterSelfRegistrationIsClosedByDefault()
     {
         var auth = new VesselAuthenticationService(_db, new PlainPasswordHasher(), new FixedTokenGenerator(),
             new TotpService(new FixedTokenGenerator()), new RecordingAuditWriter(), Options.Create(new AuthOptions()),
@@ -216,11 +216,12 @@ public sealed class HostExecutionBoundaryTests
 
         await auth.RegisterAsync("Root", "root@example.com", "Correct-Horse-Battery-9", null,
             TestContext.Current.CancellationToken);
-        await auth.RegisterAsync("Other", "other@example.com", "Correct-Horse-Battery-9", null,
-            TestContext.Current.CancellationToken);
+        // IAM-06: once the bootstrap account exists, self-registration is closed unless an instance admin opens it.
+        await Assert.ThrowsAsync<Vessel.Application.Instance.RegistrationClosedException>(() => auth.RegisterAsync(
+            "Other", "other@example.com", "Correct-Horse-Battery-9", null, TestContext.Current.CancellationToken));
 
         Assert.True(_db.UserItems.Single(user => user.Email.Value == "root@example.com").IsInstanceAdmin);
-        Assert.False(_db.UserItems.Single(user => user.Email.Value == "other@example.com").IsInstanceAdmin);
+        Assert.DoesNotContain(_db.UserItems, user => user.Email.Value == "other@example.com");
     }
 
     private static void SshProbe(RecordingSshClient ssh, string host, int port, string user)

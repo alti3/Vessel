@@ -4,6 +4,7 @@ using Vessel.Application.Deployments;
 using Vessel.Application.Jobs;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Proxy;
+using Vessel.Web.Configuration;
 using Vessel.Web.Middleware;
 
 namespace Vessel.Web.Extensions;
@@ -12,6 +13,10 @@ public static class WebApplicationExtensions
 {
     public static WebApplication UseVesselWebHost(this WebApplication app)
     {
+        // SEC-07: rewrite the client address from X-Forwarded-For only for explicitly trusted proxies, before any
+        // rate limiter, throttle or audit reads it.
+        if (app.Services.GetRequiredService<ForwardedHeadersSettings>() is { Enabled: true }) app.UseForwardedHeaders();
+
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<ApiExceptionHandlingMiddleware>();
 
@@ -31,6 +36,8 @@ public static class WebApplicationExtensions
         app.UseAntiforgery();
         app.UseRateLimiter();
         app.UseAuthentication();
+        // SEC-13: after authentication (token known), around authorization and endpoints (their status is seen).
+        app.UseMiddleware<ApiFailedRequestThrottleMiddleware>();
         app.UseAuthorization();
 
         return app;
