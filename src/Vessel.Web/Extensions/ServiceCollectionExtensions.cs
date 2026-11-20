@@ -176,6 +176,14 @@ public static class ServiceCollectionExtensions
                 options.AddPolicy(permission, policy => policy
                     .RequireAuthenticatedUser()
                     .AddRequirements(new PermissionRequirement(permission)));
+
+            options.AddPolicy(VesselAuthorizationPolicies.InteractiveSession, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => VesselAuthorizationPolicies.IsInteractiveSession(context.User)));
+            options.AddPolicy(VesselAuthorizationPolicies.InteractiveSessionOrRootToken, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context =>
+                    VesselAuthorizationPolicies.IsInteractiveSessionOrRootToken(context.User)));
         });
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 

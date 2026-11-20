@@ -606,6 +606,23 @@ Goal: Prepare beta/stable release criteria, packaging, docs, verification, and o
 
 ---
 
+## Phase 19: Coolify v4.7 Parity and Pre-Existing Defect Remediation
+
+Goal: Absorb five months of upstream Coolify change (v4.1.0 → v4.7.6) and fix the Phase 4–13 defects found while comparing them with Vessel's code. The item-level source of truth, with per-item status, is [docs/upstream/coolify-gap-report-2026-11.md](./docs/upstream/coolify-gap-report-2026-11.md). This phase tracks the waves only.
+
+Several Phase 4–13 items marked `[x]` above have P0 defects listed in the gap report (for example 9.x webhook verification, 10.x proxy generation and lifecycle, 11.x backup/restore, 13.x notification producers). Their checkmarks reflect the original phase gate, not current correctness. Wave 1 closes those defects.
+
+| Status | ID | Area | Feature / Task | Deliverable / Acceptance Criteria | Dependencies | Notes |
+|---|---:|---|---|---|---|---|
+| [x] | 19.00 | Research | Upstream gap report | 150 items across platform, security, identity/API, deployments, proxy/DNS, data, servers/monitoring, notifications/ops/templates | Coolify `49656aa`..`094f9ada2` | 2026-11-20 |
+| [x] | 19.01 | Wave 0 | Platform and toolchain | .NET 11 GA SDK and packages, vulnerable dependency removal, CI supply-chain hardening, YAML library, Traefik generator fix | PLT-01, PLT-02, PLT-03, PLT-05, NET-01 | SSH.NET advisories cleared; CI pins actions by SHA |
+| [~] | 19.02 | Wave 1 | P0 defects | No cross-tenant, privilege-escalation or host-escape path; deployments, previews, routing, backup/restore and notifications work end to end | SEC-01..05, IAM-01/02, DEP-01/02, NET-01/02, DATA-01/02, SRV-01, NTF-01/02 | One consolidated migration per wave |
+| [ ] | 19.03 | Wave 2 | P1 parity and breaking semantics | Roles/abilities/grants, deployment queue and auto-cancel, Compose validation, domain conflicts, route policies, backup destinations, health checks, scheduled tasks, templates, Phase 14 design inputs | 63 P1 items | Breaking semantics first |
+| [ ] | 19.04 | Wave 3 | P2 parity | Managed DNS, DNS checks, maintenance mode, secret managers, MCP server, image scanning design, fleet metrics | 49 P2 items |  |
+| [ ] | 19.05 | Wave 4 | P3 and explicit deferrals | Implement, or record an ADR deferral for, niche items (Caddy, traffic analytics, Cloudflare Tunnel, GitHub runners) | 20 P3 items |  |
+
+---
+
 ## Cross-Cutting Checklist
 
 Use this checklist for every non-trivial feature, regardless of phase.
