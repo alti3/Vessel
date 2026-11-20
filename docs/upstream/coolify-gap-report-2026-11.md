@@ -150,7 +150,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | IAM-01 | Identity-management endpoints accept any bearer token, so a token can escalate itself or strip 2FA | P0 | S | 4.06/4.07/4.10 (reopen); 15.02. | Done |
 | IAM-02 | Notification targets and notification events have no permission check | P0 | S | 13.x follow-up; 15.02, 15.16. | Done |
 | NET-01 | Generated Traefik config is incorrect, and its blast radius is the whole server | P0 | M | Fix inside Phase 10 (10.03/10.04/10.13 regression), plus 15.05 and… | Partial (generator, naming, isolation done) |
-| NET-02 | Proxy lifecycle per server (static config, container, networks, status, NONE type) | P0 | L | Phase 10 gap (10.05 follow-up); 16.06 lock validation. | Open |
+| NET-02 | Proxy lifecycle per server (static config, container, networks, status, NONE type) | P0 | L | Phase 10 gap (10.05 follow-up); 16.06 lock validation. | Done (network reconcile in health poll and Hangfire restart job remain, tracked with SRV-02) |
 | NTF-01 | The notification pipeline is not connected to any producer | P0 | M | 13.01/13.08 (reopen); prerequisite for NTF-03..05. | Done |
 | NTF-02 | Notification API and settings lack authorization, SSRF protection, and secret-safe URLs | P0 | M | 13.09 (reopen), 15.x security hardening. | Done |
 | PLT-01 | Move from .NET 11 preview 4 to .NET 11 GA | P0 | S | Phase 1, PR §2 | Done |
