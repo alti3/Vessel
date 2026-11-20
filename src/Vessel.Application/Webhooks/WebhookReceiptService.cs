@@ -8,8 +8,7 @@ using Vessel.Application.Security;
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Webhooks;
-using AppEntity = Vessel.Domain.Applications.Application;
-using EnvironmentEntity = Vessel.Domain.Projects.Environment;
+using AppId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Webhooks;
 
@@ -65,9 +64,14 @@ public sealed class WebhookReceiptService(
         }
 
         ParsedWebhook? parsed = WebhookPayloadReader.Parse(request.Provider, request.Headers, payload);
-        var verified = await VerifyAnyMatchAsync(request.Provider, parsed, request.Headers, rawBody,
-            request.PayloadJson, cancellationToken);
-        if (!verified)
+        // SEC-01: each candidate application is verified against its own secret only; the event records exactly which
+        // applications verified, and processing acts on those applications alone.
+        IReadOnlyList<AppId> verifiedApplications = parsed is null
+            ? []
+            : await WebhookApplicationMatching.VerifyAsync(dbContext, secretVault, request.Provider,
+                WebhookApplicationMatching.Candidates(dbContext, parsed), request.Headers, rawBody,
+                request.PayloadJson, cancellationToken);
+        if (verifiedApplications.Count == 0)
         {
             webhookEvent.Reject("Webhook signature or token verification failed.", now);
             await dbContext.WebhookEventRepository.AddAsync(webhookEvent, cancellationToken);
@@ -81,7 +85,7 @@ public sealed class WebhookReceiptService(
                 webhookEvent.SignatureStatus, "Webhook signature or token verification failed.");
         }
 
-        webhookEvent.MarkSignatureVerified(now);
+        webhookEvent.MarkSignatureVerified(verifiedApplications, now);
         await dbContext.WebhookEventRepository.AddAsync(webhookEvent, cancellationToken);
         webhookEvent.MarkQueued(now);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -100,66 +104,6 @@ public sealed class WebhookReceiptService(
     private static string Sha256(string value)
     {
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-    }
-
-    private async Task<bool> VerifyAnyMatchAsync(
-        WebhookProvider provider,
-        ParsedWebhook? parsed,
-        IReadOnlyDictionary<string, string> headers,
-        string rawBody,
-        string payloadJson,
-        CancellationToken cancellationToken)
-    {
-        if (parsed is null) return false;
-
-        IEnumerable<AppEntity> candidates = parsed.ApplicationId.HasValue
-            ? dbContext.Applications.AsEnumerable()
-                .Where(application => application.Id.Value == parsed.ApplicationId.Value)
-            : dbContext.Applications.AsEnumerable()
-                .Where(application => parsed.Branch is not null && application.GitSource.Branch == parsed.Branch)
-                .Where(application => parsed.Repository is not null &&
-                                      application.GitSource.RepositoryUrl.Value.Contains(parsed.Repository,
-                                          StringComparison.OrdinalIgnoreCase));
-
-        foreach (AppEntity application in candidates)
-        {
-            ApplicationWebhookConfiguration? configuration =
-                dbContext.ApplicationWebhookConfigurations.SingleOrDefault(configuration =>
-                    configuration.ApplicationId == application.Id &&
-                    configuration.Provider == provider &&
-                    configuration.IsEnabled);
-            if (configuration is null) continue;
-
-            var secret = await secretVault.RevealForDeploymentAsync(TeamForApplication(application),
-                configuration.SecretReferenceId, cancellationToken);
-            var supplied = provider switch
-            {
-                WebhookProvider.GitHub => WebhookPayloadReader.Header(headers, "X-Hub-Signature-256"),
-                WebhookProvider.Gitea => WebhookPayloadReader.Header(headers, "X-Hub-Signature-256"),
-                WebhookProvider.GitLab => WebhookPayloadReader.Header(headers, "X-Gitlab-Token"),
-                WebhookProvider.Bitbucket => WebhookPayloadReader.Header(headers, "X-Hub-Signature"),
-                WebhookProvider.Generic => GenericSecret(payloadJson),
-                _ => null
-            };
-
-            var verified = provider switch
-            {
-                WebhookProvider.GitHub or WebhookProvider.Gitea or WebhookProvider.Bitbucket => VerifySha256Signature(
-                    supplied, rawBody, secret),
-                WebhookProvider.GitLab or WebhookProvider.Generic => FixedEquals(secret, supplied),
-                _ => false
-            };
-            if (verified) return true;
-        }
-
-        return false;
-    }
-
-    private TeamId TeamForApplication(AppEntity application)
-    {
-        EnvironmentEntity environment =
-            dbContext.Environments.Single(environment => environment.Id == application.EnvironmentId);
-        return dbContext.Projects.Single(project => project.Id == environment.ProjectId).TeamId;
     }
 
     private static IReadOnlyDictionary<string, string> SanitizeHeaders(WebhookProvider provider,
@@ -185,30 +129,5 @@ public sealed class WebhookReceiptService(
                 property => property.NameEquals("secret") ? (object?)"[redacted]" : property.Value.Clone(),
                 StringComparer.Ordinal);
         return JsonSerializer.Serialize(values);
-    }
-
-    private static string? GenericSecret(string payloadJson)
-    {
-        using var document = JsonDocument.Parse(payloadJson);
-        return WebhookPayloadReader.Text(document.RootElement, "secret");
-    }
-
-    private static bool VerifySha256Signature(string? header, string payloadJson, string secret)
-    {
-        if (string.IsNullOrWhiteSpace(header)) return false;
-        var signature = header.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase)
-            ? header["sha256=".Length..]
-            : header;
-        var hash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payloadJson));
-        return FixedEquals(Convert.ToHexString(hash).ToLowerInvariant(), signature);
-    }
-
-    private static bool FixedEquals(string? expected, string? actual)
-    {
-        if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(actual)) return false;
-        var expectedBytes = Encoding.UTF8.GetBytes(expected);
-        var actualBytes = Encoding.UTF8.GetBytes(actual);
-        return expectedBytes.Length == actualBytes.Length &&
-               CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 }

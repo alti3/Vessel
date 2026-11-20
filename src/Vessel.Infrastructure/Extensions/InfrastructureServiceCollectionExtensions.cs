@@ -125,6 +125,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISecretVault, AesSecretVault>();
         services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
         services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
+        services.TryAddSingleton<IComposeDocumentBuilder, YamlComposeDocumentBuilder>();
         services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
         services.AddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();

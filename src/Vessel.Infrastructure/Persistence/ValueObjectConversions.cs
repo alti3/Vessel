@@ -130,7 +130,8 @@ internal static class ValueObjectConversions
     private static string FormatDeploymentSettings(DeploymentSettings value)
     {
         return string.Join('|', value.AutoDeployEnabled.ToString(), value.PreviewDeploymentsEnabled.ToString(),
-            value.ForceRebuild.ToString(), Escape(value.WatchPaths ?? string.Empty));
+            value.ForceRebuild.ToString(), Escape(value.WatchPaths ?? string.Empty),
+            value.PublicPreviewsEnabled.ToString());
     }
 
     private static string FormatStorageConfiguration(StorageConfiguration value)
@@ -207,8 +208,9 @@ internal static class ValueObjectConversions
     private static DeploymentSettings ParseDeploymentSettings(string value)
     {
         var parts = SplitEscaped(value);
+        // Rows written before PublicPreviewsEnabled existed have four parts and default to same-repository-only previews.
         return new DeploymentSettings(bool.Parse(parts[0]), bool.Parse(parts[1]), bool.Parse(parts[2]),
-            EmptyToNull(parts[3]));
+            EmptyToNull(parts[3]), parts.Length > 4 && bool.Parse(parts[4]));
     }
 
     private static StorageConfiguration ParseStorageConfiguration(string value)

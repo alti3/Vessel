@@ -56,6 +56,17 @@ public sealed class WebhookEvent : Entity<WebhookEventId>
 
     public DateTimeOffset? ProcessedAt { get; private set; }
 
+    /// <summary>
+    ///     Applications whose own webhook secret verified this delivery. Processing acts only on these applications; a
+    ///     signature valid for one application never authorizes another (Coolify per-application manual webhook checks).
+    /// </summary>
+    public Guid[] VerifiedApplicationIds { get; private set; } = [];
+
+    public bool IsVerifiedFor(ApplicationId applicationId)
+    {
+        return SignatureStatus == WebhookSignatureStatus.Verified && VerifiedApplicationIds.Contains(applicationId.Value);
+    }
+
     public static WebhookEvent Receive(
         WebhookProvider provider,
         string eventType,
@@ -101,8 +112,13 @@ public sealed class WebhookEvent : Entity<WebhookEventId>
         Touch(now);
     }
 
-    public void MarkSignatureVerified(DateTimeOffset now)
+    public void MarkSignatureVerified(IEnumerable<ApplicationId> verifiedApplicationIds, DateTimeOffset now)
     {
+        Guid[] ids = verifiedApplicationIds.Select(id => id.Value).Distinct().ToArray();
+        if (ids.Length == 0)
+            throw new DomainException("A webhook can only be verified for at least one application.");
+
+        VerifiedApplicationIds = ids;
         SignatureStatus = WebhookSignatureStatus.Verified;
         Touch(now);
     }
