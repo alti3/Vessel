@@ -15,11 +15,8 @@ public sealed class DeploymentQueryService(
 
     public DeploymentDetails Get(UserId actorUserId, TeamId teamId, DeploymentId deploymentId)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.DeploymentsReadLogs))
-            throw new UnauthorizedAccessException(
-                $"Missing required permission '{VesselPermissions.DeploymentsReadLogs}'.");
-        if (!authorization.CanAccessDeployment(actorUserId, deploymentId))
-            throw new UnauthorizedAccessException("Deployment is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Deployment(deploymentId),
+            VesselPermissions.DeploymentsReadLogs);
 
         Deployment deployment = dbContext.Deployments.SingleOrDefault(deployment => deployment.Id == deploymentId)
                                 ?? throw new InvalidOperationException("Deployment was not found.");
@@ -50,11 +47,8 @@ public sealed class DeploymentQueryService(
         DeploymentId deploymentId,
         DeploymentLogQuery query)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.DeploymentsReadLogs))
-            throw new UnauthorizedAccessException(
-                $"Missing required permission '{VesselPermissions.DeploymentsReadLogs}'.");
-        if (!authorization.CanAccessDeployment(actorUserId, deploymentId))
-            throw new UnauthorizedAccessException("Deployment is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Deployment(deploymentId),
+            VesselPermissions.DeploymentsReadLogs);
 
         Deployment deployment = dbContext.Deployments.SingleOrDefault(deployment => deployment.Id == deploymentId)
                                 ?? throw new InvalidOperationException("Deployment was not found.");

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Vessel.Application.Authorization;
@@ -28,7 +29,7 @@ public abstract class AuthorizedResourceHub : Hub
 
     protected async Task<bool> JoinProjectGroupAsync(ProjectId projectId)
     {
-        if (!_authorizationService.CanAccessProject(Context.User!.GetUserId(), projectId)) return false;
+        if (!CanJoin(ResourceRef.Project(projectId), VesselPermissions.ProjectsRead)) return false;
 
         await Groups.AddToGroupAsync(
             Context.ConnectionId,
@@ -39,7 +40,7 @@ public abstract class AuthorizedResourceHub : Hub
 
     protected async Task<bool> JoinServerGroupAsync(ServerId serverId)
     {
-        if (!_authorizationService.CanAccessServer(Context.User!.GetUserId(), serverId)) return false;
+        if (!CanJoin(ResourceRef.Server(serverId), VesselPermissions.ServersRead)) return false;
 
         await Groups.AddToGroupAsync(
             Context.ConnectionId,
@@ -50,7 +51,7 @@ public abstract class AuthorizedResourceHub : Hub
 
     protected async Task<bool> JoinApplicationGroupAsync(ApplicationId applicationId)
     {
-        if (!_authorizationService.CanAccessApplication(Context.User!.GetUserId(), applicationId)) return false;
+        if (!CanJoin(ResourceRef.Application(applicationId), VesselPermissions.ApplicationsRead)) return false;
 
         await Groups.AddToGroupAsync(
             Context.ConnectionId,
@@ -61,13 +62,21 @@ public abstract class AuthorizedResourceHub : Hub
 
     protected async Task<bool> JoinDeploymentGroupAsync(DeploymentId deploymentId)
     {
-        if (!_authorizationService.CanAccessDeployment(Context.User!.GetUserId(), deploymentId)) return false;
+        if (!CanJoin(ResourceRef.Deployment(deploymentId), VesselPermissions.DeploymentsReadLogs)) return false;
 
         await Groups.AddToGroupAsync(
             Context.ConnectionId,
             RealtimeGroupNames.Deployment(deploymentId),
             Context.ConnectionAborted);
         return true;
+    }
+
+    private bool CanJoin(ResourceRef resource, string permission)
+    {
+        // Realtime groups follow the same rule as API calls: the resource must belong to the connection's active
+        // team and the caller's role in that team must grant read access.
+        ClaimsPrincipal user = Context.User!;
+        return _authorizationService.IsAuthorized(user.GetUserId(), user.GetTeamId(), resource, permission);
     }
 
     protected Task JoinUserGroupAsync()

@@ -421,16 +421,12 @@ public sealed class ResourceManagementService(
 
     private void RequireProject(UserId actorUserId, TeamId teamId, ProjectId projectId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessProject(actorUserId, projectId))
-            throw new UnauthorizedAccessException("Project is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Project(projectId), permission);
     }
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
     }
 
     private DateTimeOffset Now()
@@ -469,8 +465,20 @@ public sealed class ResourceManagementService(
             ? new DatabaseResourceId(request.DatabaseResourceId.Value)
             : null;
 
-        _ = teamId;
+        // Every referenced target must be owned by the active team; a variable can never be attached to (or leak
+        // into) another team's resource.
+        EnsureOwnedByTeam(teamId, projectId.HasValue ? ResourceRef.Project(projectId.Value) : null);
+        EnsureOwnedByTeam(teamId, environmentId.HasValue ? ResourceRef.Environment(environmentId.Value) : null);
+        EnsureOwnedByTeam(teamId, serverId.HasValue ? ResourceRef.Server(serverId.Value) : null);
+        EnsureOwnedByTeam(teamId, applicationId.HasValue ? ResourceRef.Application(applicationId.Value) : null);
+        EnsureOwnedByTeam(teamId, databaseId.HasValue ? ResourceRef.Database(databaseId.Value) : null);
         return new SecretTarget(projectId, environmentId, serverId, applicationId, databaseId);
+    }
+
+    private void EnsureOwnedByTeam(TeamId teamId, ResourceRef? resource)
+    {
+        if (resource.HasValue && authorization.ResolveOwningTeam(resource.Value) != teamId)
+            throw new UnauthorizedAccessException($"{resource.Value.Kind} is outside the active team.");
     }
 
     private static void ApplyTarget(EnvironmentVariable variable, CreateEnvironmentVariableRequest request,

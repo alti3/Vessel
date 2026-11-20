@@ -48,10 +48,9 @@ public sealed class ProxyConfigurationService(
         ServerId serverId,
         CancellationToken cancellationToken = default)
     {
-        if (actorUserId.HasValue &&
-            !authorization.HasPermission(actorUserId.Value, teamId, VesselPermissions.DeploymentsStart))
-            throw new UnauthorizedAccessException(
-                $"Missing required permission '{VesselPermissions.DeploymentsStart}'.");
+        if (actorUserId.HasValue)
+            authorization.Demand(actorUserId.Value, teamId, ResourceRef.Server(serverId),
+                VesselPermissions.DeploymentsStart);
         return await ApplyCoreAsync(actorUserId, teamId, serverId, cancellationToken);
     }
 
@@ -199,10 +198,7 @@ public sealed class ProxyConfigurationService(
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, permission))
-            throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
     }
 
     private static ProxyConfigurationSummary ToSummary(ProxyConfigurationVersion version)
