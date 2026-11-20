@@ -1,5 +1,6 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -20,8 +21,11 @@ public sealed class ProxyConfigurationService(
     IDistributedLockManager locks,
     IAuditWriter auditWriter,
     ISecretRedactor redactor,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
 {
+    private static readonly TimeSpan DeploymentLockWait = TimeSpan.FromSeconds(60);
+
     public IReadOnlyList<ProxyConfigurationSummary> ListVersions(UserId actorUserId, TeamId teamId, ServerId serverId)
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersRead);
@@ -39,7 +43,7 @@ public sealed class ProxyConfigurationService(
         CancellationToken cancellationToken = default)
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
-        return await ApplyCoreAsync(actorUserId, teamId, serverId, cancellationToken);
+        return await ApplyCoreAsync(actorUserId, teamId, serverId, TimeSpan.Zero, cancellationToken);
     }
 
     public async Task<ProxyConfigurationSummary> ApplyForDeploymentAsync(
@@ -48,17 +52,18 @@ public sealed class ProxyConfigurationService(
         ServerId serverId,
         CancellationToken cancellationToken = default)
     {
-        if (actorUserId.HasValue &&
-            !authorization.HasPermission(actorUserId.Value, teamId, VesselPermissions.DeploymentsStart))
-            throw new UnauthorizedAccessException(
-                $"Missing required permission '{VesselPermissions.DeploymentsStart}'.");
-        return await ApplyCoreAsync(actorUserId, teamId, serverId, cancellationToken);
+        if (actorUserId.HasValue)
+            authorization.Demand(actorUserId.Value, teamId, ResourceRef.Server(serverId),
+                VesselPermissions.DeploymentsStart);
+        // Concurrent deployments on one server queue briefly for the proxy lock instead of failing outright.
+        return await ApplyCoreAsync(actorUserId, teamId, serverId, DeploymentLockWait, cancellationToken);
     }
 
     private async Task<ProxyConfigurationSummary> ApplyCoreAsync(
         UserId? actorUserId,
         TeamId teamId,
         ServerId serverId,
+        TimeSpan lockWait,
         CancellationToken cancellationToken)
     {
         Server server = dbContext.Servers.SingleOrDefault(item => item.Id == serverId)
@@ -70,7 +75,7 @@ public sealed class ProxyConfigurationService(
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
             lockKey,
             TimeSpan.FromMinutes(5),
-            TimeSpan.Zero,
+            lockWait,
             cancellationToken);
         if (handle is null)
             throw new DomainException("A proxy configuration operation is already running for this server.");
@@ -80,7 +85,12 @@ public sealed class ProxyConfigurationService(
             .Where(version => version.ServerId == serverId && version.Status == ProxyConfigurationStatus.Applied)
             .OrderByDescending(version => version.AppliedAt)
             .FirstOrDefault();
-        ProxyConfigurationDocument document = proxyProvider.Generate(serverId, RoutesForServer(serverId));
+        IReadOnlyList<ProxyRoute> candidateRoutes = RoutesForServer(serverId);
+        // Invalid routes are quarantined individually so one bad domain cannot take down routing for the server.
+        IReadOnlyList<ProxyRouteRejection> rejections = proxyProvider.ValidateRoutes(candidateRoutes);
+        var rejectedRoutes = rejections.Select(rejection => rejection.Route).ToHashSet();
+        ProxyRoute[] acceptedRoutes = candidateRoutes.Where(route => !rejectedRoutes.Contains(route)).ToArray();
+        ProxyConfigurationDocument document = proxyProvider.Generate(serverId, acceptedRoutes);
         var version = ProxyConfigurationVersion.Create(serverId, document.Provider, document.Version,
             document.Sha256Hash,
             document.Contents, previous?.Id, now);
@@ -92,6 +102,9 @@ public sealed class ProxyConfigurationService(
             version.MarkValidationFailed(string.Join("; ", validation.Errors.Select(error => redactor.Redact(error))),
                 now);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await notifications.PublishAsync(teamId,
+                OperationalNotifications.ProxyApplyFailed(serverId.Value, server.Name.Value, "validation"),
+                CancellationToken.None);
             throw new DomainException(version.ValidationError ?? "Proxy configuration validation failed.");
         }
 
@@ -111,6 +124,9 @@ public sealed class ProxyConfigurationService(
             if (previousDocument is not null) await proxyProvider.RollbackAsync(previousDocument, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            await notifications.PublishAsync(teamId,
+                OperationalNotifications.ProxyApplyFailed(serverId.Value, server.Name.Value, "apply"),
+                CancellationToken.None);
             throw new DomainException(version.ApplyError ?? "Proxy configuration apply failed.");
         }
 
@@ -122,7 +138,11 @@ public sealed class ProxyConfigurationService(
             {
                 ["provider"] = document.Provider.ToString(),
                 ["version"] = document.Version,
-                ["configurationHash"] = document.Sha256Hash
+                ["configurationHash"] = document.Sha256Hash,
+                ["routeCount"] = acceptedRoutes.Length,
+                ["rejectedRoutes"] = rejections
+                    .Select(rejection => new { host = rejection.Route.Host, reason = redactor.Redact(rejection.Reason) })
+                    .ToArray()
             }, cancellationToken);
 
         return ToSummary(version);
@@ -183,14 +203,14 @@ public sealed class ProxyConfigurationService(
         {
             AppEntity application = row.Application;
             var defaultPort = application.RuntimeConfiguration.ExposedPort?.Value ?? 8080;
-            var serviceName = SanitizeName(application.Name.Value);
+            var upstream = ProxyNaming.UpstreamAlias(application.Id);
             ApplicationDomain[] domains = dbContext.ApplicationDomains
                 .Where(domain => domain.ApplicationId == application.Id)
                 .OrderBy(domain => domain.DomainName.Value)
                 .ToArray();
             foreach (ApplicationDomain domain in domains.OrderBy(domain => domain.DomainName.Value,
                          StringComparer.OrdinalIgnoreCase))
-                routes.Add(new ProxyRoute(application.Id, application.ServerId, serviceName, domain.DomainName.Value,
+                routes.Add(new ProxyRoute(application.Id, application.ServerId, upstream, domain.DomainName.Value,
                     domain.TargetPort ?? defaultPort, domain.TlsEnabled, domain.Canonical, domain.RedirectToCanonical));
         }
 
@@ -199,10 +219,7 @@ public sealed class ProxyConfigurationService(
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, permission))
-            throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
     }
 
     private static ProxyConfigurationSummary ToSummary(ProxyConfigurationVersion version)
@@ -210,15 +227,5 @@ public sealed class ProxyConfigurationService(
         return new ProxyConfigurationSummary(version.Id.Value, version.ServerId.Value, version.Provider,
             version.Version, version.ConfigurationHash, version.Status, version.PreviousVersionId?.Value,
             version.ValidationError, version.ApplyError, version.CreatedAt, version.AppliedAt);
-    }
-
-    private static string SanitizeName(string value)
-    {
-        string normalized = new(value.ToLowerInvariant().Select(character =>
-            char.IsLetterOrDigit(character) ? character : '-').ToArray());
-        normalized = normalized.Trim('-');
-        if (string.IsNullOrWhiteSpace(normalized))
-            normalized = "app";
-        return normalized[..Math.Min(40, normalized.Length)];
     }
 }

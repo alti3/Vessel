@@ -1,11 +1,12 @@
 using System.Net;
 using System.Net.Mail;
 using Vessel.Application.Notifications;
+using Vessel.Application.OutboundRequests;
 using Vessel.Domain.Notifications;
 
 namespace Vessel.Infrastructure.Notifications;
 
-public sealed class EmailNotificationProvider : INotificationProvider
+public sealed class EmailNotificationProvider(IOutboundUrlPolicy outboundUrlPolicy) : INotificationProvider
 {
     public NotificationChannel Channel => NotificationChannel.Email;
 
@@ -17,6 +18,10 @@ public sealed class EmailNotificationProvider : INotificationProvider
         try
         {
             var secret = NotificationJson.ParseSecret<EmailNotificationSecret>(target.SecretJson);
+            // SmtpClient cannot pin the checked address, so this re-check narrows (not closes) the rebinding window.
+            var hostCheck = await outboundUrlPolicy.CheckHostAsync(secret.SmtpHost, cancellationToken);
+            if (!hostCheck.Allowed)
+                return NotificationDeliveryResult.Failed($"Email SMTP host is not allowed: {hostCheck.Reason}");
             using var message = new MailMessage(secret.From, secret.To)
             {
                 Subject = $"[{notification.Severity}] {notification.Title}",

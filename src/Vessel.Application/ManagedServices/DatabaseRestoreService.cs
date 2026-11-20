@@ -1,6 +1,7 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Jobs;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
@@ -31,6 +32,7 @@ public sealed class DatabaseRestoreService(
     IObjectStorage objectStorage,
     IAuditWriter auditWriter,
     IRealtimeNotifier realtime,
+    INotificationEventPublisher notifications,
     TimeProvider timeProvider)
 {
     public const string ConfirmationPhrase = "RESTORE";
@@ -48,7 +50,8 @@ public sealed class DatabaseRestoreService(
         QueueDatabaseRestoreRequest request,
         CancellationToken cancellationToken = default)
     {
-        Require(actorUserId, teamId, VesselPermissions.ProjectsWrite);
+        authorization.Demand(actorUserId, teamId, ResourceRef.Database(targetDatabaseId),
+            VesselPermissions.ProjectsWrite);
         if (!request.DryRun && !string.Equals(request.Confirmation, ConfirmationPhrase, StringComparison.Ordinal))
             throw new DomainException($"Restore confirmation must be {ConfirmationPhrase}.");
 
@@ -245,6 +248,11 @@ public sealed class DatabaseRestoreService(
             },
             cancellationToken);
         await PublishAsync(restore, cancellationToken);
+        if (dbContext.DatabaseResources.Where(database => database.Id == restore.TargetDatabaseResourceId)
+                .Select(database => database.Name).SingleOrDefault() is { } targetName)
+            await notifications.PublishAsync(restore.TeamId,
+                OperationalNotifications.RestoreFailed(execution.Id.Value, restore.TargetDatabaseResourceId.Value,
+                    targetName.Value), cancellationToken);
     }
 
     private async Task PublishAsync(DatabaseRestore restore, CancellationToken cancellationToken)

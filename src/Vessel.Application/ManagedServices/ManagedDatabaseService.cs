@@ -4,6 +4,7 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Docker;
 using Vessel.Application.Jobs;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Redis;
@@ -34,7 +35,8 @@ public sealed class ManagedDatabaseService(
     IObjectStorage objectStorage,
     ServiceTemplateCatalog templates,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
 {
     private static readonly TimeSpan LockLeaseMargin = TimeSpan.FromMinutes(10);
 
@@ -300,6 +302,9 @@ public sealed class ManagedDatabaseService(
                     ["format"] = artifact.Format
                 },
                 cancellationToken);
+            await notifications.PublishAsync(execution.TeamId,
+                OperationalNotifications.BackupSucceeded(execution.Id.Value, database.Id.Value, database.Name.Value),
+                CancellationToken.None);
             return ToSummary(execution);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested &&
@@ -310,12 +315,18 @@ public sealed class ManagedDatabaseService(
             execution.Fail($"Backup exceeded its timeout of {timeout.TotalSeconds:0} seconds and was stopped. " +
                            "Increase the schedule timeout for large databases.", timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            await notifications.PublishAsync(execution.TeamId,
+                OperationalNotifications.BackupFailed(execution.Id.Value, database.Id.Value, database.Name.Value),
+                CancellationToken.None);
             return ToSummary(execution);
         }
         catch (Exception ex)
         {
             execution.Fail(redactor.Redact(ex.Message), timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            await notifications.PublishAsync(execution.TeamId,
+                OperationalNotifications.BackupFailed(execution.Id.Value, database.Id.Value, database.Name.Value),
+                CancellationToken.None);
             throw;
         }
     }
@@ -486,16 +497,12 @@ public sealed class ManagedDatabaseService(
 
     private void RequireProject(UserId actorUserId, TeamId teamId, ProjectId projectId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessProject(actorUserId, projectId))
-            throw new UnauthorizedAccessException("Project is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Project(projectId), permission);
     }
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
     }
 
     private void EnsureEnvironmentBelongsToProject(EnvironmentId environmentId, ProjectId projectId)

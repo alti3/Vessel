@@ -148,7 +148,15 @@ public sealed class VesselTeamService
     {
         EnsureCanManageTeam(actorUserId, teamId);
         Team team = await GetTeamAsync(teamId, cancellationToken);
-        team.RemoveMember(memberUserId, DateTimeOffset.UtcNow);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        team.RemoveMember(memberUserId, now);
+
+        // A removed member's tokens for this team are revoked so they cannot be revived by a later re-invitation.
+        // Token validation also re-checks membership on every request.
+        PersonalAccessToken[] memberTokens = _unitOfWork.PersonalAccessTokens
+            .Where(token => token.UserId == memberUserId && token.TeamId == teamId && token.RevokedAt == null)
+            .ToArray();
+        foreach (PersonalAccessToken token in memberTokens) token.Revoke(now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditWriter.RecordAsync(
@@ -157,7 +165,7 @@ public sealed class VesselTeamService
             AuditActions.TeamMemberRemoved,
             new AuditTarget("user", memberUserId.ToString()),
             correlationId,
-            new Dictionary<string, object?>(),
+            new Dictionary<string, object?> { ["revokedApiCredentials"] = memberTokens.Length },
             cancellationToken);
     }
 
