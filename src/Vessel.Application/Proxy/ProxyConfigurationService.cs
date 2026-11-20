@@ -44,6 +44,7 @@ public sealed class ProxyConfigurationService(
         CancellationToken cancellationToken = default)
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
+        RequireHostLocalAllowed(actorUserId, serverId);
         if (!proxyLifecycle.IsRoutingEnabled(serverId))
             throw new DomainException("Routing is disabled because the server proxy type is None.");
         return await ApplyCoreAsync(actorUserId, teamId, serverId, TimeSpan.Zero, cancellationToken);
@@ -175,6 +176,7 @@ public sealed class ProxyConfigurationService(
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
         Server server = dbContext.Servers.SingleOrDefault(item => item.Id == serverId)
                         ?? throw new InvalidOperationException("Server was not found.");
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
         if (!proxyLifecycle.IsRoutingEnabled(serverId))
             throw new DomainException("Routing is disabled because the server proxy type is None.");
 
@@ -236,6 +238,14 @@ public sealed class ProxyConfigurationService(
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
         authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
+    }
+
+    /// <summary>Manual proxy changes on a Local/DockerSocket server act on the control-plane host.</summary>
+    private void RequireHostLocalAllowed(UserId actorUserId, ServerId serverId)
+    {
+        Server server = dbContext.Servers.SingleOrDefault(item => item.Id == serverId)
+                        ?? throw new InvalidOperationException("Server was not found.");
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
     }
 
     private static ProxyConfigurationSummary ToSummary(ProxyConfigurationVersion version)

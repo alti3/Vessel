@@ -82,6 +82,24 @@ public sealed partial class Phase10ProxyServiceTests
     }
 
     [Fact]
+    public async Task ProxyManagement_OnHostLocalServer_RequiresInstanceAdmin()
+    {
+        var fixture = ServiceFixture.Create();
+        User owner = Assert.Single(fixture.Db.UserItems, user => user.Id == fixture.UserId);
+        owner.RevokeInstanceAdmin(fixture.Now);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.ProxyLifecycle.StartAsync(fixture.UserId,
+            fixture.TeamId, fixture.Server.Id, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.ProxyLifecycle.UpdateAsync(fixture.UserId,
+            fixture.TeamId, fixture.Server.Id, new UpdateServerProxySettingsRequest("None", null, null),
+            TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
+                fixture.Server.Id, TestContext.Current.CancellationToken));
+        Assert.Empty(fixture.Db.ProxyConfigurationVersionItems);
+    }
+
+    [Fact]
     public async Task ProxyStart_RejectsUnauthorizedUnreachableNoneAndLockedServers()
     {
         var fixture = ServiceFixture.Create();

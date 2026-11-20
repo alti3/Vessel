@@ -495,6 +495,8 @@ public sealed partial class Phase10ProxyServiceTests
             var fixture = new ServiceFixture();
             DateTimeOffset now = fixture.Now;
             var user = User.Create(new DisplayName("Test User"), new EmailAddress("owner@example.com"), now);
+            // The fixture server is host-local (Local connection), which requires an instance administrator.
+            user.GrantInstanceAdmin(now);
             var team = Team.Create(new DisplayName("Team"), user.Id, false, now);
             var project = Project.Create(team.Id, new ResourceName("Project"), now);
             var environment = EnvironmentEntity.CreateProduction(project.Id, now);

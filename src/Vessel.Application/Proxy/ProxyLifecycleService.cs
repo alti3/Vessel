@@ -62,6 +62,8 @@ public sealed class ProxyLifecycleService(
         ArgumentNullException.ThrowIfNull(request);
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
         Server server = LoadServer(serverId);
+        // Managing the proxy of a Local/DockerSocket server runs Docker on the control-plane host.
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
         ServerProxyType? requestedType = ParseProxyType(request.ProxyType);
 
         await using DistributedLockHandle handle = await AcquireAsync(serverId, TimeSpan.Zero, cancellationToken);
@@ -247,6 +249,7 @@ public sealed class ProxyLifecycleService(
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
         Server server = LoadServer(serverId);
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
         if (server.Status == ServerStatus.Unreachable)
             throw new DomainException("Cannot change the proxy while the server is unreachable.");
 

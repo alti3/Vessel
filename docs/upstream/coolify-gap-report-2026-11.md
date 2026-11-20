@@ -157,10 +157,10 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | PLT-02 | Vulnerable and outdated dependencies | P0 | S | 15.14, 15.15 | Done (StackExchange.Redis 3.x and xunit.v3 4.x majors deferred to evaluation) |
 | SEC-01 | Cross-tenant webhook signature bypass (verified-once, trusted-for-all) | P0 | S | Phase 9 (fix), 15.02/15.16. | Open |
 | SEC-02 | Authorization mixes the active team's role with membership in any team | P0 | M | 15.02, 15.16 (move ahead of Phase 14). | Done |
-| SEC-03 | Host-local execution available to every tenant (localhost/terminal boundary) | P0 | M | 15.01/15.02, plus Phase 4 follow-up (instance admin). | Open |
-| SEC-04 | Secret encryption key management: hard-coded fallback key, no rotation or re-encryption, plaintext TOTP secrets | P0 | M | 15.08, Phase 14 (installer key generation). | Open |
-| SEC-05 | Repository file reads follow symlinks; path containment is lexical only | P0 | S | 15.10, Phase 8 follow-up. | Open |
-| SRV-01 | Server-targeted operations silently run on the Vessel host (health, connectivity, terminal) | P0 | S | 12.07, 12.11, 7.05 (re-open); 15.01/15.12. | Open |
+| SEC-03 | Host-local execution available to every tenant (localhost/terminal boundary) | P0 | M | 15.01/15.02, plus Phase 4 follow-up (instance admin). | Done |
+| SEC-04 | Secret encryption key management: hard-coded fallback key, no rotation or re-encryption, plaintext TOTP secrets | P0 | M | 15.08, Phase 14 (installer key generation). | Done |
+| SEC-05 | Repository file reads follow symlinks; path containment is lexical only | P0 | S | 15.10, Phase 8 follow-up. | Done |
+| SRV-01 | Server-targeted operations silently run on the Vessel host (health, connectivity, terminal) | P0 | S | 12.07, 12.11, 7.05 (re-open); 15.01/15.12. | Done |
 | API-01 | No OpenAPI document and no API compatibility policy; upstream REST surface grew from 96 to 233 paths | P1 | M | 6.07 follow-up; New: Phase 6b "Public API completeness"; 17.x for… | Open |
 | DATA-03 | Backup, restore and lifecycle operations do not exclude each other | P1 | S | 11.04, 11.12, 16.06 | Partial (shared database-op lock; Skipped status remains) |
 | DATA-04 | Database health is never actually probed | P1 | M | 11.01-11.03 (reopen), 12.x monitoring | Open |
