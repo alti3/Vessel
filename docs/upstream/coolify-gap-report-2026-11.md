@@ -143,8 +143,8 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 
 | ID | Title | Priority | Effort | Roadmap fit | Status |
 |---|---|---|---|---|---|
-| DATA-01 | Backups are buffered in memory, capped at 10 MiB, uncompressed and short-timed out | P0 | M | 11.08/11.09 (reopen), 16.04, 16.05 | Open |
-| DATA-02 | Restore pipeline is synchronous, format-blind and unsafe | P0 | L | 11.12/11.13 (reopen), 15.10 | Open |
+| DATA-01 | Backups are buffered in memory, capped at 10 MiB, uncompressed and short-timed out | P0 | M | 11.08/11.09 (reopen), 16.04, 16.05 | Done |
+| DATA-02 | Restore pipeline is synchronous, format-blind and unsafe | P0 | L | 11.12/11.13 (reopen), 15.10 | Done |
 | DEP-01 | Commit-pinned and webhook deployments fail: shallow clone uses `--branch <sha>`, and PR refs are never fetched | P0 | S–M | Fixes 8.05/9.10/9.11; prerequisite for DEP-02/DEP-07. | Open |
 | DEP-02 | Preview deployments are not isolated from production and fork PRs are not gated | P0 | M | Completes 9.12/9.13; cross-ref Phase 15.05. | Open |
 | IAM-01 | Identity-management endpoints accept any bearer token, so a token can escalate itself or strip 2FA | P0 | S | 4.06/4.07/4.10 (reopen); 15.02. | Done |
@@ -162,7 +162,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SEC-05 | Repository file reads follow symlinks; path containment is lexical only | P0 | S | 15.10, Phase 8 follow-up. | Open |
 | SRV-01 | Server-targeted operations silently run on the Vessel host (health, connectivity, terminal) | P0 | S | 12.07, 12.11, 7.05 (re-open); 15.01/15.12. | Open |
 | API-01 | No OpenAPI document and no API compatibility policy; upstream REST surface grew from 96 to 233 paths | P1 | M | 6.07 follow-up; New: Phase 6b "Public API completeness"; 17.x for… | Open |
-| DATA-03 | Backup, restore and lifecycle operations do not exclude each other | P1 | S | 11.04, 11.12, 16.06 | Open |
+| DATA-03 | Backup, restore and lifecycle operations do not exclude each other | P1 | S | 11.04, 11.12, 16.06 | Partial (shared database-op lock; Skipped status remains) |
 | DATA-04 | Database health is never actually probed | P1 | M | 11.01-11.03 (reopen), 12.x monitoring | Open |
 | DATA-05 | Credentials with `$` break in the generated `.env`, and the Redis password quoting semantics are missing | P1 | S | 11.01-11.03 | Open |
 | DATA-06 | Team-scoped backup destinations (S3 storages) with validation, usability state and multiple destinations | P1 | L | 5.22/5.24 (extend), 11.08; New: Phase 11b "Backup destinations" | Open |
