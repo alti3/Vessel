@@ -56,6 +56,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         InAppNotificationRepository = new EfRepository<InAppNotification, InAppNotificationId>(this);
         NotificationDeliveryAttemptRepository =
             new EfRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId>(this);
+        InstanceEmailSettingsRepository = new EfRepository<InstanceEmailSettings, InstanceEmailSettingsId>(this);
         WebhookEventRepository = new EfRepository<WebhookEvent, WebhookEventId>(this);
         ApplicationWebhookConfigurationRepository =
             new EfRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>(this);
@@ -187,6 +188,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts => NotificationDeliveryAttemptSet;
 
+    public IQueryable<InstanceEmailSettings> InstanceEmailSettings => Set<InstanceEmailSettings>();
+
     public IQueryable<AuditLog> AuditLogs => AuditLogSet;
 
     public IQueryable<SettingEntry> Settings => SettingSet;
@@ -255,6 +258,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         get;
     }
 
+    public IRepository<InstanceEmailSettings, InstanceEmailSettingsId> InstanceEmailSettingsRepository { get; }
+
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
     public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
@@ -290,6 +295,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ConfigureEnvironmentVariables(modelBuilder);
         ConfigureRegistryCredentials(modelBuilder);
         ConfigureNotifications(modelBuilder);
+        NotificationEmailModelConfiguration.Configure(modelBuilder);
         ConfigureAuditLogs(modelBuilder);
         ConfigureSettings(modelBuilder);
         ConfigureWebhooks(modelBuilder);
