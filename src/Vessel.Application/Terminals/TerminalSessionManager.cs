@@ -37,8 +37,17 @@ public sealed class TerminalSessionManager(
         if (server.TeamId != teamId)
             throw new UnauthorizedAccessException("Server is outside the active team.");
 
+        // Fail closed: a terminal is only ever opened over the target's own connection. Remote (SSH) terminals
+        // are not implemented, so they are rejected instead of falling back to a shell on the Vessel host.
+        if (!server.IsHostLocal)
+            throw new InvalidOperationException(TerminalTargetPolicy.RemoteNotSupportedMessage);
+        if (request.TargetType == TerminalTargetType.Container)
+            throw new InvalidOperationException(TerminalTargetPolicy.ContainerNotSupportedMessage);
+        // Host terminals are host-root-equivalent: only instance administrators may open them.
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
+
         DateTimeOffset now = timeProvider.GetUtcNow();
-        string command = BuildCommand(request.TargetType, request.ContainerName);
+        string command = _policy.DefaultShellCommand;
         TerminalSession session = TerminalSession.Open(
             teamId,
             actorUserId,
@@ -74,7 +83,8 @@ public sealed class TerminalSessionManager(
                     request.Columns,
                     request.Rows,
                     _policy.IdleTimeout,
-                    _policy.MaxLifetime),
+                    _policy.MaxLifetime,
+                    server.ConnectionType),
                 PublishOutputAsync,
                 HandleExitAsync,
                 cancellationToken);
@@ -188,14 +198,6 @@ public sealed class TerminalSessionManager(
         if (session.Status != TerminalSessionStatus.Connected)
             throw new InvalidOperationException("Terminal session is not connected.");
         return session;
-    }
-
-    private static string BuildCommand(TerminalTargetType targetType, string? containerName)
-    {
-        if (targetType == TerminalTargetType.Container)
-            return $"docker exec -it {containerName} sh";
-
-        return TerminalSecurityPolicy.Default.DefaultShellCommand;
     }
 
     private async Task PublishOutputAsync(TerminalOutputChunk chunk, CancellationToken cancellationToken)

@@ -85,6 +85,20 @@ Owners and admins receive all permissions. Members receive read-oriented resourc
 
 Every check on an existing resource goes through `VesselAuthorizationService.Demand`/`IsAuthorized(user, activeTeam, ResourceRef, permission)`. The service resolves the team that **owns** the resource (project, environment, server, application, deployment or database), requires it to be the caller's active team (the session's selected team or the token's team), and evaluates the permission with the caller's role in that team. Membership in any other team, including the caller's personal team, never authorizes access. Missing resources and resources of another team fail identically ("... is outside the active team."). Realtime group joins and environment-variable targets follow the same rule. The former team-agnostic `CanAccessProject/Server/Application/Deployment` helpers were removed; a unit test guards against reintroducing them.
 
+## Instance Administrators
+
+`users.IsInstanceAdmin` is an instance-level privilege independent of team roles (the Coolify "root"/instance admin). The first registered user becomes the instance administrator; later self-registered users do not.
+
+Instance administrators are required for host-local execution, which is host-root-equivalent:
+
+- creating servers with a `Local` or `DockerSocket` connection;
+- creating applications, databases, or services on such servers, and starting deployments on them;
+- connectivity tests and manual health polls of such servers;
+- opening host terminals;
+- secret key-ring re-encryption.
+
+Unattended work (webhook deployments, scheduled health polling) on a host-local server runs only when an Owner/Admin of the owning team is an instance administrator; otherwise deployments fail and polling records `Unknown` without touching the host runtime.
+
 ## Audit
 
 The Application layer records security events through `IAuditWriter`. Metadata keys containing `password`, `token`, or `secret` are redacted before persistence.

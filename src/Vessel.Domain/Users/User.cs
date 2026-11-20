@@ -5,6 +5,8 @@ namespace Vessel.Domain.Users;
 
 public sealed class User : Entity<UserId>
 {
+    public const int TwoFactorSecretMaxLength = 512;
+
     private User()
     {
     }
@@ -43,6 +45,13 @@ public sealed class User : Entity<UserId>
     public DateTimeOffset? TwoFactorConfirmedAt { get; private set; }
 
     public string? TwoFactorRecoveryCodeHashes { get; private set; }
+
+    /// <summary>
+    /// Instance administrators may use host-local execution (the control-plane host's Docker/Podman
+    /// runtime, host terminals) and run instance-wide maintenance such as secret re-encryption.
+    /// This is an instance-level privilege and is independent of team roles.
+    /// </summary>
+    public bool IsInstanceAdmin { get; private set; }
 
     public bool HasPassword => !string.IsNullOrWhiteSpace(PasswordHash);
 
@@ -124,11 +133,38 @@ public sealed class User : Entity<UserId>
         Touch(now);
     }
 
-    public void StageTwoFactorSecret(string secret, DateTimeOffset now)
+    public void GrantInstanceAdmin(DateTimeOffset now)
     {
-        TwoFactorSecret = DomainValidation.Required(secret, nameof(TwoFactorSecret), 128);
+        if (IsInstanceAdmin) return;
+        IsInstanceAdmin = true;
+        Touch(now);
+    }
+
+    public void RevokeInstanceAdmin(DateTimeOffset now)
+    {
+        if (!IsInstanceAdmin) return;
+        IsInstanceAdmin = false;
+        Touch(now);
+    }
+
+    public void StageTwoFactorSecret(string protectedSecret, DateTimeOffset now)
+    {
+        TwoFactorSecret = DomainValidation.Required(protectedSecret, nameof(TwoFactorSecret), TwoFactorSecretMaxLength);
         TwoFactorConfirmedAt = null;
         TwoFactorRecoveryCodeHashes = null;
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Replaces the stored (protected) TOTP secret without changing the 2FA enrollment state.
+    /// Used when the at-rest protection is upgraded or re-encrypted with a new key.
+    /// </summary>
+    public void RewrapTwoFactorSecret(string protectedSecret, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(TwoFactorSecret))
+            throw new DomainException("Two-factor authentication has not been started.");
+
+        TwoFactorSecret = DomainValidation.Required(protectedSecret, nameof(TwoFactorSecret), TwoFactorSecretMaxLength);
         Touch(now);
     }
 

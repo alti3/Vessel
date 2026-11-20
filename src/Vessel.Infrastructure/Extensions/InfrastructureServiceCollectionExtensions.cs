@@ -87,13 +87,17 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor
             .Singleton<IValidateOptions<ObjectStorageOptions>, ObjectStorageOptionsValidator>());
 
+        bool isDevelopmentEnvironment = SecretStorageOptionsValidator.IsDevelopment(configuration);
         services
             .AddOptions<SecretStorageOptions>()
             .Bind(configuration.GetSection(SecretStorageOptions.SectionName))
-            .Validate(options => string.IsNullOrWhiteSpace(options.MasterKey)
-                                 || Convert.FromBase64String(options.MasterKey).Length == 32,
-                "Secrets:MasterKey must be a base64-encoded 256-bit key when configured.")
             .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<SecretStorageOptions>>(
+            new SecretStorageOptionsValidator(isDevelopmentEnvironment)));
+        services.TryAddSingleton(provider => SecretKeyRing.Create(
+            provider.GetRequiredService<IOptions<SecretStorageOptions>>().Value,
+            isDevelopmentEnvironment));
+        services.TryAddSingleton<ISecretCipher, AesGcmSecretCipher>();
 
         DatabaseOptions databaseOptions = configuration
             .GetSection(DatabaseOptions.SectionName)

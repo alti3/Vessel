@@ -503,6 +503,12 @@ public sealed class ManagedDatabaseService(
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
         authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
+        ServerConnectionType? connectionType = dbContext.Servers
+            .Where(server => server.Id == serverId)
+            .Select(server => (ServerConnectionType?)server.ConnectionType)
+            .SingleOrDefault();
+        if (connectionType.HasValue)
+            HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, connectionType.Value);
     }
 
     private void EnsureEnvironmentBelongsToProject(EnvironmentId environmentId, ProjectId projectId)

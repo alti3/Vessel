@@ -184,7 +184,8 @@ public sealed class Phase12OperationalTests
             realtime,
             new TestAuditWriter(),
             TimeProvider.System,
-            new RecordingNotificationEventPublisher());
+            new RecordingNotificationEventPublisher(),
+            new TestSshClient());
 
         ServerHealthPollingResult result =
             await service.PollAsync(scenario.Server.Id, TestContext.Current.CancellationToken);
@@ -225,7 +226,8 @@ public sealed class Phase12OperationalTests
             new TestRealtimeNotifier(),
             new TestAuditWriter(),
             TimeProvider.System,
-            notifications);
+            notifications,
+            new TestSshClient());
         CancellationToken token = TestContext.Current.CancellationToken;
 
         await service.PollAsync(scenario.Server.Id, token); // Unknown -> Reachable: no alert.
@@ -299,7 +301,7 @@ public sealed class Phase12OperationalTests
         return new DeploymentRunner(scenario.Db, ThrowingProxy.Create<Vessel.Application.Git.IGitClient>(),
             new TestContainerRuntime(), ThrowingProxy.Create<IDeploymentWorkspaceManager>(), locks,
             ThrowingProxy.Create<ISecretVault>(), new TestRedactor(), new TestRealtimeNotifier(), proxy,
-            proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications);
+            proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications, authorization);
     }
 
     private sealed class SwallowingPublisher : INotificationEventPublisher
@@ -366,6 +368,8 @@ public sealed class Phase12OperationalTests
         {
             var scenario = new Scenario();
             User user = User.Create(new DisplayName("Alice"), new EmailAddress("alice@example.com"), scenario.Now);
+            // The scenario server is host-local (control-plane host), which requires an instance administrator.
+            user.GrantInstanceAdmin(scenario.Now);
             Team team = Team.Create(new DisplayName("Team"), user.Id, false, scenario.Now);
             Project project = Project.Create(team.Id, new ResourceName("project"), scenario.Now);
             EnvironmentEntity environment = EnvironmentEntity.CreateProduction(project.Id, scenario.Now);
@@ -571,6 +575,16 @@ public sealed class Phase12OperationalTests
         public IAsyncEnumerable<Vessel.Application.Processes.ProcessOutputLine> BuildImageAsync(ContainerRuntimeTarget target, DockerBuildCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<ContainerEvent> StreamEventsAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<Vessel.Application.Processes.ProcessOutputLine> RunComposeAsync(ContainerRuntimeTarget target, ComposeCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class TestSshClient : Vessel.Application.Ssh.ISshClient
+    {
+        public Task<bool> TestConnectionAsync(Vessel.Application.Ssh.SshConnectionOptions options, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Host-local servers must not be probed over SSH.");
+        public Task<Vessel.Application.Ssh.SshCommandResult> RunCommandAsync(Vessel.Application.Ssh.SshCommandRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<Vessel.Application.Ssh.SshCommandResult> RunCommandWithInputAsync(Vessel.Application.Ssh.SshCommandRequest request, Stream standardInput, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task UploadAsync(Vessel.Application.Ssh.SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DownloadAsync(Vessel.Application.Ssh.SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed record RecurringRegistration(

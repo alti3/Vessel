@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 using Vessel.Application.Auditing;
+using Vessel.Application.Authorization;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
 using Vessel.Application.Git;
@@ -24,7 +26,7 @@ using ProcessOutputLine = Vessel.Application.Processes.ProcessOutputLine;
 
 namespace Vessel.Application.Deployments;
 
-public sealed class DeploymentRunner(
+public sealed partial class DeploymentRunner(
     IVesselDbContext dbContext,
     IGitClient git,
     IContainerRuntimeClient runtime,
@@ -37,7 +39,8 @@ public sealed class DeploymentRunner(
     ProxyLifecycleService proxyLifecycle,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
-    INotificationEventPublisher notifications)
+    INotificationEventPublisher notifications,
+    VesselAuthorizationService authorization)
     : IDeploymentRunner
 {
     public async Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
@@ -78,9 +81,13 @@ public sealed class DeploymentRunner(
                 LoadDeploymentContext(deploymentId);
             if (server.Status == ServerStatus.Unreachable)
                 throw new DomainException("Server is unreachable.");
-            if (server.ConnectionType == ServerConnectionType.Ssh)
+            if (!server.IsHostLocal)
                 throw new DomainException(
                     "Phase 8 deployment runner currently supports local Docker/Podman targets; SSH runtime execution remains behind the runtime abstraction.");
+            // Defense in depth: host-local deployments run on the control-plane host and must be authorized by an
+            // instance administrator (the triggering user, or for webhooks an instance-admin Owner/Admin of the team).
+            if (!HostLocalExecutionGuard.IsAuthorized(authorization, server, deployment.ActorUserId))
+                throw new DomainException(HostLocalExecutionGuard.UnattendedNotAuthorizedMessage);
 
             ContainerRuntimeTarget target = RuntimeTarget(server);
             workspace = await workspaces.PrepareAsync(deploymentId, cancellationToken);
@@ -123,6 +130,8 @@ public sealed class DeploymentRunner(
             if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile)
             {
                 var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "Dockerfile");
+                // The Dockerfile is read by the runtime CLI on this host: reject symlinks/escapes from the repository.
+                workspaces.EnsureRegularFile(workspace.RepositoryDirectory, dockerfile);
                 await StreamBuildAsync(target, plan, workspace, dockerfile, deploymentId, cancellationToken);
                 await ThrowIfCanceledAsync(deploymentId, cancellationToken);
             }
@@ -327,8 +336,8 @@ public sealed class DeploymentRunner(
         try
         {
             var raw = await workspaces.ReadTextAsync(workspace.RepositoryDirectory, composePath, cancellationToken);
-            if (raw.Contains("..", StringComparison.Ordinal))
-                throw new DomainException("Compose file contains unsupported traversal markers.");
+            if (ParentTraversalPattern().IsMatch(raw))
+                throw new DomainException("Compose file references parent directories ('../'), which is not supported.");
             return raw;
         }
         catch (FileNotFoundException)
@@ -580,10 +589,20 @@ public sealed class DeploymentRunner(
     private static string NormalizeRelativePath(string value)
     {
         var trimmed = string.IsNullOrWhiteSpace(value) ? "Dockerfile" : value.Trim().TrimStart('/', '\\');
-        if (trimmed.Contains("..", StringComparison.Ordinal))
+        string[] segments = trimmed.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment != ".")
+            .ToArray();
+        if (segments.Length == 0 || segments.Any(segment => segment == ".." || segment.Contains('\0')))
             throw new DomainException("Path traversal is not allowed in deployment file paths.");
-        return trimmed;
+        return string.Join('/', segments);
     }
+
+    /// <summary>
+    /// Matches a '..' path segment (e.g. <c>../data</c> or <c>./a/../b</c>) in compose values, without
+    /// rejecting unrelated '..' text such as version ranges or ellipses.
+    /// </summary>
+    [GeneratedRegex(@"(?:^|[\s""':=,\[(/\\])\.\.(?:[/\\]|[\s""',\])]|$)", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    private static partial Regex ParentTraversalPattern();
 
     private static string SanitizeName(string value)
     {

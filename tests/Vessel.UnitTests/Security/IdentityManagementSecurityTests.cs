@@ -235,7 +235,8 @@ public sealed class IdentityManagementSecurityTests
     {
         var tokenGenerator = new SequentialTokenGenerator();
         return new VesselAuthenticationService(fixture.Store.Context, new FakePasswordHasher(), tokenGenerator,
-            new TotpService(tokenGenerator), new NullAuditWriter(), Options.Create(new AuthOptions()));
+            new TotpService(tokenGenerator), new NullAuditWriter(), Options.Create(new AuthOptions()),
+            new Vessel.UnitTests.Application.SecurityHardening.FakeSecretCipher("v1"));
     }
 
     private sealed class NullAuditWriter : IAuditWriter
