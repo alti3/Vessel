@@ -50,6 +50,20 @@ Vessel uses explicit policy names:
 
 Owners and admins receive all permissions. Members receive read-oriented resource permissions plus deployment start/cancel and deployment log access. Secret read/write requires explicit permission and must not be inferred from route IDs alone.
 
+## Instance Administrators
+
+`users.IsInstanceAdmin` is an instance-level privilege independent of team roles (the Coolify "root"/instance admin). The first registered user becomes the instance administrator; later self-registered users do not.
+
+Instance administrators are required for host-local execution, which is host-root-equivalent:
+
+- creating servers with a `Local` or `DockerSocket` connection;
+- creating applications, databases, or services on such servers, and starting deployments on them;
+- connectivity tests and manual health polls of such servers;
+- opening host terminals;
+- secret key-ring re-encryption.
+
+Unattended work (webhook deployments, scheduled health polling) on a host-local server runs only when an Owner/Admin of the owning team is an instance administrator; otherwise deployments fail and polling records `Unknown` without touching the host runtime.
+
 ## Audit
 
 The Application layer records security events through `IAuditWriter`. Metadata keys containing `password`, `token`, or `secret` are redacted before persistence.

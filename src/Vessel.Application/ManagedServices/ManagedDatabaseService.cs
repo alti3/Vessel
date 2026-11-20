@@ -541,6 +541,12 @@ public sealed class ManagedDatabaseService(
         Require(actorUserId, teamId, permission);
         if (!authorization.CanAccessServer(actorUserId, serverId))
             throw new UnauthorizedAccessException("Server is outside the active team.");
+        ServerConnectionType? connectionType = dbContext.Servers
+            .Where(server => server.Id == serverId)
+            .Select(server => (ServerConnectionType?)server.ConnectionType)
+            .SingleOrDefault();
+        if (connectionType.HasValue)
+            HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, connectionType.Value);
     }
 
     private void EnsureEnvironmentBelongsToProject(EnvironmentId environmentId, ProjectId projectId)

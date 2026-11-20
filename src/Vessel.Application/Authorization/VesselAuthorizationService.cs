@@ -24,6 +24,31 @@ public sealed class VesselAuthorizationService
         return role.HasValue && VesselPermissions.ForRole(role.Value).Contains(permission);
     }
 
+    /// <summary>
+    /// Instance administrators are trusted with host-local execution (control-plane runtime, host terminals)
+    /// and instance-wide maintenance. Team roles never imply this privilege.
+    /// </summary>
+    public bool IsInstanceAdmin(UserId userId)
+    {
+        return _unitOfWork.Users.Any(user => user.Id == userId && user.IsInstanceAdmin);
+    }
+
+    /// <summary>
+    /// True when an Owner or Admin of the team is an instance administrator. Used for unattended
+    /// (webhook/scheduled) work on host-local servers where no interactive actor is present.
+    /// </summary>
+    public bool TeamHasInstanceAdmin(TeamId teamId)
+    {
+        UserId[] candidates = _unitOfWork.TeamMemberships
+            .Where(membership => membership.TeamId == teamId
+                                 && (membership.Role == TeamRole.Owner || membership.Role == TeamRole.Admin))
+            .Select(membership => membership.UserId)
+            .ToArray();
+
+        return candidates.Length > 0
+               && _unitOfWork.Users.Any(user => candidates.Contains(user.Id) && user.IsInstanceAdmin);
+    }
+
     public bool CanAccessTeam(UserId userId, TeamId teamId)
     {
         return _unitOfWork.TeamMemberships.Any(membership =>

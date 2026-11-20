@@ -178,7 +178,8 @@ public sealed class Phase12OperationalTests
             runtime,
             realtime,
             new TestAuditWriter(),
-            TimeProvider.System);
+            TimeProvider.System,
+            new TestSshClient());
 
         ServerHealthPollingResult result =
             await service.PollAsync(scenario.Server.Id, TestContext.Current.CancellationToken);
@@ -217,6 +218,8 @@ public sealed class Phase12OperationalTests
         {
             var scenario = new Scenario();
             User user = User.Create(new DisplayName("Alice"), new EmailAddress("alice@example.com"), scenario.Now);
+            // The scenario server is host-local (control-plane host), which requires an instance administrator.
+            user.GrantInstanceAdmin(scenario.Now);
             Team team = Team.Create(new DisplayName("Team"), user.Id, false, scenario.Now);
             Project project = Project.Create(team.Id, new ResourceName("project"), scenario.Now);
             EnvironmentEntity environment = EnvironmentEntity.CreateProduction(project.Id, scenario.Now);
@@ -416,6 +419,15 @@ public sealed class Phase12OperationalTests
         public IAsyncEnumerable<Vessel.Application.Processes.ProcessOutputLine> BuildImageAsync(ContainerRuntimeTarget target, DockerBuildCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<ContainerEvent> StreamEventsAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<Vessel.Application.Processes.ProcessOutputLine> RunComposeAsync(ContainerRuntimeTarget target, ComposeCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class TestSshClient : Vessel.Application.Ssh.ISshClient
+    {
+        public Task<bool> TestConnectionAsync(Vessel.Application.Ssh.SshConnectionOptions options, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Host-local servers must not be probed over SSH.");
+        public Task<Vessel.Application.Ssh.SshCommandResult> RunCommandAsync(Vessel.Application.Ssh.SshCommandRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task UploadAsync(Vessel.Application.Ssh.SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DownloadAsync(Vessel.Application.Ssh.SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed record RecurringRegistration(

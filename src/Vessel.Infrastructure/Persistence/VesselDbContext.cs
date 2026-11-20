@@ -297,7 +297,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(user => user.ExternalSubject).HasMaxLength(255);
             builder.Property(user => user.PasswordHash).HasMaxLength(512);
             builder.Property(user => user.PasswordResetTokenHash).HasMaxLength(128);
-            builder.Property(user => user.TwoFactorSecret).HasMaxLength(128);
+            builder.Property(user => user.TwoFactorSecret).HasMaxLength(User.TwoFactorSecretMaxLength);
+            builder.Property(user => user.IsInstanceAdmin).IsRequired();
             builder.Property(user => user.TwoFactorRecoveryCodeHashes).HasMaxLength(4000);
             builder.Property(user => user.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(user => user.DomainEvents);

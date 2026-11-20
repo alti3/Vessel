@@ -51,6 +51,17 @@ public sealed class Server : Entity<ServerId>
 
     public string Labels { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// True when operations against this server execute on the Vessel control-plane host itself
+    /// (local runtime or the host Docker socket). Host-local execution is host-root-equivalent.
+    /// </summary>
+    public bool IsHostLocal => IsHostLocalConnection(ConnectionType);
+
+    public static bool IsHostLocalConnection(ServerConnectionType connectionType)
+    {
+        return connectionType is ServerConnectionType.Local or ServerConnectionType.DockerSocket;
+    }
+
     public static Server Create(
         TeamId teamId,
         ResourceName name,

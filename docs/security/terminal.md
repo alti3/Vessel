@@ -6,6 +6,9 @@ Terminal sessions are privileged operational access. Treat every open session as
 
 - Opening a session requires the `terminals.open` permission.
 - The caller must also have access to the target server.
+- Host terminals (servers with a `Local` or `DockerSocket` connection) open a shell on the Vessel control-plane host and are host-root-equivalent. They require an **instance administrator**; team Owner/Admin roles are not sufficient.
+- Terminals are only opened over the target's own connection. SSH server terminals are not implemented yet and are rejected with an explicit "not supported yet" error; Vessel never substitutes a control-plane shell for a remote server.
+- Container terminal targets are rejected until a reviewed `docker exec` PTY bridge exists.
 - Session ownership is persisted; a user can only join or operate a terminal session they opened.
 - Terminal API endpoints use the terminal rate-limit policy.
 
@@ -19,7 +22,9 @@ Terminal session rows include owner, team, target server, target type, container
 
 Blazor components, controllers, and SignalR hubs do not execute shells or runtime commands. They call Application services. The Infrastructure terminal bridge owns process lifetime and cancellation.
 
-The current bridge supports local server shells through the Infrastructure process layer. Container terminal sessions are modeled and authorized, but the Infrastructure bridge rejects them until a reviewed Docker exec PTY/SSH bridge is added.
+The current bridge supports host-local server shells through the Infrastructure process layer and rejects any non host-local target or container target itself (defense in depth).
+
+The shell never inherits the daemon environment. `ProcessCommand.InheritEnvironment = false` clears the child environment and the bridge passes an explicit allowlist (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_ALL`, `TZ`, Windows process essentials, plus `TERM`). Values such as `Secrets__MasterKey` or database connection strings are therefore not visible in a session. The shell still runs as the Vessel service user, so it can read files that user can read; this is why host terminals are limited to instance administrators.
 
 ## Redaction Limits
 
@@ -33,6 +38,6 @@ Terminal output is passed through the shared secret redactor before persistence-
 
 - Prefer scoped, short-lived terminal sessions.
 - Close sessions after use; the bridge also enforces a maximum lifetime.
-- Keep Docker socket access restricted. Access to `/var/run/docker.sock` is host-root-equivalent.
+- Keep Docker socket access restricted. Access to `/var/run/docker.sock` is host-root-equivalent; this is why creating, targeting, probing, deploying to, or opening terminals on `Local`/`DockerSocket` servers requires an instance administrator.
 - Review audit logs after emergency terminal use.
 - Do not rely on terminal sessions for durable automation. Use Hangfire-backed jobs and Application workflows for repeatable operations.

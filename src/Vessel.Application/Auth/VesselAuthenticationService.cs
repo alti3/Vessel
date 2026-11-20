@@ -19,6 +19,7 @@ public sealed class VesselAuthenticationService
     private readonly IPasswordHasher _passwordHasher;
     private readonly ITokenGenerator _tokenGenerator;
     private readonly TotpService _totpService;
+    private readonly TwoFactorSecretProtector _twoFactorSecrets;
     private readonly IVesselDbContext _unitOfWork;
 
     public VesselAuthenticationService(
@@ -27,12 +28,14 @@ public sealed class VesselAuthenticationService
         ITokenGenerator tokenGenerator,
         TotpService totpService,
         IAuditWriter auditWriter,
-        IOptions<AuthOptions> options)
+        IOptions<AuthOptions> options,
+        ISecretCipher secretCipher)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _tokenGenerator = tokenGenerator;
         _totpService = totpService;
+        _twoFactorSecrets = new TwoFactorSecretProtector(secretCipher);
         _auditWriter = auditWriter;
         _options = options.Value;
     }
@@ -50,8 +53,12 @@ public sealed class VesselAuthenticationService
             throw new InvalidOperationException("A user with this email already exists.");
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
+        var isFirstUser = !_unitOfWork.Users.Any();
         var user = User.Create(new DisplayName(name), emailAddress, now);
         user.SetPasswordHash(_passwordHasher.HashPassword(password), false, now);
+        // Mirrors Coolify's root user: the first account on an instance is the instance administrator.
+        // Later self-registered users never receive host-local privileges implicitly.
+        if (isFirstUser) user.GrantInstanceAdmin(now);
         var team = Team.Create(new DisplayName($"{user.Name.Value}'s Team"), user.Id, true, now);
 
         await _unitOfWork.UserRepository.AddAsync(user, cancellationToken);
@@ -108,13 +115,16 @@ public sealed class VesselAuthenticationService
             if (string.IsNullOrWhiteSpace(twoFactorCode))
                 return new AuthenticatedUser(user.Id, default, user.Name.Value, user.Email.Value, true);
 
-            var validTotp = _totpService.VerifyCode(user.TwoFactorSecret!, twoFactorCode, now);
+            var validTotp = _totpService.VerifyCode(_twoFactorSecrets.Reveal(user)!, twoFactorCode, now);
             var validRecoveryCode = validTotp || VerifyAndConsumeRecoveryCode(user, twoFactorCode, now);
             if (!validRecoveryCode)
             {
                 await AuditFailedLoginAsync(emailAddress.Value, correlationId, cancellationToken);
                 return null;
             }
+
+            // Opportunistically upgrade legacy plaintext or old-key TOTP secrets to the active key.
+            _twoFactorSecrets.TryRewrap(user, now);
         }
 
         Team team = ResolveLoginTeam(user);
@@ -203,7 +213,7 @@ public sealed class VesselAuthenticationService
         User user = await GetUserAsync(userId, cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         var secret = _totpService.GenerateSecret();
-        user.StageTwoFactorSecret(secret, now);
+        user.StageTwoFactorSecret(_twoFactorSecrets.Protect(user.Id, secret), now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new TwoFactorSetup(secret, _totpService.CreateOtpAuthUri(issuer, user.Email.Value, secret));
@@ -216,7 +226,8 @@ public sealed class VesselAuthenticationService
         CancellationToken cancellationToken = default)
     {
         User user = await GetUserAsync(userId, cancellationToken);
-        if (user.TwoFactorSecret is null || !_totpService.VerifyCode(user.TwoFactorSecret, code, DateTimeOffset.UtcNow))
+        string? secret = _twoFactorSecrets.Reveal(user);
+        if (secret is null || !_totpService.VerifyCode(secret, code, DateTimeOffset.UtcNow))
             return null;
 
         IReadOnlyList<string> recoveryCodes = _totpService.GenerateRecoveryCodes();

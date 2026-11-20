@@ -48,6 +48,7 @@ public sealed class StartDeploymentService(
                         ?? throw new InvalidOperationException("Deployment server was not found.");
         if (server.Status == ServerStatus.Unreachable)
             throw new DomainException("Deployment server is unreachable.");
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
 
         var alreadyActive = dbContext.Deployments.Any(deployment =>
             deployment.ApplicationId == applicationId &&

@@ -277,6 +277,9 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
         foreach (var argument in command.Arguments) startInfo.ArgumentList.Add(argument);
 
+        if (!command.InheritEnvironment)
+            startInfo.Environment.Clear();
+
         foreach (var (key, value) in command.Environment ?? new Dictionary<string, string?>())
             startInfo.Environment[key] = value;
 

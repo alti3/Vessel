@@ -24,8 +24,12 @@ public sealed record ProcessCommand(
     ProcessTerminationPolicy? TerminationPolicy = null,
     ProcessRedactionProfile? Redaction = null,
     long MaxOutputBytes = 10 * 1024 * 1024,
-    IReadOnlyDictionary<string, string>? AuditMetadata = null)
+    IReadOnlyDictionary<string, string>? AuditMetadata = null,
+    bool InheritEnvironment = true)
 {
+    // InheritEnvironment = false starts the child with an empty environment plus only Environment, so daemon
+    // secrets (master keys, connection strings) are never inherited. Required for interactive terminals.
+
     public static ProcessCommand Create(string fileName, params string[] arguments)
     {
         return new ProcessCommand(fileName, arguments);

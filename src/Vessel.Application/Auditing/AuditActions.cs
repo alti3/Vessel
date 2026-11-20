@@ -54,6 +54,7 @@ public static class AuditActions
     public const string SecretStored = "secret.stored";
     public const string SecretRevealed = "secret.revealed";
     public const string SecretRotated = "secret.rotated";
+    public const string SecretsReencrypted = "secrets.reencrypted";
     public const string RegistryCredentialCreated = "registry_credential.created";
     public const string TerminalSessionOpened = "terminal.session_opened";
     public const string TerminalSessionClosed = "terminal.session_closed";

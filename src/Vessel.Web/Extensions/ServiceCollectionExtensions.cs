@@ -111,6 +111,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<NotificationDispatchService>();
         services.AddScoped<DispatchNotificationJob>();
         services.AddScoped<TotpService>();
+        services.AddScoped<SecretReencryptionService>();
+        services.AddScoped<SecretReencryptionJob>();
         services.TryAddScoped<ISecretVault, UnavailableSecretVault>();
         services.TryAddSingleton<IDatabaseBackupProvider, UnavailableDatabaseBackupProvider>();
         services.TryAddSingleton<IObjectStorage, UnavailableObjectStorage>();

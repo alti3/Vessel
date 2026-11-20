@@ -1,4 +1,5 @@
 using Vessel.Domain;
+using Vessel.Domain.Servers;
 using Vessel.Domain.Terminals;
 
 namespace Vessel.Application.Terminals;
@@ -38,7 +39,8 @@ public sealed record TerminalBridgeOpenRequest(
     int Columns,
     int Rows,
     TimeSpan IdleTimeout,
-    TimeSpan MaxLifetime);
+    TimeSpan MaxLifetime,
+    ServerConnectionType TargetConnection);
 
 public sealed record TerminalBridgeResizeRequest(TerminalSessionId SessionId, int Columns, int Rows);
 
@@ -53,6 +55,15 @@ public sealed record TerminalSecurityPolicy(
         TimeSpan.FromHours(2),
         8 * 1024,
         OperatingSystem.IsWindows() ? "pwsh" : "/bin/sh");
+}
+
+public static class TerminalTargetPolicy
+{
+    public const string RemoteNotSupportedMessage =
+        "Terminal sessions for SSH servers are not supported yet. Vessel never substitutes a control-plane host shell for a remote server.";
+
+    public const string ContainerNotSupportedMessage =
+        "Container terminal sessions are not supported yet; they require a reviewed docker exec PTY bridge.";
 }
 
 public interface ITerminalProcessBridge

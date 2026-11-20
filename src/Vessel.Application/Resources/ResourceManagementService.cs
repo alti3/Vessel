@@ -1,5 +1,6 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
 using Vessel.Domain;
@@ -23,7 +24,8 @@ public sealed class ResourceManagementService(
     VesselAuthorizationService authorization,
     ISecretVault secretVault,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ServerHealthPollingService serverHealth)
 {
     public IReadOnlyList<ProjectSummary> ListProjects(UserId actorUserId, TeamId teamId)
     {
@@ -197,6 +199,7 @@ public sealed class ResourceManagementService(
         CancellationToken cancellationToken = default)
     {
         Require(actorUserId, teamId, VesselPermissions.ServersWrite);
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, request.ConnectionType);
         DateTimeOffset now = Now();
         var server = Server.Create(teamId, new ResourceName(request.Name),
             ToServerAddress(request.Host, request.Port, request.User),
@@ -218,16 +221,16 @@ public sealed class ResourceManagementService(
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
         Server server = await GetRequiredAsync(dbContext.ServerRepository, serverId, cancellationToken);
-        DateTimeOffset now = Now();
-        server.ChangeStatus(ServerStatus.Reachable, now);
-        var snapshot = ServerStatusSnapshot.Create(server.Id, server.Status, null, null, null, 0, true, true, now);
-        await dbContext.ServerStatusSnapshotRepository.AddAsync(snapshot, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
+
+        // A real probe over the server's own connection; the snapshot records measured state only.
+        ServerHealthPollingResult probe =
+            await serverHealth.PollAsync(actorUserId, teamId, serverId, cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.ServerConnectivityChecked, "server", server.Id.Value,
             cancellationToken);
 
-        return new ServerConnectivityResult(server.Id.Value, true, server.Runtime,
-            "Server record is valid. Runtime probing is deferred to deployment/runtime phases.", now);
+        return new ServerConnectivityResult(server.Id.Value, probe.Status == ServerStatus.Reachable, server.Runtime,
+            probe.Reason ?? probe.Status.ToString(), Now());
     }
 
     public IReadOnlyList<ServerStatusSnapshotSummary> ListServerSnapshots(UserId actorUserId, TeamId teamId,
@@ -263,6 +266,7 @@ public sealed class ResourceManagementService(
         var serverId = new ServerId(request.ServerId);
         RequireProject(actorUserId, teamId, projectId, VesselPermissions.ApplicationsWrite);
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ApplicationsWrite);
+        RequireHostLocalTargetAllowed(actorUserId, serverId);
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
 
         DateTimeOffset now = Now();
@@ -300,6 +304,7 @@ public sealed class ResourceManagementService(
         var serverId = new ServerId(request.ServerId);
         RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsWrite);
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ProjectsWrite);
+        RequireHostLocalTargetAllowed(actorUserId, serverId);
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
         SecretReference secret = await secretVault.StoreAsync(teamId, SecretScope.Database,
             $"{request.Name}:credentials",
@@ -431,6 +436,16 @@ public sealed class ResourceManagementService(
         Require(actorUserId, teamId, permission);
         if (!authorization.CanAccessServer(actorUserId, serverId))
             throw new UnauthorizedAccessException("Server is outside the active team.");
+    }
+
+    private void RequireHostLocalTargetAllowed(UserId actorUserId, ServerId serverId)
+    {
+        ServerConnectionType? connectionType = dbContext.Servers
+            .Where(server => server.Id == serverId)
+            .Select(server => (ServerConnectionType?)server.ConnectionType)
+            .SingleOrDefault();
+        if (connectionType.HasValue)
+            HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, connectionType.Value);
     }
 
     private DateTimeOffset Now()
