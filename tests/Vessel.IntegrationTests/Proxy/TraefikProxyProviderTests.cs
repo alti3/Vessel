@@ -1,9 +1,6 @@
-using System.Runtime.CompilerServices;
-using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
 using Vessel.Domain;
 using Vessel.Domain.Proxy;
-using Vessel.Infrastructure.Files;
 using Vessel.Infrastructure.Proxy;
 using YamlDotNet.RepresentationModel;
 using AppId = Vessel.Domain.ApplicationId;
@@ -218,103 +215,8 @@ public sealed class TraefikProxyProviderTests
         Assert.Contains(result.Errors, error => error.Contains("invalid target port", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task ReloadAsync_TreatsMissingProxyContainerAsSuccess()
-    {
-        var provider = new TraefikProxyProvider(
-            new FakeProcessRunner(false, 1, "No such container: vessel-proxy"),
-            new PathSafetyService());
-
-        ProxyApplyResult result = await provider.ReloadAsync(ServerId.New(), TestContext.Current.CancellationToken);
-
-        Assert.True(result.Succeeded);
-        Assert.Contains("not running", result.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task ApplyAsync_RollsBackPreviousConfigWhenReloadFails()
-    {
-        var processRunner = new FakeProcessRunner(false);
-        var provider = new TraefikProxyProvider(processRunner, new PathSafetyService());
-        var serverId = ServerId.New();
-        var previous = new ProxyConfigurationDocument(serverId, ProxyProviderKind.Traefik,
-            "previous", "http:\n  routers: {}\n  services: {}\n", "hash", []);
-        var configPath = Path.Combine(AppContext.BaseDirectory, "proxy", "traefik", "dynamic",
-            $"server-{serverId.Value:N}.yml");
-        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
-        await File.WriteAllTextAsync(configPath, previous.Contents, TestContext.Current.CancellationToken);
-        var originalContent = await File.ReadAllTextAsync(configPath, TestContext.Current.CancellationToken);
-        ProxyConfigurationDocument current = provider.Generate(serverId,
-        [
-            new ProxyRoute(AppId.New(), serverId, "vessel-app", "app.example.com", 8080, true, true, false)
-        ]);
-
-        ProxyApplyResult result = await provider.ApplyAsync(current, previous, TestContext.Current.CancellationToken);
-
-        Assert.False(result.Succeeded);
-        Assert.True(processRunner.RunCount >= 2);
-        Assert.Equal(originalContent, await File.ReadAllTextAsync(configPath, TestContext.Current.CancellationToken));
-    }
-
     private static TraefikProxyProvider CreateProvider()
     {
-        return new TraefikProxyProvider(new FakeProcessRunner(true), new PathSafetyService());
-    }
-
-    private sealed class FakeProcessRunner(
-        bool success,
-        int? exitCode = null,
-        string? standardError = null) : IProcessRunner
-    {
-        public int RunCount { get; private set; }
-
-        public Task<ProcessResult> RunTextAsync(ProcessCommand command, CancellationToken cancellationToken = default)
-        {
-            RunCount++;
-            DateTimeOffset now = DateTimeOffset.UtcNow;
-            return Task.FromResult(new ProcessResult(
-                command,
-                new ProcessExitInfo(success ? 0 : exitCode ?? 2, false, false, null),
-                123,
-                now,
-                now,
-                string.Empty,
-                success ? string.Empty : standardError ?? "reload failed"));
-        }
-
-        public Task<ProcessBinaryResult> RunBinaryAsync(ProcessCommand command,
-            CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<ProcessResult> RunTextWithInputAsync(
-            ProcessCommand command,
-            Stream standardInput,
-            CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<ProcessExitInfo> RunAsync(ProcessCommand command, CancellationToken cancellationToken = default)
-        {
-            RunCount++;
-            return Task.FromResult(new ProcessExitInfo(success ? 0 : exitCode ?? 2, false, false, null));
-        }
-
-        public async IAsyncEnumerable<ProcessOutputLine> StreamLinesAsync(
-            ProcessCommand command,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task<IInteractiveProcess> StartInteractiveAsync(
-            ProcessCommand command,
-            CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
+        return new TraefikProxyProvider();
     }
 }

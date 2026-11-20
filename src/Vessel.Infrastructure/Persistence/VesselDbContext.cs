@@ -62,6 +62,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ProxyConfigurationVersionRepository =
             new EfRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(this);
         CertificateRepository = new EfRepository<Certificate, CertificateId>(this);
+        ServerProxySettingsRepository = new EfRepository<ServerProxySettings, ServerId>(this);
     }
 
     public DbSet<User> UserSet => Set<User>();
@@ -129,6 +130,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<Certificate> CertificateSet => Set<Certificate>();
 
+    public DbSet<ServerProxySettings> ServerProxySettingsSet => Set<ServerProxySettings>();
+
     public IQueryable<User> Users => UserSet;
 
     public IQueryable<PersonalAccessToken> PersonalAccessTokens => PersonalAccessTokenSet;
@@ -194,6 +197,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<Certificate> Certificates => CertificateSet;
 
+    public IQueryable<ServerProxySettings> ServerProxySettings => ServerProxySettingsSet;
+
     public IRepository<User, UserId> UserRepository { get; }
 
     public IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository { get; }
@@ -257,6 +262,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     }
 
     public IRepository<Certificate, CertificateId> CertificateRepository { get; }
+
+    public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -557,6 +564,34 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(version => version.PreviousVersionId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ServerProxySettings>(builder =>
+        {
+            builder.ToTable("server_proxy_settings");
+            builder.HasKey(settings => settings.Id);
+            builder.Property(settings => settings.Id).HasColumnName("ServerId").HasServerIdConversion()
+                .ValueGeneratedNever();
+            builder.Ignore(settings => settings.ServerId);
+            builder.Ignore(settings => settings.RoutingEnabled);
+            builder.Property(settings => settings.ProxyType).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(settings => settings.Image).HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxImageLength)
+                .IsRequired();
+            builder.Property(settings => settings.HttpPort).IsRequired();
+            builder.Property(settings => settings.HttpsPort).IsRequired();
+            builder.Property(settings => settings.DesiredState).HasConversion<string>().HasMaxLength(32)
+                .IsRequired();
+            builder.Property(settings => settings.LastAppliedStaticHash)
+                .HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxHashLength);
+            builder.Property(settings => settings.LastAppliedDynamicHash)
+                .HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxHashLength);
+            builder.Property(settings => settings.LastError).HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxErrorLength);
+            builder.Property(settings => settings.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(settings => settings.DomainEvents);
+            builder.HasOne<Server>()
+                .WithOne()
+                .HasForeignKey<ServerProxySettings>(settings => settings.Id)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 

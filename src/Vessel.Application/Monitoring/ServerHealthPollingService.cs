@@ -2,11 +2,11 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Docker;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Certificates;
-using Vessel.Domain.Proxy;
 using Vessel.Domain.Servers;
 
 namespace Vessel.Application.Monitoring;
@@ -15,6 +15,7 @@ public sealed class ServerHealthPollingService(
     IVesselDbContext dbContext,
     VesselAuthorizationService authorizationService,
     IContainerRuntimeClient runtimeClient,
+    IProxyStatusProbe proxyStatus,
     IRealtimeNotifier realtime,
     IAuditWriter auditWriter,
     TimeProvider timeProvider)
@@ -82,11 +83,8 @@ public sealed class ServerHealthPollingService(
             nextStatus = ServerStatus.Unreachable;
         }
 
-        bool proxyHealthy = dbContext.ProxyConfigurationVersions
-            .Where(version => version.ServerId == server.Id)
-            .OrderByDescending(version => version.CreatedAt)
-            .Select(version => version.Status == ProxyConfigurationStatus.Applied)
-            .FirstOrDefault();
+        // Real container state: a missing, stopped, or unhealthy proxy container is reported as not healthy.
+        bool proxyHealthy = runtimeReachable && await proxyStatus.IsHealthyAsync(server, cancellationToken);
 
         bool certificatesHealthy = !dbContext.Certificates
             .Join(

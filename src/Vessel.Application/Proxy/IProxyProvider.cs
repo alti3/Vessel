@@ -2,6 +2,10 @@ using Vessel.Domain;
 
 namespace Vessel.Application.Proxy;
 
+/// <summary>
+///     Generates and validates the dynamic (routes) document for a server. Delivery to the server and the proxy
+///     container lifecycle live in <see cref="ProxyLifecycleService" />.
+/// </summary>
 public interface IProxyProvider
 {
     /// <summary>
@@ -12,15 +16,4 @@ public interface IProxyProvider
     ProxyConfigurationDocument Generate(ServerId serverId, IReadOnlyList<ProxyRoute> routes);
 
     ProxyValidationResult Validate(ProxyConfigurationDocument document);
-
-    Task<ProxyApplyResult> ApplyAsync(
-        ProxyConfigurationDocument document,
-        ProxyConfigurationDocument? previous,
-        CancellationToken cancellationToken = default);
-
-    Task<ProxyApplyResult> ReloadAsync(ServerId serverId, CancellationToken cancellationToken = default);
-
-    Task<ProxyApplyResult> RollbackAsync(
-        ProxyConfigurationDocument previous,
-        CancellationToken cancellationToken = default);
 }

@@ -33,6 +33,7 @@ public sealed class DeploymentRunner(
     ISecretRedactor redactor,
     IRealtimeNotifier realtime,
     ProxyConfigurationService proxyConfiguration,
+    ProxyLifecycleService proxyLifecycle,
     IAuditWriter auditWriter,
     TimeProvider timeProvider)
     : IDeploymentRunner
@@ -108,6 +109,11 @@ public sealed class DeploymentRunner(
 
             await AppendAsync(deploymentId, "system", "Ensuring deployment network exists.", cancellationToken);
             await runtime.EnsureNetworkAsync(target, plan.NetworkName, Labels(deploymentId, application),
+                cancellationToken);
+            // Attach the proxy before application containers start (upstream v4.4.0); proxy type None skips this.
+            ProxyEnsureResult proxy =
+                await proxyLifecycle.EnsureForDeploymentAsync(server.Id, plan.NetworkName, cancellationToken);
+            await AppendAsync(deploymentId, proxy.Succeeded ? "system" : "stderr", redactor.Redact(proxy.Message),
                 cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 

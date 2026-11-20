@@ -99,6 +99,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ServiceTemplateCatalog>();
         services.AddScoped<DomainRoutingService>();
         services.AddScoped<ProxyConfigurationService>();
+        services.AddScoped<ProxyLifecycleService>();
+        services.AddScoped<IProxyStatusProbe>(provider => provider.GetRequiredService<ProxyLifecycleService>());
         services.AddScoped<CertificateManagementService>();
         services.AddScoped<CertificateRenewalJob>();
         services.AddScoped<CertificateIssuanceJob>();
