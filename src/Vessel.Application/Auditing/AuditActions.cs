@@ -38,6 +38,10 @@ public static class AuditActions
     public const string DomainRouteRemoved = "domain_route.removed";
     public const string ProxyConfigurationApplied = "proxy_configuration.applied";
     public const string ProxyConfigurationRolledBack = "proxy_configuration.rolled_back";
+    public const string ServerProxyUpdated = "server_proxy.updated";
+    public const string ServerProxyStarted = "server_proxy.started";
+    public const string ServerProxyStopped = "server_proxy.stopped";
+    public const string ServerProxyRestarted = "server_proxy.restarted";
     public const string CertificateIssuanceQueued = "certificate.issuance_queued";
     public const string DatabaseCreated = "database.created";
     public const string DatabaseLifecycleActionQueued = "database.lifecycle_action_queued";
@@ -50,10 +54,13 @@ public static class AuditActions
     public const string BackupPruned = "backup.pruned";
     public const string RestoreValidated = "backup.restore_validated";
     public const string RestoreCompleted = "backup.restore_completed";
+    public const string RestoreQueued = "backup.restore_queued";
+    public const string RestoreFailed = "backup.restore_failed";
     public const string EnvironmentVariableCreated = "environment_variable.created";
     public const string SecretStored = "secret.stored";
     public const string SecretRevealed = "secret.revealed";
     public const string SecretRotated = "secret.rotated";
+    public const string SecretsReencrypted = "secrets.reencrypted";
     public const string RegistryCredentialCreated = "registry_credential.created";
     public const string TerminalSessionOpened = "terminal.session_opened";
     public const string TerminalSessionClosed = "terminal.session_closed";
@@ -62,4 +69,5 @@ public static class AuditActions
     public const string ServerHealthPolled = "server.health_polled";
     public const string DeploymentLogsPruned = "deployment.logs_pruned";
     public const string NotificationTargetConfigured = "notification.target_configured";
+    public const string NotificationTargetTested = "notification.target_tested";
 }

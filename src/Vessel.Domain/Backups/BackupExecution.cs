@@ -115,9 +115,16 @@ public sealed class BackupExecution : Entity<BackupExecutionId>
         Touch(now);
     }
 
+    /// <summary>True when the execution holds a complete artifact that can be restored (again).</summary>
+    public bool HasRestorableArtifact =>
+        Status is (BackupExecutionStatus.Succeeded or BackupExecutionStatus.RestoreValidated
+            or BackupExecutionStatus.RestoreSucceeded)
+        && ArtifactBucket is not null && ArtifactKey is not null;
+
     public void MarkRestoreValidated(DateTimeOffset now)
     {
-        if (Status != BackupExecutionStatus.Succeeded)
+        if (Status == BackupExecutionStatus.RestoreValidated) return;
+        if (Status is not (BackupExecutionStatus.Succeeded or BackupExecutionStatus.RestoreSucceeded))
             throw new DomainException("Only successful backups can be restored.");
         Status = BackupExecutionStatus.RestoreValidated;
         Touch(now);
@@ -136,7 +143,8 @@ public sealed class BackupExecution : Entity<BackupExecutionId>
 
     public void MarkRestoreFailed(string reason, DateTimeOffset now)
     {
-        if (Status is not (BackupExecutionStatus.Succeeded or BackupExecutionStatus.RestoreValidated))
+        if (Status is not (BackupExecutionStatus.Succeeded or BackupExecutionStatus.RestoreValidated
+            or BackupExecutionStatus.RestoreSucceeded))
             throw new DomainException("Only successful backup artifacts can record restore failures.");
         LastRestoreFailureReason = DomainValidation.Required(reason, nameof(reason), 1000);
         LastRestoreFailedAt = now;

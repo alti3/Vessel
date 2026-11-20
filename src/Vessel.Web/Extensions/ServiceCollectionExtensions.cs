@@ -31,6 +31,7 @@ using Vessel.Application.Webhooks;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
+using Vessel.Web.Diagnostics;
 using Vessel.Web.Middleware;
 using Vessel.Web.Realtime;
 using Vessel.Web.Security;
@@ -96,9 +97,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ServerHealthPollingService>();
         services.AddScoped<ServerHealthPollingJob>();
         services.AddScoped<ManagedDatabaseService>();
+        services.AddScoped<DatabaseRestoreService>();
         services.AddSingleton<ServiceTemplateCatalog>();
         services.AddScoped<DomainRoutingService>();
         services.AddScoped<ProxyConfigurationService>();
+        services.AddScoped<ProxyLifecycleService>();
+        services.AddScoped<IProxyStatusProbe>(provider => provider.GetRequiredService<ProxyLifecycleService>());
         services.AddScoped<CertificateManagementService>();
         services.AddScoped<CertificateRenewalJob>();
         services.AddScoped<CertificateIssuanceJob>();
@@ -110,7 +114,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<NotificationEventService>();
         services.AddScoped<NotificationDispatchService>();
         services.AddScoped<DispatchNotificationJob>();
+        services.AddScoped<RaiseNotificationJob>();
         services.AddScoped<TotpService>();
+        services.AddScoped<SecretReencryptionService>();
+        services.AddScoped<SecretReencryptionJob>();
         services.TryAddScoped<ISecretVault, UnavailableSecretVault>();
         services.TryAddSingleton<IDatabaseBackupProvider, UnavailableDatabaseBackupProvider>();
         services.TryAddSingleton<IObjectStorage, UnavailableObjectStorage>();
@@ -176,6 +183,14 @@ public static class ServiceCollectionExtensions
                 options.AddPolicy(permission, policy => policy
                     .RequireAuthenticatedUser()
                     .AddRequirements(new PermissionRequirement(permission)));
+
+            options.AddPolicy(VesselAuthorizationPolicies.InteractiveSession, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => VesselAuthorizationPolicies.IsInteractiveSession(context.User)));
+            options.AddPolicy(VesselAuthorizationPolicies.InteractiveSessionOrRootToken, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context =>
+                    VesselAuthorizationPolicies.IsInteractiveSessionOrRootToken(context.User)));
         });
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
@@ -254,7 +269,10 @@ public static class ServiceCollectionExtensions
                             activity.SetTag("vessel.correlation_id", correlationId.ToString());
                     };
                 })
-                .AddHttpClientInstrumentation();
+                .AddHttpClientInstrumentation(options =>
+                    options.EnrichWithHttpRequestMessage = OutboundUrlTelemetryRedaction.EnrichWithHttpRequestMessage)
+                // Must precede exporters: processors run in registration order.
+                .AddProcessor(new OutboundUrlTelemetryRedaction());
 
             if (!string.IsNullOrWhiteSpace(diagnosticsOptions.OtlpEndpoint))
                 tracing.AddOtlpExporter(options => { options.Endpoint = new Uri(diagnosticsOptions.OtlpEndpoint); });

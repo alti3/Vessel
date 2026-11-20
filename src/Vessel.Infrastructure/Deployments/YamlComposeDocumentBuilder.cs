@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Vessel.Application.Deployments;
+using Vessel.Application.Files;
 using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 
@@ -11,7 +12,7 @@ namespace Vessel.Infrastructure.Deployments;
 ///     files are parsed (BOM-safe, alias/merge-key expanded with a node budget), validated for path containment and
 ///     rewritten so the primary service joins the server network under the application's upstream alias.
 /// </summary>
-public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
+public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths) : IComposeDocumentBuilder
 {
     private const int MaxNodes = 20_000;
     private const int MaxDepth = 64;
@@ -86,6 +87,21 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
 
         NormalizeTopLevelFiles(root, "secrets", context);
         NormalizeTopLevelFiles(root, "configs", context);
+        // Lexical containment is not enough for a cloned (untrusted) tree: a symlink such as ./data -> / would
+        // escape. Every resolved host path must also stay inside the repository after resolving existing links.
+        foreach (var resolved in context.Resolved)
+        {
+            try
+            {
+                paths.EnsureOwnedPath(repository, resolved);
+            }
+            catch (InvalidOperationException)
+            {
+                throw new ComposeValidationException(
+                    "A compose path resolves outside the repository through a symbolic link.");
+            }
+        }
+
         if (spec.PreviewSuffix is not null)
         {
             NamespaceTopLevelNames(root, "volumes", spec.PreviewSuffix, warnings);
@@ -243,7 +259,7 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
         if (TryGet(service, "extends", out YamlNode? extends) && extends is YamlMappingNode extendsMap &&
             TryGetScalar(extendsMap, "file", out var extendsFile))
             extendsMap.Children[Key("file")] =
-                Str(ResolveInside(context.Repository, context.ComposeDirectory, extendsFile,
+                Str(context.Resolve(context.ComposeDirectory, extendsFile,
                     $"service '{name}' extends file"));
     }
 
@@ -253,7 +269,7 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
         {
             service.Children[Key("build")] = IsRemoteContext(scalar.Value)
                 ? scalar
-                : Str(ResolveInside(context.Repository, context.ComposeDirectory, scalar.Value,
+                : Str(context.Resolve(context.ComposeDirectory, scalar.Value,
                     $"service '{name}' build context"));
             return;
         }
@@ -264,17 +280,17 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
         var contextValue = TryGetScalar(buildMap, "context", out var configured) ? configured : ".";
         if (IsRemoteContext(contextValue)) return;
 
-        var resolvedContext = ResolveInside(context.Repository, context.ComposeDirectory, contextValue,
+        var resolvedContext = context.Resolve(context.ComposeDirectory, contextValue,
             $"service '{name}' build context");
         buildMap.Children[Key("context")] = Str(resolvedContext);
         if (TryGetScalar(buildMap, "dockerfile", out var dockerfile))
-            ResolveInside(context.Repository, resolvedContext, dockerfile, $"service '{name}' dockerfile");
+            context.Resolve(resolvedContext, dockerfile, $"service '{name}' dockerfile");
 
         if (TryGet(buildMap, "additional_contexts", out YamlNode? additional) && additional is YamlMappingNode extra)
             foreach (YamlNode key in extra.Children.Keys.ToArray())
                 if (extra.Children[key] is YamlScalarNode { Value: not null } value && !IsRemoteContext(value.Value) &&
                     !value.Value.Contains(':', StringComparison.Ordinal))
-                    extra.Children[key] = Str(ResolveInside(context.Repository, context.ComposeDirectory, value.Value,
+                    extra.Children[key] = Str(context.Resolve(context.ComposeDirectory, value.Value,
                         $"service '{name}' additional build context"));
     }
 
@@ -282,7 +298,7 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
     {
         string Resolve(string path)
         {
-            return ResolveInside(context.Repository, context.ComposeDirectory, path, $"service '{name}' env_file");
+            return context.Resolve(context.ComposeDirectory, path, $"service '{name}' env_file");
         }
 
         switch (envFile)
@@ -314,7 +330,7 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
             var source = value[..separator];
             if (!IsHostPathSource(source))
                 return scalar; // named volume
-            var resolved = ResolveInside(context.Repository, context.ComposeDirectory, source,
+            var resolved = context.Resolve(context.ComposeDirectory, source,
                 $"service '{name}' bind mount source");
             return Str(resolved + value[separator..]);
         }
@@ -327,7 +343,7 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
                          (type is null && IsHostPathSource(source));
             if (!isBind) return mapping;
             return WithValue(mapping, "source",
-                Str(ResolveInside(context.Repository, context.ComposeDirectory, source,
+                Str(context.Resolve(context.ComposeDirectory, source,
                     $"service '{name}' bind mount source")));
         }
 
@@ -339,7 +355,7 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
         if (!TryGet(root, section, out YamlNode? node) || node is not YamlMappingNode entries) return;
         foreach (var (key, value) in entries.Children)
             if (value is YamlMappingNode entry && TryGetScalar(entry, "file", out var file))
-                entry.Children[Key("file")] = Str(ResolveInside(context.Repository, context.ComposeDirectory, file,
+                entry.Children[Key("file")] = Str(context.Resolve(context.ComposeDirectory, file,
                     $"{section} '{key}' file"));
     }
 
@@ -548,5 +564,19 @@ public sealed partial class YamlComposeDocumentBuilder : IComposeDocumentBuilder
     [GeneratedRegex("^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", RegexOptions.CultureInvariant)]
     private static partial Regex ServiceNamePattern();
 
-    private sealed record PathContext(string Repository, string ComposeDirectory);
+    private sealed class PathContext(string repository, string composeDirectory)
+    {
+        public string Repository { get; } = repository;
+
+        public string ComposeDirectory { get; } = composeDirectory;
+
+        public List<string> Resolved { get; } = [];
+
+        public string Resolve(string baseDirectory, string rawPath, string field)
+        {
+            var resolved = ResolveInside(Repository, baseDirectory, rawPath, field);
+            Resolved.Add(resolved);
+            return resolved;
+        }
+    }
 }

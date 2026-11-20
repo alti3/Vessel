@@ -1,5 +1,6 @@
 using Vessel.Application.Deployments;
 using Vessel.Infrastructure.Deployments;
+using Vessel.Infrastructure.Files;
 using YamlDotNet.RepresentationModel;
 
 namespace Vessel.IntegrationTests.Deployments;
@@ -10,7 +11,7 @@ public sealed class YamlComposeDocumentBuilderTests
     private const string Network = "vessel-server";
     private const string Alias = "vessel-app-0123";
     private static readonly string Repository = Path.Combine(Path.GetTempPath(), "vessel-compose-repo");
-    private readonly YamlComposeDocumentBuilder _builder = new();
+    private readonly YamlComposeDocumentBuilder _builder = new(new PathSafetyService());
 
     [Fact]
     public void Primary_service_joins_the_server_network_with_the_upstream_alias_and_keeps_default()
@@ -104,6 +105,25 @@ public sealed class YamlComposeDocumentBuilderTests
     public void Unsafe_or_invalid_compose_is_rejected(string yaml)
     {
         Assert.Throws<ComposeValidationException>(() => _builder.NormalizeRepositoryCompose(yaml, Spec(80)));
+    }
+
+    [Fact]
+    public void Bind_mount_through_a_repository_symlink_that_escapes_is_rejected()
+    {
+        var repository = Path.Combine(Path.GetTempPath(), "vessel-compose-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repository);
+        try
+        {
+            Directory.CreateSymbolicLink(Path.Combine(repository, "data"), "/etc");
+            const string yaml = "services:\n  web:\n    image: x\n    volumes: [\"./data:/data\"]\n";
+
+            Assert.Throws<ComposeValidationException>(() =>
+                _builder.NormalizeRepositoryCompose(yaml, Spec(80) with { RepositoryDirectory = repository }));
+        }
+        finally
+        {
+            Directory.Delete(repository, true);
+        }
     }
 
     [Fact]

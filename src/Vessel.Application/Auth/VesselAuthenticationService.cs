@@ -19,6 +19,7 @@ public sealed class VesselAuthenticationService
     private readonly IPasswordHasher _passwordHasher;
     private readonly ITokenGenerator _tokenGenerator;
     private readonly TotpService _totpService;
+    private readonly TwoFactorSecretProtector _twoFactorSecrets;
     private readonly IVesselDbContext _unitOfWork;
 
     public VesselAuthenticationService(
@@ -27,12 +28,14 @@ public sealed class VesselAuthenticationService
         ITokenGenerator tokenGenerator,
         TotpService totpService,
         IAuditWriter auditWriter,
-        IOptions<AuthOptions> options)
+        IOptions<AuthOptions> options,
+        ISecretCipher secretCipher)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _tokenGenerator = tokenGenerator;
         _totpService = totpService;
+        _twoFactorSecrets = new TwoFactorSecretProtector(secretCipher);
         _auditWriter = auditWriter;
         _options = options.Value;
     }
@@ -50,8 +53,12 @@ public sealed class VesselAuthenticationService
             throw new InvalidOperationException("A user with this email already exists.");
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
+        var isFirstUser = !_unitOfWork.Users.Any();
         var user = User.Create(new DisplayName(name), emailAddress, now);
         user.SetPasswordHash(_passwordHasher.HashPassword(password), false, now);
+        // Mirrors Coolify's root user: the first account on an instance is the instance administrator.
+        // Later self-registered users never receive host-local privileges implicitly.
+        if (isFirstUser) user.GrantInstanceAdmin(now);
         var team = Team.Create(new DisplayName($"{user.Name.Value}'s Team"), user.Id, true, now);
 
         await _unitOfWork.UserRepository.AddAsync(user, cancellationToken);
@@ -108,13 +115,16 @@ public sealed class VesselAuthenticationService
             if (string.IsNullOrWhiteSpace(twoFactorCode))
                 return new AuthenticatedUser(user.Id, default, user.Name.Value, user.Email.Value, true);
 
-            var validTotp = _totpService.VerifyCode(user.TwoFactorSecret!, twoFactorCode, now);
+            var validTotp = _totpService.VerifyCode(_twoFactorSecrets.Reveal(user)!, twoFactorCode, now);
             var validRecoveryCode = validTotp || VerifyAndConsumeRecoveryCode(user, twoFactorCode, now);
             if (!validRecoveryCode)
             {
                 await AuditFailedLoginAsync(emailAddress.Value, correlationId, cancellationToken);
                 return null;
             }
+
+            // Opportunistically upgrade legacy plaintext or old-key TOTP secrets to the active key.
+            _twoFactorSecrets.TryRewrap(user, now);
         }
 
         Team team = ResolveLoginTeam(user);
@@ -201,9 +211,15 @@ public sealed class VesselAuthenticationService
         CancellationToken cancellationToken = default)
     {
         User user = await GetUserAsync(userId, cancellationToken);
+        // Re-enrolling would silently replace (and, until confirmed, disable) an active second factor. Require the
+        // re-confirmed disable flow first.
+        if (user.TwoFactorConfirmedAt.HasValue)
+            throw new InvalidOperationException(
+                "Two-factor authentication is already enabled. Disable it before enrolling a new authenticator.");
+
         DateTimeOffset now = DateTimeOffset.UtcNow;
         var secret = _totpService.GenerateSecret();
-        user.StageTwoFactorSecret(secret, now);
+        user.StageTwoFactorSecret(_twoFactorSecrets.Protect(user.Id, secret), now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new TwoFactorSetup(secret, _totpService.CreateOtpAuthUri(issuer, user.Email.Value, secret));
@@ -216,7 +232,8 @@ public sealed class VesselAuthenticationService
         CancellationToken cancellationToken = default)
     {
         User user = await GetUserAsync(userId, cancellationToken);
-        if (user.TwoFactorSecret is null || !_totpService.VerifyCode(user.TwoFactorSecret, code, DateTimeOffset.UtcNow))
+        string? secret = _twoFactorSecrets.Reveal(user);
+        if (secret is null || !_totpService.VerifyCode(secret, code, DateTimeOffset.UtcNow))
             return null;
 
         IReadOnlyList<string> recoveryCodes = _totpService.GenerateRecoveryCodes();
@@ -235,13 +252,25 @@ public sealed class VesselAuthenticationService
         return new TwoFactorRecoveryCodes(recoveryCodes);
     }
 
-    public async Task DisableTwoFactorAsync(
+    /// <summary>
+    ///     Disables two-factor authentication after re-confirming the user's identity with either a current TOTP code
+    ///     or the account password. Returns <c>false</c> (and changes nothing) when the confirmation is missing or
+    ///     invalid. Wrong passwords count towards the login lockout.
+    /// </summary>
+    public async Task<bool> DisableTwoFactorAsync(
         UserId userId,
+        string? currentPassword,
+        string? twoFactorCode,
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
         User user = await GetUserAsync(userId, cancellationToken);
-        user.DisableTwoFactor(DateTimeOffset.UtcNow);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (user.TwoFactorConfirmedAt.HasValue
+            && !await ConfirmIdentityAsync(user, currentPassword, twoFactorCode, now, cancellationToken))
+            return false;
+
+        user.DisableTwoFactor(now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditWriter.RecordAsync(
@@ -252,6 +281,32 @@ public sealed class VesselAuthenticationService
             correlationId,
             new Dictionary<string, object?>(),
             cancellationToken);
+        return true;
+    }
+
+    private async Task<bool> ConfirmIdentityAsync(
+        User user,
+        string? currentPassword,
+        string? twoFactorCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (user.IsLockedOut(now)) return false;
+
+        if (!string.IsNullOrWhiteSpace(twoFactorCode)
+            && _twoFactorSecrets.Reveal(user) is { } totpSecret
+            && _totpService.VerifyCode(totpSecret, twoFactorCode, now))
+            return true;
+
+        if (string.IsNullOrEmpty(currentPassword) || !user.HasPassword) return false;
+        if (_passwordHasher.VerifyPassword(user.PasswordHash!, currentPassword)) return true;
+
+        user.RecordFailedLogin(
+            Math.Max(1, _options.LockoutThreshold),
+            TimeSpan.FromMinutes(Math.Max(1, _options.LockoutMinutes)),
+            now);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return false;
     }
 
     private Team ResolveLoginTeam(User user)

@@ -52,6 +52,8 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<BackupExecution> BackupExecutions { get; }
 
+    IQueryable<DatabaseRestore> DatabaseRestores => Enumerable.Empty<DatabaseRestore>().AsQueryable();
+
     IQueryable<Deployment> Deployments { get; }
 
     IQueryable<SecretReference> SecretReferences { get; }
@@ -90,6 +92,8 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<Certificate> Certificates { get; }
 
+    IQueryable<ServerProxySettings> ServerProxySettings { get; }
+
     IRepository<User, UserId> UserRepository { get; }
 
     IRepository<Team, TeamId> TeamRepository { get; }
@@ -113,6 +117,9 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<BackupSchedule, BackupScheduleId> BackupScheduleRepository { get; }
 
     IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; }
+
+    IRepository<DatabaseRestore, DatabaseRestoreId> DatabaseRestoreRepository =>
+        throw new InvalidOperationException("Database restore persistence is not available.");
 
     IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
@@ -149,6 +156,8 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository { get; }
 
     IRepository<Certificate, CertificateId> CertificateRepository { get; }
+
+    IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
 
     IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; }
 }

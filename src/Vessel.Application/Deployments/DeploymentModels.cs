@@ -87,8 +87,19 @@ public interface IDeploymentWorkspaceManager
         bool restrictToOwner,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reads a file from an owned workspace (typically the cloned repository). Symbolic links anywhere on the
+    /// path are rejected so repository content cannot redirect reads to host files.
+    /// </summary>
     Task<string> ReadTextAsync(string rootDirectory, string relativePath,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies that <paramref name="relativePath"/> names a regular file inside <paramref name="rootDirectory"/>
+    /// with no symbolic links on its path, and returns its full path.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    string EnsureRegularFile(string rootDirectory, string relativePath);
 
     Task CleanupAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default);
 }

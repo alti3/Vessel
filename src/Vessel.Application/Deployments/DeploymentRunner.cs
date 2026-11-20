@@ -2,9 +2,11 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Vessel.Application.Auditing;
+using Vessel.Application.Authorization;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
 using Vessel.Application.Git;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
@@ -25,7 +27,7 @@ using ProcessOutputLine = Vessel.Application.Processes.ProcessOutputLine;
 
 namespace Vessel.Application.Deployments;
 
-public sealed class DeploymentRunner(
+public sealed partial class DeploymentRunner(
     IVesselDbContext dbContext,
     IGitClient git,
     IContainerRuntimeClient runtime,
@@ -36,8 +38,11 @@ public sealed class DeploymentRunner(
     IRealtimeNotifier realtime,
     IComposeDocumentBuilder composeDocuments,
     ProxyConfigurationService proxyConfiguration,
+    ProxyLifecycleService proxyLifecycle,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications,
+    VesselAuthorizationService authorization)
     : IDeploymentRunner
 {
     public async Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
@@ -68,6 +73,7 @@ public sealed class DeploymentRunner(
                 cancellationToken);
             await FailAsync(deploymentId, cancellationToken);
             finalStatus = DeploymentStatus.Failed;
+            await NotifyFinishedAsync(deploymentId, finalStatus);
             return;
         }
 
@@ -81,9 +87,13 @@ public sealed class DeploymentRunner(
                 LoadDeploymentContext(deploymentId);
             if (server.Status == ServerStatus.Unreachable)
                 throw new DomainException("Server is unreachable.");
-            if (server.ConnectionType == ServerConnectionType.Ssh)
+            if (!server.IsHostLocal)
                 throw new DomainException(
                     "Phase 8 deployment runner currently supports local Docker/Podman targets; SSH runtime execution remains behind the runtime abstraction.");
+            // Defense in depth: host-local deployments run on the control-plane host and must be authorized by an
+            // instance administrator (the triggering user, or for webhooks an instance-admin Owner/Admin of the team).
+            if (!HostLocalExecutionGuard.IsAuthorized(authorization, server, deployment.ActorUserId))
+                throw new DomainException(HostLocalExecutionGuard.UnattendedNotAuthorizedMessage);
 
             ContainerRuntimeTarget target = RuntimeTarget(server);
             if (preview is not null)
@@ -122,11 +132,18 @@ public sealed class DeploymentRunner(
             await AppendAsync(deploymentId, "system", "Ensuring deployment network exists.", cancellationToken);
             await runtime.EnsureNetworkAsync(target, plan.NetworkName, Labels(deploymentId, application),
                 cancellationToken);
+            // Attach the proxy before application containers start (upstream v4.4.0); proxy type None skips this.
+            ProxyEnsureResult proxy =
+                await proxyLifecycle.EnsureForDeploymentAsync(server.Id, plan.NetworkName, cancellationToken);
+            await AppendAsync(deploymentId, proxy.Succeeded ? "system" : "stderr", redactor.Redact(proxy.Message),
+                cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
             if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile)
             {
                 var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "Dockerfile");
+                // The Dockerfile is read by the runtime CLI on this host: reject symlinks/escapes from the repository.
+                workspaces.EnsureRegularFile(workspace.RepositoryDirectory, dockerfile);
                 await StreamBuildAsync(target, plan, workspace, dockerfile, deploymentId, cancellationToken);
                 await ThrowIfCanceledAsync(deploymentId, cancellationToken);
             }
@@ -181,7 +198,26 @@ public sealed class DeploymentRunner(
                 Stopwatch.GetElapsedTime(startedAt).TotalSeconds,
                 new TagList { { "status", finalStatus.ToString() } });
             VesselDiagnostics.ActiveDeployments.Add(-1);
+            await NotifyFinishedAsync(deploymentId, finalStatus);
         }
+    }
+
+    private Task NotifyFinishedAsync(DeploymentId deploymentId, DeploymentStatus finalStatus)
+    {
+        // Raised after the terminal state is persisted; the publisher never throws into the runner.
+        return notifications.PublishAsync(() =>
+        {
+            Deployment deployment = dbContext.Deployments.Single(item => item.Id == deploymentId);
+            (AppEntity application, _, _, TeamId teamId) = LoadDeploymentContext(deploymentId);
+            DeploymentNotificationOutcome outcome = finalStatus switch
+            {
+                DeploymentStatus.Succeeded => DeploymentNotificationOutcome.Succeeded,
+                DeploymentStatus.CanceledByUser => DeploymentNotificationOutcome.Cancelled,
+                _ => DeploymentNotificationOutcome.Failed
+            };
+            return new TeamNotification(teamId, OperationalNotifications.DeploymentFinished(
+                deploymentId.Value, application.Id.Value, application.Name.Value, deployment.CommitSha, outcome));
+        });
     }
 
     private async Task StreamBuildAsync(

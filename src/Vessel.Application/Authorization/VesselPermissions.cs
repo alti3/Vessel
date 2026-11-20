@@ -18,6 +18,8 @@ public static class VesselPermissions
     public const string SecretsWrite = "secrets.write";
     public const string SettingsManage = "settings.manage";
     public const string TeamsManage = "teams.manage";
+    public const string NotificationsRead = "notifications.read";
+    public const string NotificationsWrite = "notifications.write";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -34,7 +36,9 @@ public static class VesselPermissions
         SecretsRead,
         SecretsWrite,
         SettingsManage,
-        TeamsManage
+        TeamsManage,
+        NotificationsRead,
+        NotificationsWrite
     };
 
     public static IReadOnlySet<string> ForRole(TeamRole role)
@@ -49,7 +53,8 @@ public static class VesselPermissions
                 ApplicationsRead,
                 DeploymentsStart,
                 DeploymentsCancel,
-                DeploymentsReadLogs
+                DeploymentsReadLogs,
+                NotificationsRead
             },
             _ => new HashSet<string>(StringComparer.Ordinal)
         };

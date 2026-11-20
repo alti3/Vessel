@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Vessel.Application.Diagnostics;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
@@ -31,17 +33,11 @@ public sealed class NotificationDispatchService(
             notificationEvent.Title, notificationEvent.Message, notificationEvent.PayloadJson,
             notificationEvent.ResourceUrl, notificationEvent.CreatedAt);
 
-        var targets = dbContext.NotificationTargets
-            .Where(target => target.TeamId == notificationEvent.TeamId
-                             && target.IsEnabled
-                             && target.Channel != NotificationChannel.InApp
-                             && target.Policy.MinimumSeverity <= notificationEvent.Severity)
-            .ToArray()
+        var targets = SelectTargets(notificationEvent)
             .Where(target => !dbContext.NotificationDeliveryAttempts.Any(attempt =>
                 attempt.EventId == notificationEvent.Id
                 && attempt.TargetId == target.Id
                 && attempt.Status == NotificationDeliveryStatus.Succeeded))
-            .Where(target => IsEventAllowed(target.Policy, notificationEvent.EventType))
             .ToArray();
 
         var hasFailures = false;
@@ -71,6 +67,13 @@ public sealed class NotificationDispatchService(
 
                 var context = new NotificationTargetDispatchContext(target.Id.Value, target.Name.Value, target.Channel,
                     target.ConfigurationJson, secretJson);
+
+                // Channel secrets are often part of the URL path (Discord/Slack webhooks, Telegram bot token).
+                // The marker tag tells the telemetry pipeline to strip the path from child HTTP client spans.
+                using Activity? activity = VesselDiagnostics.ActivitySource.StartActivity("SendNotification");
+                activity?.SetTag(VesselDiagnostics.RedactChildHttpUrlTag, true);
+                activity?.SetTag("vessel.notification.channel", target.Channel.ToString());
+                activity?.SetTag("vessel.notification.target_id", target.Id.Value);
                 result = await provider.SendAsync(message, context, cancellationToken);
                 if (!result.Success && result.FailureReason is not null)
                 {
@@ -95,6 +98,32 @@ public sealed class NotificationDispatchService(
 
         notificationEvent.Complete(hasFailures, hasSuccesses, string.Join("; ", failureMessages.Distinct()), timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private NotificationTarget[] SelectTargets(NotificationEvent notificationEvent)
+    {
+        if (string.Equals(notificationEvent.EventType, NotificationEventTypes.Test, StringComparison.Ordinal))
+        {
+            // A test send goes only to the target under test, regardless of its event toggles or enabled flag.
+            if (!Guid.TryParse(notificationEvent.TargetId, out var targetGuid))
+                return [];
+
+            var testTargetId = new NotificationTargetId(targetGuid);
+            return dbContext.NotificationTargets
+                .Where(target => target.TeamId == notificationEvent.TeamId
+                                 && target.Id == testTargetId
+                                 && target.Channel != NotificationChannel.InApp)
+                .ToArray();
+        }
+
+        return dbContext.NotificationTargets
+            .Where(target => target.TeamId == notificationEvent.TeamId
+                             && target.IsEnabled
+                             && target.Channel != NotificationChannel.InApp
+                             && target.Policy.MinimumSeverity <= notificationEvent.Severity)
+            .ToArray()
+            .Where(target => IsEventAllowed(target.Policy, notificationEvent.EventType))
+            .ToArray();
     }
 
     private static RedactionContext? CreateRedactionContext(string? secretJson)

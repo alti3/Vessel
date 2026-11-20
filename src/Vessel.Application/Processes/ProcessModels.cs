@@ -5,7 +5,8 @@ public enum ProcessOutputMode
     None,
     Text,
     Binary,
-    Lines
+    Lines,
+    Stream
 }
 
 public enum ProcessStreamKind
@@ -24,13 +25,25 @@ public sealed record ProcessCommand(
     ProcessTerminationPolicy? TerminationPolicy = null,
     ProcessRedactionProfile? Redaction = null,
     long MaxOutputBytes = 10 * 1024 * 1024,
-    IReadOnlyDictionary<string, string>? AuditMetadata = null)
+    IReadOnlyDictionary<string, string>? AuditMetadata = null,
+    bool InheritEnvironment = true)
 {
+    // InheritEnvironment = false starts the child with an empty environment plus only Environment, so daemon
+    // secrets (master keys, connection strings) are never inherited. Required for interactive terminals.
+
     public static ProcessCommand Create(string fileName, params string[] arguments)
     {
         return new ProcessCommand(fileName, arguments);
     }
 }
+
+/// <summary>
+/// Caller-owned streams for <see cref="IProcessRunner.RunStreamingAsync" />. Standard input is copied into the
+/// process and then closed; standard output is copied into <see cref="StandardOutput" /> without buffering it in
+/// memory. When <see cref="StandardOutput" /> is null, standard output is captured as bounded, redacted text.
+/// Neither stream is disposed by the runner.
+/// </summary>
+public sealed record ProcessStreams(Stream? StandardInput = null, Stream? StandardOutput = null);
 
 public sealed record ProcessTerminationPolicy(
     TimeSpan GracePeriod,

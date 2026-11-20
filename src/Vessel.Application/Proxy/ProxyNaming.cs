@@ -14,6 +14,21 @@ public static class ProxyNaming
     public const string RedirectToHttpsMiddleware = "vessel-redirect-to-https";
     public const string RedirectToHttpsPermanentMiddleware = "vessel-redirect-to-https-permanent";
 
+    /// <summary>Container name of the managed proxy on every server (upstream: <c>coolify-proxy</c>).</summary>
+    public const string ProxyContainerName = "vessel-proxy";
+
+    /// <summary>Compose project name of the managed proxy.</summary>
+    public const string ProxyComposeProject = "vessel-proxy";
+
+    /// <summary>
+    ///     Per-server Docker network shared by the proxy and application containers. Must match the network the
+    ///     deployment runner creates for application containers.
+    /// </summary>
+    public static string ServerNetwork(Vessel.Domain.ServerId serverId)
+    {
+        return $"vessel-{serverId.Value:N}";
+    }
+
     /// <summary>Network alias that the application's primary service registers on the server network.</summary>
     public static string UpstreamAlias(AppId applicationId)
     {
