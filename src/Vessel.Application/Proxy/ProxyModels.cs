@@ -5,8 +5,10 @@ using AppId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Proxy;
 
-/// <summary>A single public host routed by the server proxy.</summary>
-/// <param name="UpstreamHost">Network alias of the target container, see <see cref="ProxyNaming.UpstreamAlias" />.</param>
+/// <summary>
+///     A single public host routed by the server proxy. <c>UpstreamHost</c> is the network alias of the target
+///     container (see <see cref="ProxyNaming.UpstreamAlias" />), never a user-controlled display name.
+/// </summary>
 public sealed record ProxyRoute(
     AppId ApplicationId,
     ServerId ServerId,

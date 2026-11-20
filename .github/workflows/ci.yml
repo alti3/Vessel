@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+# Least privilege: CI only reads the repository. Grant additional permissions per job with a stated reason.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build and test (${{ matrix.arch }})
@@ -21,14 +25,16 @@ jobs:
             runner: ubuntu-24.04-arm
 
     steps:
+      # Actions are pinned to full commit SHAs; the trailing comment records the release tag.
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 11 preview
-        uses: actions/setup-dotnet@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          dotnet-version: 11.0.x
-          dotnet-quality: preview
+          persist-credentials: false
+
+      - name: Setup .NET 11
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
 
       - name: Validate project references
         shell: pwsh
@@ -36,6 +42,15 @@ jobs:
 
       - name: Restore
         run: dotnet restore Vessel.slnx
+
+      - name: Vulnerable package check
+        shell: bash
+        run: |
+          dotnet list Vessel.slnx package --vulnerable --include-transitive | tee vulnerable-packages.txt
+          if grep -q "has the following vulnerable packages" vulnerable-packages.txt; then
+            echo "::error::Vulnerable NuGet packages detected."
+            exit 1
+          fi
 
       - name: Format check
         run: dotnet format Vessel.slnx --verify-no-changes --no-restore

@@ -143,14 +143,18 @@ public sealed class TraefikProxyProviderTests
         var badHost = new ProxyRoute(AppId.New(), serverId, "vessel-app-b", "-bad.example.com", 8080, true, true,
             false);
         var dangling = new ProxyRoute(AppId.New(), serverId, "vessel-app-c", "www.other.com", 8080, true, false, true);
-        var duplicate = new ProxyRoute(AppId.New(), serverId, "vessel-app-d", "good.example.com", 8080, true, true,
+        var claimOne = new ProxyRoute(AppId.New(), serverId, "vessel-app-d", "shared.example.com", 8080, true, true,
+            false);
+        var claimTwo = new ProxyRoute(AppId.New(), serverId, "vessel-app-e", "shared.example.com", 8080, true, true,
             false);
 
         IReadOnlyList<ProxyRouteRejection> rejections =
-            provider.ValidateRoutes([good, badHost, dangling, duplicate]);
+            provider.ValidateRoutes([good, badHost, dangling, claimOne, claimTwo]);
 
-        Assert.Equal(3, rejections.Count);
+        Assert.Equal(4, rejections.Count);
         Assert.DoesNotContain(rejections, rejection => rejection.Route == good);
+        Assert.Contains(rejections, rejection => rejection.Route == claimOne);
+        Assert.Contains(rejections, rejection => rejection.Route == claimTwo);
     }
 
     [Fact]
