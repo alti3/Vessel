@@ -259,11 +259,37 @@ public static class WebhookPayloadReader
     {
         JsonElement? commits = ArrayElement(payload, path);
         if (!commits.HasValue) return [];
-        return commits.Value.EnumerateArray()
-            .SelectMany(commit =>
-                Files(commit, "added").Concat(Files(commit, "modified")).Concat(Files(commit, "removed")))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        return NetChangedFiles(commits.Value.EnumerateArray()
+            .Select(commit => (Files(commit, "added"), Files(commit, "modified"), Files(commit, "removed"))));
+    }
+
+    /// <summary>
+    ///     The push's net file change (Coolify v4.5.0 uses the net change of a push for watch paths): a file added and
+    ///     removed again within the same push is not a change; any other touched file is.
+    /// </summary>
+    public static IReadOnlyList<string> NetChangedFiles(
+        IEnumerable<(IReadOnlyList<string> Added, IReadOnlyList<string> Modified, IReadOnlyList<string> Removed)> commits)
+    {
+        var state = new Dictionary<string, char>(StringComparer.Ordinal);
+        var order = new List<string>();
+        void Set(string file, char value)
+        {
+            if (!state.ContainsKey(file)) order.Add(file);
+            state[file] = value;
+        }
+
+        foreach (var (added, modified, removed) in commits)
+        {
+            foreach (var file in added)
+                Set(file, state.TryGetValue(file, out var previous) && previous == 'R' ? 'M' : 'A');
+            foreach (var file in modified)
+                Set(file, state.TryGetValue(file, out var previous) && previous == 'A' ? 'A' : 'M');
+            foreach (var file in removed)
+                if (state.TryGetValue(file, out var previous) && previous == 'A') state[file] = 'N';
+                else Set(file, 'R');
+        }
+
+        return order.Where(file => state[file] != 'N').ToArray();
     }
 
     private static IReadOnlyList<string> Files(JsonElement element, string property)

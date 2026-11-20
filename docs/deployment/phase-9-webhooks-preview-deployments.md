@@ -9,10 +9,12 @@ Phase 9 adds durable inbound deployment triggers for GitHub, GitLab, Gitea, Bitb
 - Webhook secret values are stored through `ISecretVault`; plaintext secrets are not returned by APIs and are not persisted in webhook receipts.
 - Receipt handling persists a `WebhookEvent`, verifies signatures or tokens, applies replay dedupe through a unique dedupe key, and enqueues `ProcessWebhookEventJob`.
 - The processing job is thin and delegates to `WebhookProcessingService`.
-- Push events match applications by repository and configured branch, respect `AutoDeployEnabled`, honor watch paths, skip commits containing `[skip cd]` or `[skip ci]`, and queue a deployment for the incoming commit.
+- Push events match applications by repository and configured branch, respect `AutoDeployEnabled`, honor watch paths (net change of the push), skip commits containing `[skip cd]` or `[skip ci]`, and queue a deployment for the incoming commit. Every matching application is evaluated independently and gets its own recorded outcome.
 - Manual redeploy by commit is supported through `StartDeploymentRequest.CommitSha`.
 - Pull request and merge request events create or refresh `ApplicationPreview` records and queue preview deployments when `PreviewDeploymentsEnabled` is true.
-- Closed, merged, rejected, or fulfilled PR/MR events archive preview records. Container removal remains a later runtime cleanup concern.
+- Closed, merged, rejected, or fulfilled PR/MR events archive preview records and queue a retry-safe runtime cleanup
+  (containers, project networks, volumes, images and route of that preview only); see
+  [deployment-queue-rollback-previews.md](./deployment-queue-rollback-previews.md).
 - Git branch and tag discovery is exposed by `GET /api/v1/applications/{applicationId}/git/refs` through `IGitClient.ListRefsAsync`.
 
 ## Security Notes

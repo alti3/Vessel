@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Vessel.Application.Auditing;
 using Vessel.Application.Deployments;
+using Vessel.Application.Deployments.Previews;
+using Vessel.Application.Deployments.Queue;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
@@ -19,6 +21,7 @@ namespace Vessel.Application.Webhooks;
 public sealed class WebhookProcessingService(
     IVesselDbContext dbContext,
     IBackgroundJobDispatcher backgroundJobs,
+    DeploymentQueueService queue,
     IAuditWriter auditWriter,
     TimeProvider timeProvider)
 {
@@ -85,34 +88,39 @@ public sealed class WebhookProcessingService(
         if (verified.Length == 0)
             return await RejectAsync(webhookEvent, "Webhook signature verification failed for matched applications.",
                 cancellationToken);
-        if (ShouldSkip(parsed.CommitMessages))
-            return await IgnoreAsync(webhookEvent, "Commit message requested deployment skip.", cancellationToken);
-
         var outcomes = new WebhookOutcomes();
+        // DEP-12: every verified matching application is evaluated on its own; one application's skip, watch-path
+        // miss or full queue never stops another application's deployment.
         foreach (AppEntity application in verified)
         {
+            if (ShouldSkip(parsed.CommitMessages))
+            {
+                outcomes.Skip(application.Id, "Commit message requested deployment skip.");
+                continue;
+            }
+
             if (!application.DeploymentSettings.AutoDeployEnabled)
             {
-                outcomes.Skip("Automatic deployment is disabled for the matched application.");
+                outcomes.Skip(application.Id, "Automatic deployment is disabled for the matched application.");
                 continue;
             }
 
             if (!WatchPathsTriggered(application.DeploymentSettings.WatchPaths, parsed.ChangedFiles))
             {
-                outcomes.Skip("Changed files did not match watch paths.");
+                outcomes.Skip(application.Id, "Changed files did not match watch paths.");
                 continue;
             }
 
             TeamId teamId = TeamForApplication(application.Id);
             try
             {
-                Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, null,
+                DeploymentAdmission admission = await QueueDeploymentAsync(application, parsed.CommitSha, null,
                     webhookEvent.Id, cancellationToken);
-                outcomes.Queued(application.Id, teamId, deployment.Id, null);
+                outcomes.Queued(application.Id, teamId, admission, null);
             }
             catch (DomainException ex)
             {
-                outcomes.Skip(ex.Message);
+                outcomes.Fail(application.Id, ex.Message);
             }
         }
 
@@ -148,10 +156,12 @@ public sealed class WebhookProcessingService(
             {
                 if (preview is null)
                 {
-                    outcomes.Skip("No preview deployment existed for the closed pull request.");
+                    outcomes.Skip(application.Id, "No preview deployment existed for the closed pull request.");
                     continue;
                 }
 
+                // DEP-07: archive first (its route drops on the next proxy apply), then a retry-safe job removes the
+                // preview's containers, networks, volumes, images and route.
                 preview.Archive(timeProvider.GetUtcNow());
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await auditWriter.RecordAsync(teamId, null, AuditActions.PreviewArchived,
@@ -159,27 +169,37 @@ public sealed class WebhookProcessingService(
                     new Dictionary<string, object?>
                     { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
                     cancellationToken);
+                Guid archivedId = preview.Id.Value;
+                try
+                {
+                    backgroundJobs.Enqueue<CleanupPreviewJob>(job => job.RunAsync(archivedId, CancellationToken.None));
+                }
+                catch (BackgroundJobsUnavailableException)
+                {
+                    // The preview stays archived; its runtime cleanup can be re-run through the preview API.
+                }
+
                 outcomes.Archived(application.Id, preview.Id);
                 continue;
             }
 
             if (!application.DeploymentSettings.PreviewDeploymentsEnabled)
             {
-                outcomes.Skip("Preview deployments are disabled for this application.");
+                outcomes.Skip(application.Id, "Preview deployments are disabled for this application.");
                 continue;
             }
 
             // DEP-02: fork pull requests deploy only when the application explicitly allows public previews.
             if (!parsed.IsPreviewRepositoryTrusted(application.DeploymentSettings.PublicPreviewsEnabled))
             {
-                outcomes.Skip(
+                outcomes.Skip(application.Id,
                     "Pull request was not deployed: its source repository is not the application repository and public previews are disabled.");
                 continue;
             }
 
             if (ShouldSkip(parsed.CommitMessages))
             {
-                outcomes.Skip("Pull request requested deployment skip.");
+                outcomes.Skip(application.Id, "Pull request requested deployment skip.");
                 continue;
             }
 
@@ -187,7 +207,7 @@ public sealed class WebhookProcessingService(
                 (parsed.CommitSha is not null && parsed.CommitSha != "HEAD" &&
                  !GitRef.IsCommitShaValue(parsed.CommitSha)))
             {
-                outcomes.Skip("Pull request branch or commit is not a valid git reference.");
+                outcomes.Skip(application.Id, "Pull request branch or commit is not a valid git reference.");
                 continue;
             }
 
@@ -208,7 +228,8 @@ public sealed class WebhookProcessingService(
 
             try
             {
-                Deployment deployment = await QueueDeploymentAsync(application, teamId, commitSha, preview.Id,
+                await dbContext.SaveChangesAsync(cancellationToken);
+                DeploymentAdmission admission = await QueueDeploymentAsync(application, commitSha, preview.Id,
                     webhookEvent.Id, cancellationToken);
                 await auditWriter.RecordAsync(teamId, null, AuditActions.PreviewOpened,
                     new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
@@ -219,12 +240,12 @@ public sealed class WebhookProcessingService(
                         ["sameRepository"] = sameRepository
                     },
                     cancellationToken);
-                outcomes.Queued(application.Id, teamId, deployment.Id, preview.Id);
+                outcomes.Queued(application.Id, teamId, admission, preview.Id);
             }
             catch (DomainException ex)
             {
                 await dbContext.SaveChangesAsync(cancellationToken);
-                outcomes.Skip(ex.Message);
+                outcomes.Fail(application.Id, ex.Message);
             }
         }
 
@@ -244,12 +265,19 @@ public sealed class WebhookProcessingService(
             return await RejectAsync(webhookEvent, "Generic webhook secret verification failed.", cancellationToken);
 
         TeamId teamId = TeamForApplication(application.Id);
-        Deployment deployment = await QueueDeploymentAsync(application, teamId, parsed.CommitSha, null, webhookEvent.Id,
-            cancellationToken);
-        webhookEvent.MarkProcessed(application.Id, deployment.Id, null, timeProvider.GetUtcNow());
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await AuditProcessedAsync(teamId, application.Id, webhookEvent, deployment.Id, null, cancellationToken);
-        return Result(webhookEvent, "Deployment queued.");
+        var outcomes = new WebhookOutcomes();
+        try
+        {
+            DeploymentAdmission admission = await QueueDeploymentAsync(application, parsed.CommitSha, null,
+                webhookEvent.Id, cancellationToken);
+            outcomes.Queued(application.Id, teamId, admission, null);
+        }
+        catch (DomainException ex)
+        {
+            outcomes.Fail(application.Id, ex.Message);
+        }
+
+        return await CompleteAsync(webhookEvent, outcomes, "Deployment queued.", cancellationToken);
     }
 
     /// <summary>
@@ -262,6 +290,7 @@ public sealed class WebhookProcessingService(
         string successMessage,
         CancellationToken cancellationToken)
     {
+        webhookEvent.RecordApplicationOutcomes(outcomes.All, timeProvider.GetUtcNow());
         if (outcomes.QueuedDeployments.Count == 0 && outcomes.ArchivedPreviews.Count == 0)
             return await IgnoreAsync(webhookEvent, outcomes.SkipReason(), cancellationToken);
 
@@ -278,7 +307,7 @@ public sealed class WebhookProcessingService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        foreach (QueuedOutcome queued in outcomes.QueuedDeployments)
+        foreach (QueuedOutcome queued in outcomes.QueuedDeployments.Where(item => !item.Deduplicated))
             await AuditProcessedAsync(queued.TeamId, queued.ApplicationId, webhookEvent, queued.DeploymentId,
                 queued.PreviewId, cancellationToken);
 
@@ -286,9 +315,13 @@ public sealed class WebhookProcessingService(
         return Result(webhookEvent, count == 1 ? successMessage : $"{successMessage} ({count} applications)");
     }
 
-    private async Task<Deployment> QueueDeploymentAsync(
+    /// <summary>
+    ///     Queues a webhook deployment through queue admission (DEP-04/DEP-05): a deployment behind a running one is
+    ///     queued instead of rejected, an identical active one is reused, and older queued (or, opt-in, still building)
+    ///     webhook deployments of the same application, pull request and server are cancelled.
+    /// </summary>
+    private async Task<DeploymentAdmission> QueueDeploymentAsync(
         AppEntity application,
-        TeamId teamId,
         string? commitSha,
         ApplicationPreviewId? previewId,
         WebhookEventId webhookEventId,
@@ -298,40 +331,35 @@ public sealed class WebhookProcessingService(
         if (server.Status == ServerStatus.Unreachable)
             throw new DomainException("Deployment server is unreachable.");
 
-        var alreadyActive = dbContext.Deployments.Any(deployment =>
-            deployment.ApplicationId == application.Id &&
-            deployment.PreviewId == previewId &&
-            (deployment.Status == DeploymentStatus.Queued ||
-             deployment.Status == DeploymentStatus.InProgress ||
-             deployment.Status == DeploymentStatus.CancelRequested));
-        if (alreadyActive)
-            throw new DomainException("A deployment is already queued or running for this application.");
-
-        DateTimeOffset now = timeProvider.GetUtcNow();
         // Refs are validated before queueing (and again when the deployment starts).
         var resolvedCommit = DeploymentPlanBuilder.NormalizeRequestedRef(commitSha) ??
                              DeploymentPlanBuilder.NormalizeRequestedRef(application.GitSource.CommitSha) ?? "HEAD";
-        var deployment = Deployment.Queue(application.Id, application.ServerId, null, resolvedCommit, previewId,
-            webhookEventId, now);
-        deployment.RecordSource(application.GitSource.RepositoryUrl.Value, application.GitSource.Branch, resolvedCommit,
-            null, now);
-        deployment.AddLogLine("system",
-            previewId.HasValue ? "Preview deployment queued by webhook." : "Deployment queued by webhook.", now);
+        DeploymentAdmission admission = await queue.AdmitAsync(new DeploymentAdmissionRequest(
+            application,
+            null,
+            DeploymentTrigger.Webhook,
+            resolvedCommit,
+            previewId,
+            webhookEventId,
+            QueuedMessage: previewId.HasValue
+                ? "Preview deployment queued by webhook."
+                : "Deployment queued by webhook."), cancellationToken);
+        if (admission.Outcome == DeploymentAdmissionOutcome.Deduplicated) return admission;
 
-        await dbContext.DeploymentRepository.AddAsync(deployment, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        backgroundJobs.Enqueue<RunDeploymentJob>(job => job.RunAsync(deployment.Id.Value, CancellationToken.None));
+        TeamId teamId = TeamForApplication(application.Id);
         await auditWriter.RecordAsync(teamId, null, AuditActions.DeploymentStarted,
-            new AuditTarget("deployment", deployment.Id.Value.ToString("D")), null,
+            new AuditTarget("deployment", admission.Deployment.Id.Value.ToString("D")), null,
             new Dictionary<string, object?>
             {
                 ["applicationId"] = application.Id.Value,
                 ["serverId"] = application.ServerId.Value,
                 ["webhookEventId"] = webhookEventId.Value,
                 ["previewId"] = previewId?.Value,
-                ["commitSha"] = resolvedCommit
+                ["commitSha"] = resolvedCommit,
+                ["trigger"] = DeploymentTrigger.Webhook.ToString(),
+                ["supersededDeployments"] = admission.Superseded.Select(id => id.Value).ToArray()
             }, cancellationToken);
-        return deployment;
+        return admission;
     }
 
     private TeamId TeamForApplication(AppId applicationId)
@@ -383,7 +411,8 @@ public sealed class WebhookProcessingService(
     {
         return new WebhookProcessingResult(webhookEvent.Id.Value, webhookEvent.Status,
             webhookEvent.ApplicationId?.Value,
-            webhookEvent.DeploymentId?.Value, webhookEvent.PreviewId?.Value, message);
+            webhookEvent.DeploymentId?.Value, webhookEvent.PreviewId?.Value, message,
+            webhookEvent.ApplicationOutcomes);
     }
 
     private static bool ShouldSkip(IReadOnlyList<string> messages)
@@ -445,19 +474,38 @@ public sealed class WebhookProcessingService(
 
         public List<ArchivedOutcome> ArchivedPreviews { get; } = [];
 
-        public void Queued(AppId applicationId, TeamId teamId, DeploymentId deploymentId,
+        public List<WebhookApplicationOutcome> All { get; } = [];
+
+        public void Queued(AppId applicationId, TeamId teamId, DeploymentAdmission admission,
             ApplicationPreviewId? previewId)
         {
-            QueuedDeployments.Add(new QueuedOutcome(applicationId, teamId, deploymentId, previewId));
+            var deduplicated = admission.Outcome == DeploymentAdmissionOutcome.Deduplicated;
+            All.Add(new WebhookApplicationOutcome(applicationId.Value,
+                deduplicated ? WebhookApplicationOutcomeKind.Deduplicated : WebhookApplicationOutcomeKind.Queued,
+                admission.Deployment.Id.Value, previewId?.Value,
+                deduplicated ? "Deployment already queued for this commit." : null));
+            QueuedDeployments.Add(new QueuedOutcome(applicationId, teamId, admission.Deployment.Id, previewId,
+                deduplicated));
         }
 
         public void Archived(AppId applicationId, ApplicationPreviewId previewId)
         {
+            All.Add(new WebhookApplicationOutcome(applicationId.Value, WebhookApplicationOutcomeKind.PreviewClosed,
+                null, previewId.Value, null));
             ArchivedPreviews.Add(new ArchivedOutcome(applicationId, previewId));
         }
 
-        public void Skip(string reason)
+        public void Skip(AppId applicationId, string reason)
         {
+            All.Add(new WebhookApplicationOutcome(applicationId.Value, WebhookApplicationOutcomeKind.Skipped, null,
+                null, reason));
+            if (!_skipReasons.Contains(reason, StringComparer.Ordinal)) _skipReasons.Add(reason);
+        }
+
+        public void Fail(AppId applicationId, string reason)
+        {
+            All.Add(new WebhookApplicationOutcome(applicationId.Value, WebhookApplicationOutcomeKind.Failed, null,
+                null, reason));
             if (!_skipReasons.Contains(reason, StringComparer.Ordinal)) _skipReasons.Add(reason);
         }
 
@@ -474,7 +522,8 @@ public sealed class WebhookProcessingService(
         AppId ApplicationId,
         TeamId TeamId,
         DeploymentId DeploymentId,
-        ApplicationPreviewId? PreviewId);
+        ApplicationPreviewId? PreviewId,
+        bool Deduplicated);
 
     private sealed record ArchivedOutcome(AppId ApplicationId, ApplicationPreviewId PreviewId);
 }

@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Deployments.Queue;
 using Vessel.Application.Diagnostics;
-using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
 using Vessel.Domain;
@@ -17,22 +17,38 @@ namespace Vessel.Application.Deployments;
 public sealed class StartDeploymentService(
     IVesselDbContext dbContext,
     VesselAuthorizationService authorization,
-    IBackgroundJobDispatcher backgroundJobs,
+    DeploymentQueueService queue,
     IAuditWriter auditWriter,
-    IRealtimeNotifier realtime,
     TimeProvider timeProvider)
 {
-    public async Task<StartDeploymentResult> StartAsync(
+    public Task<StartDeploymentResult> StartAsync(
         UserId actorUserId,
         TeamId teamId,
         StartDeploymentRequest request,
         CancellationToken cancellationToken = default)
     {
+        return StartAsync(actorUserId, teamId, request, DeploymentTrigger.Manual, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Queues a deployment (DEP-04): a request while another deployment runs is queued, not rejected; an identical
+    ///     active request returns the existing deployment. <paramref name="trigger" /> is decided by the caller (UI:
+    ///     manual, REST API: api, preview API: preview), never by the request body.
+    /// </summary>
+    public async Task<StartDeploymentResult> StartAsync(
+        UserId actorUserId,
+        TeamId teamId,
+        StartDeploymentRequest request,
+        DeploymentTrigger trigger,
+        CancellationToken cancellationToken = default)
+    {
+        if (trigger is DeploymentTrigger.Webhook or DeploymentTrigger.Rollback)
+            throw new DomainException("Webhook and rollback deployments are queued by their own services.");
         using Activity? activity = VesselDiagnostics.ActivitySource.StartActivity("StartDeployment");
         activity?.SetTag("vessel.application_id", request.ApplicationId);
         activity?.SetTag("vessel.team_id", teamId.Value);
         activity?.SetTag("vessel.force_rebuild", request.ForceRebuild);
-        activity?.SetTag("vessel.webhook_event_id", request.WebhookEventId);
+        activity?.SetTag("vessel.deployment_trigger", trigger.ToString());
 
         var applicationId = new ApplicationId(request.ApplicationId);
         authorization.Demand(actorUserId, teamId, ResourceRef.Application(applicationId),
@@ -58,42 +74,51 @@ public sealed class StartDeploymentService(
                 ?? throw new InvalidOperationException("Preview was not found.");
             if (preview.ApplicationId != applicationId)
                 throw new UnauthorizedAccessException("Preview does not belong to the application.");
-            if (preview.Status != Domain.Webhooks.ApplicationPreviewStatus.Open)
+            if (preview.Status == Domain.Webhooks.ApplicationPreviewStatus.Archived)
                 throw new DomainException("Preview is closed and cannot be deployed.");
+            // A stopped preview is started again by a redeploy.
+            if (preview.Status == Domain.Webhooks.ApplicationPreviewStatus.Stopped)
+            {
+                preview.Reopen(timeProvider.GetUtcNow());
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
             previewId = preview.Id;
         }
 
-        var alreadyActive = dbContext.Deployments.Any(deployment =>
-            deployment.ApplicationId == applicationId &&
-            deployment.PreviewId == previewId &&
-            (deployment.Status == DeploymentStatus.Queued ||
-             deployment.Status == DeploymentStatus.InProgress ||
-             deployment.Status == DeploymentStatus.CancelRequested));
-        if (alreadyActive)
-            throw new DomainException("A deployment is already queued or running for this application.");
+        // Only API callers may ask to cancel older deployments (Coolify `cancel_previous`, default none).
+        CancelPreviousDeployments cancelPrevious = SupersededDeploymentPolicy.Parse(request.CancelPrevious);
+        if (trigger != DeploymentTrigger.Api && cancelPrevious != CancelPreviousDeployments.None)
+            throw new DomainException("cancel_previous is only supported for API deployments.");
 
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        var deployment = Deployment.Queue(
-            application.Id,
-            application.ServerId,
+        DeploymentId? parentId = null;
+        if (request.ParentDeploymentId.HasValue)
+        {
+            var requestedParent = new DeploymentId(request.ParentDeploymentId.Value);
+            Deployment parent = dbContext.Deployments.SingleOrDefault(item => item.Id == requestedParent)
+                                ?? throw new InvalidOperationException("Parent deployment was not found.");
+            if (parent.ApplicationId != applicationId)
+                throw new UnauthorizedAccessException("Parent deployment does not belong to the application.");
+            parentId = parent.Id;
+        }
+
+        DeploymentAdmission admission = await queue.AdmitAsync(new DeploymentAdmissionRequest(
+            application,
             actorUserId,
-            requestedRef ?? application.GitSource.CommitSha,
+            trigger,
+            requestedRef,
             previewId,
-            request.WebhookEventId.HasValue ? new WebhookEventId(request.WebhookEventId.Value) : null,
-            now);
-        deployment.RecordSource(
-            application.GitSource.RepositoryUrl.Value,
-            application.GitSource.Branch,
-            requestedRef ?? application.GitSource.CommitSha ?? "pending",
             null,
-            now);
-        deployment.AddLogLine("system",
-            request.ForceRebuild ? "Deployment queued with force rebuild." : "Deployment queued.", now);
+            request.ForceRebuild,
+            cancelPrevious,
+            parentId,
+            null,
+            request.ForceRebuild ? "Deployment queued with force rebuild." : "Deployment queued."), cancellationToken);
+        Deployment deployment = admission.Deployment;
 
-        await dbContext.DeploymentRepository.AddAsync(deployment, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        backgroundJobs.Enqueue<RunDeploymentJob>(job => job.RunAsync(deployment.Id.Value, CancellationToken.None));
+        if (admission.Outcome == DeploymentAdmissionOutcome.Deduplicated)
+            return new StartDeploymentResult(deployment.Id.Value, application.Id.Value, deployment.Status,
+                "Deployment already queued for this commit.", true);
 
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.DeploymentStarted,
             new AuditTarget("deployment", deployment.Id.Value.ToString("D")), null,
@@ -104,14 +129,11 @@ public sealed class StartDeploymentService(
                 ["forceRebuild"] = request.ForceRebuild,
                 ["commitSha"] = requestedRef,
                 ["previewId"] = request.PreviewId,
-                ["webhookEventId"] = request.WebhookEventId
+                ["trigger"] = trigger.ToString(),
+                ["parentDeploymentId"] = parentId?.Value,
+                ["cancelPrevious"] = cancelPrevious.ToString(),
+                ["supersededDeployments"] = admission.Superseded.Select(id => id.Value).ToArray()
             }, cancellationToken);
-
-        await realtime.PublishAsync(
-            new RealtimeGroup(RealtimeGroupKind.Deployment, deployment.Id.Value.ToString("D")),
-            new RealtimeMessage("deployment.status",
-                new { deploymentId = deployment.Id.Value, status = deployment.Status.ToString() }),
-            cancellationToken);
 
         activity?.SetTag("vessel.deployment_id", deployment.Id.Value);
         VesselDiagnostics.DeploymentStartRequests.Add(1,
@@ -122,7 +144,9 @@ public sealed class StartDeploymentService(
             });
 
         return new StartDeploymentResult(deployment.Id.Value, application.Id.Value, deployment.Status,
-            "Deployment accepted.");
+            admission.Outcome == DeploymentAdmissionOutcome.Dispatched
+                ? "Deployment accepted."
+                : "Deployment queued behind other deployments.");
     }
 
     private static string? NormalizeCommit(string? commitSha)
@@ -144,19 +168,11 @@ public sealed class StartDeploymentService(
 
         Deployment deployment = await dbContext.DeploymentRepository.GetByIdAsync(deploymentId, cancellationToken)
                                 ?? throw new InvalidOperationException("Deployment was not found.");
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        deployment.RequestCancellation(now);
-        deployment.AddLogLine("system", "Deployment cancellation requested by user.", now);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await queue.RequestCancellationAsync(deployment, "Deployment cancellation requested by user.",
+            cancellationToken);
 
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.DeploymentCanceled,
             new AuditTarget("deployment", deployment.Id.Value.ToString("D")), null,
             new Dictionary<string, object?>(), cancellationToken);
-
-        await realtime.PublishAsync(
-            new RealtimeGroup(RealtimeGroupKind.Deployment, deployment.Id.Value.ToString("D")),
-            new RealtimeMessage("deployment.status",
-                new { deploymentId = deployment.Id.Value, status = deployment.Status.ToString() }),
-            cancellationToken);
     }
 }

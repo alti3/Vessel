@@ -21,7 +21,8 @@ public sealed record WebhookProcessingResult(
     Guid? ApplicationId,
     Guid? DeploymentId,
     Guid? PreviewId,
-    string Message);
+    string Message,
+    IReadOnlyList<WebhookApplicationOutcome>? Applications = null);
 
 public sealed record ApplicationWebhookConfigurationSummary(
     Guid Id,
@@ -47,4 +48,7 @@ public sealed record ApplicationPreviewSummary(
     string? PullRequestUrl,
     string? Title,
     string? PreviewUrl,
-    string Status);
+    string Status,
+    bool IsSameRepository = false,
+    string? SourceRepository = null,
+    DateTimeOffset? ClosedAt = null);

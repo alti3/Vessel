@@ -38,7 +38,13 @@ public sealed class DeploymentQueryService(
             deployment.StartedAt,
             deployment.FinishedAt,
             deployment.CancellationRequestedAt,
-            GetLogs(actorUserId, teamId, deploymentId, new DeploymentLogQuery(PageSize: 200)).Entries);
+            GetLogs(actorUserId, teamId, deploymentId, new DeploymentLogQuery(PageSize: 200)).Entries,
+            deployment.Trigger,
+            deployment.ParentDeploymentId?.Value,
+            deployment.IsRollback,
+            deployment.RollbackImage,
+            deployment.DeployPhaseStartedAt,
+            deployment.CancellationReason is null ? null : redactor.Redact(deployment.CancellationReason));
     }
 
     public DeploymentLogPage GetLogs(

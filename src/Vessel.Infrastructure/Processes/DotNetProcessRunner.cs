@@ -393,7 +393,8 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
     private static RedactionContext CreateRedactionContext(ProcessCommand command)
     {
-        return new RedactionContext(command.Redaction?.SecretValues, command.Redaction?.PatternNames);
+        return new RedactionContext(command.Redaction?.SecretValues, command.Redaction?.PatternNames,
+            command.Redaction?.KnownValues, command.Redaction?.IsLogOutput ?? false);
     }
 
     private static async Task CopyToProcessInputAsync(Stream source, Process process, CancellationToken cancellationToken)
