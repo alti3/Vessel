@@ -30,10 +30,7 @@ public sealed class TerminalSessionManager(
         CancellationToken cancellationToken = default)
     {
         var serverId = new ServerId(request.ServerId);
-        if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.TerminalsOpen))
-            throw new UnauthorizedAccessException($"Missing required permission '{VesselPermissions.TerminalsOpen}'.");
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), VesselPermissions.TerminalsOpen);
 
         Server server = dbContext.Servers.SingleOrDefault(server => server.Id == serverId)
                         ?? throw new InvalidOperationException("Server was not found.");

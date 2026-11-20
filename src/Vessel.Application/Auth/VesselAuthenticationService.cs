@@ -201,6 +201,12 @@ public sealed class VesselAuthenticationService
         CancellationToken cancellationToken = default)
     {
         User user = await GetUserAsync(userId, cancellationToken);
+        // Re-enrolling would silently replace (and, until confirmed, disable) an active second factor. Require the
+        // re-confirmed disable flow first.
+        if (user.TwoFactorConfirmedAt.HasValue)
+            throw new InvalidOperationException(
+                "Two-factor authentication is already enabled. Disable it before enrolling a new authenticator.");
+
         DateTimeOffset now = DateTimeOffset.UtcNow;
         var secret = _totpService.GenerateSecret();
         user.StageTwoFactorSecret(secret, now);
@@ -235,13 +241,25 @@ public sealed class VesselAuthenticationService
         return new TwoFactorRecoveryCodes(recoveryCodes);
     }
 
-    public async Task DisableTwoFactorAsync(
+    /// <summary>
+    ///     Disables two-factor authentication after re-confirming the user's identity with either a current TOTP code
+    ///     or the account password. Returns <c>false</c> (and changes nothing) when the confirmation is missing or
+    ///     invalid. Wrong passwords count towards the login lockout.
+    /// </summary>
+    public async Task<bool> DisableTwoFactorAsync(
         UserId userId,
+        string? currentPassword,
+        string? twoFactorCode,
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
         User user = await GetUserAsync(userId, cancellationToken);
-        user.DisableTwoFactor(DateTimeOffset.UtcNow);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (user.TwoFactorConfirmedAt.HasValue
+            && !await ConfirmIdentityAsync(user, currentPassword, twoFactorCode, now, cancellationToken))
+            return false;
+
+        user.DisableTwoFactor(now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditWriter.RecordAsync(
@@ -252,6 +270,32 @@ public sealed class VesselAuthenticationService
             correlationId,
             new Dictionary<string, object?>(),
             cancellationToken);
+        return true;
+    }
+
+    private async Task<bool> ConfirmIdentityAsync(
+        User user,
+        string? currentPassword,
+        string? twoFactorCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (user.IsLockedOut(now)) return false;
+
+        if (!string.IsNullOrWhiteSpace(twoFactorCode)
+            && user.TwoFactorSecret is not null
+            && _totpService.VerifyCode(user.TwoFactorSecret, twoFactorCode, now))
+            return true;
+
+        if (string.IsNullOrEmpty(currentPassword) || !user.HasPassword) return false;
+        if (_passwordHasher.VerifyPassword(user.PasswordHash!, currentPassword)) return true;
+
+        user.RecordFailedLogin(
+            Math.Max(1, _options.LockoutThreshold),
+            TimeSpan.FromMinutes(Math.Max(1, _options.LockoutMinutes)),
+            now);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return false;
     }
 
     private Team ResolveLoginTeam(User user)

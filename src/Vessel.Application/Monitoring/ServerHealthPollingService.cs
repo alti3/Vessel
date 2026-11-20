@@ -44,8 +44,8 @@ public sealed class ServerHealthPollingService(
         ServerId serverId,
         CancellationToken cancellationToken = default)
     {
-        if (!authorizationService.HasPermission(actorUserId, teamId, VesselPermissions.ServersWrite)
-            || !authorizationService.CanAccessServer(actorUserId, serverId))
+        if (!authorizationService.IsAuthorized(actorUserId, teamId, ResourceRef.Server(serverId),
+                VesselPermissions.ServersWrite))
             throw new UnauthorizedAccessException("The current user is not authorized to poll this server.");
 
         return await PollCoreAsync(serverId, actorUserId, cancellationToken);

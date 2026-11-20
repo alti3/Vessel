@@ -120,4 +120,4 @@ Coolify models notification settings per channel and exposes event toggles for d
 Notes:
 
 - EF tooling again reported that `dotnet-ef` `10.0.8` is older than the installed .NET 11 preview runtime.
-- The repository still uses SDK `11.0.100-preview.4.26230.115`; replace with stable .NET 11 after GA per project requirements.
+- The repository moved to the stable .NET 11 SDK (`11.0.100`) on 2026-11-20; see `docs/development/dotnet-sdk.md`.

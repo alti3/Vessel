@@ -5,15 +5,22 @@ using AppId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Proxy;
 
+/// <summary>
+///     A single public host routed by the server proxy. <c>UpstreamHost</c> is the network alias of the target
+///     container (see <see cref="ProxyNaming.UpstreamAlias" />), never a user-controlled display name.
+/// </summary>
 public sealed record ProxyRoute(
     AppId ApplicationId,
     ServerId ServerId,
-    string ServiceName,
+    string UpstreamHost,
     string Host,
     int TargetPort,
     bool TlsEnabled,
     bool Canonical,
     bool RedirectToCanonical);
+
+/// <summary>A route excluded from the generated configuration because it failed validation.</summary>
+public sealed record ProxyRouteRejection(ProxyRoute Route, string Reason);
 
 public sealed record ProxyConfigurationDocument(
     ServerId ServerId,

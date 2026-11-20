@@ -1,7 +1,7 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using Vessel.Application.Auditing;
 using Vessel.Application.Auth;
@@ -148,18 +148,25 @@ public sealed class AuthController : ControllerBase
         return succeeded ? NoContent() : BadRequest();
     }
 
-    [Authorize]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     [HttpPost("2fa/setup")]
     [EnableRateLimiting("auth")]
     public async Task<ActionResult<TwoFactorSetup>> StartTwoFactorSetup(CancellationToken cancellationToken)
     {
-        return await _authenticationService.StartTwoFactorSetupAsync(
-            User.GetUserId(),
-            _hostOptions.ServiceName,
-            cancellationToken);
+        try
+        {
+            return await _authenticationService.StartTwoFactorSetupAsync(
+                User.GetUserId(),
+                _hostOptions.ServiceName,
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Problem(exception.Message, statusCode: StatusCodes.Status409Conflict);
+        }
     }
 
-    [Authorize]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     [HttpPost("2fa/confirm")]
     [EnableRateLimiting("auth")]
     public async Task<ActionResult<TwoFactorRecoveryCodes>> ConfirmTwoFactor(
@@ -175,29 +182,31 @@ public sealed class AuthController : ControllerBase
         return result is null ? BadRequest() : Ok(result);
     }
 
-    [Authorize]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     [HttpDelete("2fa")]
     [EnableRateLimiting("auth")]
-    public async Task<IActionResult> DisableTwoFactor(CancellationToken cancellationToken)
+    public async Task<IActionResult> DisableTwoFactor(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] TwoFactorDisableRequest? request,
+        CancellationToken cancellationToken)
     {
-        await _authenticationService.DisableTwoFactorAsync(
+        // Disabling the second factor requires re-confirmation with a current TOTP code or the account password.
+        var disabled = await _authenticationService.DisableTwoFactorAsync(
             User.GetUserId(),
+            request?.CurrentPassword,
+            request?.Code,
             CorrelationIdMiddleware.GetCorrelationId(HttpContext),
             cancellationToken);
-        return NoContent();
+        return disabled
+            ? NoContent()
+            : Problem("Re-confirm with a current two-factor code or your password.",
+                statusCode: StatusCodes.Status403Forbidden);
     }
 
     private async Task SignInAsync(AuthenticatedUser user)
     {
-        List<Claim> claims =
-        [
-            new(ClaimTypes.NameIdentifier, user.UserId.Value.ToString("D")),
-            new(ClaimTypes.Name, user.Name),
-            new(ClaimTypes.Email, user.Email),
-            new(VesselClaimTypes.TeamId, user.TeamId.Value.ToString("D"))
-        ];
-        var identity = new ClaimsIdentity(claims, VesselAuthenticationSchemes.Cookie);
-        await HttpContext.SignInAsync(VesselAuthenticationSchemes.Cookie, new ClaimsPrincipal(identity));
+        await HttpContext.SignInAsync(
+            VesselAuthenticationSchemes.Cookie,
+            VesselSessionPrincipal.Create(user.UserId, user.Name, user.Email, user.TeamId));
     }
 
     private static string NormalizeReturnUrl(string? returnUrl)
@@ -221,6 +230,8 @@ public sealed record PasswordResetRequest(string Email);
 public sealed record PasswordResetCompleteRequest(string Email, string Token, string NewPassword);
 
 public sealed record TwoFactorConfirmRequest(string Code);
+
+public sealed record TwoFactorDisableRequest(string? CurrentPassword, string? Code);
 
 public sealed record AuthResponse(Guid UserId, Guid TeamId, string Name, string Email, bool TwoFactorRequired)
 {

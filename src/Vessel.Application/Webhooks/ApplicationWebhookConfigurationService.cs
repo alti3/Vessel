@@ -112,10 +112,7 @@ public sealed class ApplicationWebhookConfigurationService(
 
     private void RequireApplication(UserId actorUserId, TeamId teamId, AppId applicationId, string permission)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, permission))
-            throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
-        if (!authorization.CanAccessApplication(actorUserId, applicationId))
-            throw new UnauthorizedAccessException("Application is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Application(applicationId), permission);
     }
 
     private (ProjectId ProjectId, EnvironmentId EnvironmentId) ApplicationProject(AppId applicationId)
