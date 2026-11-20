@@ -38,6 +38,10 @@ public static class AuditActions
     public const string DomainRouteRemoved = "domain_route.removed";
     public const string ProxyConfigurationApplied = "proxy_configuration.applied";
     public const string ProxyConfigurationRolledBack = "proxy_configuration.rolled_back";
+    public const string ServerProxyUpdated = "server_proxy.updated";
+    public const string ServerProxyStarted = "server_proxy.started";
+    public const string ServerProxyStopped = "server_proxy.stopped";
+    public const string ServerProxyRestarted = "server_proxy.restarted";
     public const string CertificateIssuanceQueued = "certificate.issuance_queued";
     public const string DatabaseCreated = "database.created";
     public const string DatabaseLifecycleActionQueued = "database.lifecycle_action_queued";

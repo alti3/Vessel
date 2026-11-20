@@ -20,6 +20,7 @@ using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
+using Vessel.Application.Servers.Files;
 using Vessel.Application.Ssh;
 using Vessel.Application.Storage;
 using Vessel.Application.Terminals;
@@ -39,6 +40,7 @@ using Vessel.Infrastructure.Processes;
 using Vessel.Infrastructure.Proxy;
 using Vessel.Infrastructure.Redis;
 using Vessel.Infrastructure.Security;
+using Vessel.Infrastructure.Servers;
 using Vessel.Infrastructure.Ssh;
 using Vessel.Infrastructure.Storage;
 
@@ -133,6 +135,12 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IGitClient, GitProcessClient>();
         services.TryAddSingleton<ISshClient, SshProcessClient>();
         services.TryAddSingleton<IProxyProvider, TraefikProxyProvider>();
+        services.AddOptions<ServerFilesOptions>().Bind(configuration.GetSection(ServerFilesOptions.SectionName));
+        services.TryAddSingleton<ServerCommandExecutor>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IServerFileChannel, LocalServerFileChannel>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IServerFileChannel, SshServerFileChannel>());
+        services.TryAddSingleton<IProxyContainerRuntime, DockerProxyContainerRuntime>();
+        services.TryAddSingleton<IProxyRuntimeRenderer, TraefikRuntimeRenderer>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddVesselNotificationInfrastructure(configuration);
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);

@@ -18,6 +18,7 @@ public sealed class ProxyConfigurationService(
     IVesselDbContext dbContext,
     VesselAuthorizationService authorization,
     IProxyProvider proxyProvider,
+    ProxyLifecycleService proxyLifecycle,
     IDistributedLockManager locks,
     IAuditWriter auditWriter,
     ISecretRedactor redactor,
@@ -43,10 +44,16 @@ public sealed class ProxyConfigurationService(
         CancellationToken cancellationToken = default)
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
+        if (!proxyLifecycle.IsRoutingEnabled(serverId))
+            throw new DomainException("Routing is disabled because the server proxy type is None.");
         return await ApplyCoreAsync(actorUserId, teamId, serverId, TimeSpan.Zero, cancellationToken);
     }
 
-    public async Task<ProxyConfigurationSummary> ApplyForDeploymentAsync(
+    /// <summary>
+    ///     Applies routes for a deployment or certificate job. Returns <see langword="null" /> without generating a
+    ///     version when the server proxy type is None (routing is skipped entirely).
+    /// </summary>
+    public async Task<ProxyConfigurationSummary?> ApplyForDeploymentAsync(
         UserId? actorUserId,
         TeamId teamId,
         ServerId serverId,
@@ -55,6 +62,8 @@ public sealed class ProxyConfigurationService(
         if (actorUserId.HasValue)
             authorization.Demand(actorUserId.Value, teamId, ResourceRef.Server(serverId),
                 VesselPermissions.DeploymentsStart);
+        if (!proxyLifecycle.IsRoutingEnabled(serverId))
+            return null;
         // Concurrent deployments on one server queue briefly for the proxy lock instead of failing outright.
         return await ApplyCoreAsync(actorUserId, teamId, serverId, DeploymentLockWait, cancellationToken);
     }
@@ -71,10 +80,9 @@ public sealed class ProxyConfigurationService(
         if (server.Status == ServerStatus.Unreachable)
             throw new DomainException("Cannot apply proxy configuration while server is unreachable.");
 
-        var lockKey = $"proxy:{serverId.Value:D}";
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
-            lockKey,
-            TimeSpan.FromMinutes(5),
+            ProxyLifecycleService.LockKey(serverId),
+            ProxyLifecycleService.LockLease,
             lockWait,
             cancellationToken);
         if (handle is null)
@@ -117,11 +125,14 @@ public sealed class ProxyConfigurationService(
                 previous.Configuration,
                 previous.ConfigurationHash, []);
 
-        ProxyApplyResult apply = await proxyProvider.ApplyAsync(document, previousDocument, cancellationToken);
+        // Write-then-verify on the server's runtime host; Traefik's file provider watch picks the change up.
+        ProxyApplyResult apply =
+            await proxyLifecycle.DeliverDynamicConfigurationAsync(server, document, cancellationToken);
         if (!apply.Succeeded)
         {
             version.MarkApplyFailed(redactor.Redact(apply.Message), timeProvider.GetUtcNow());
-            if (previousDocument is not null) await proxyProvider.RollbackAsync(previousDocument, cancellationToken);
+            if (previousDocument is not null)
+                await proxyLifecycle.DeliverDynamicConfigurationAsync(server, previousDocument, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
             await notifications.PublishAsync(teamId,
@@ -140,6 +151,7 @@ public sealed class ProxyConfigurationService(
                 ["version"] = document.Version,
                 ["configurationHash"] = document.Sha256Hash,
                 ["routeCount"] = acceptedRoutes.Length,
+                ["delivery"] = redactor.Redact(apply.Message),
                 ["rejectedRoutes"] = rejections
                     .Select(rejection => new { host = rejection.Route.Host, reason = redactor.Redact(rejection.Reason) })
                     .ToArray()
@@ -161,11 +173,14 @@ public sealed class ProxyConfigurationService(
         if (version.ServerId != serverId)
             throw new UnauthorizedAccessException("Proxy configuration version is outside the requested server.");
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
+        Server server = dbContext.Servers.SingleOrDefault(item => item.Id == serverId)
+                        ?? throw new InvalidOperationException("Server was not found.");
+        if (!proxyLifecycle.IsRoutingEnabled(serverId))
+            throw new DomainException("Routing is disabled because the server proxy type is None.");
 
-        var lockKey = $"proxy:{serverId.Value:D}";
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
-            lockKey,
-            TimeSpan.FromMinutes(5),
+            ProxyLifecycleService.LockKey(serverId),
+            ProxyLifecycleService.LockLease,
             TimeSpan.Zero,
             cancellationToken);
         if (handle is null)
@@ -177,7 +192,8 @@ public sealed class ProxyConfigurationService(
         if (!validation.Succeeded)
             throw new DomainException(string.Join("; ", validation.Errors));
 
-        ProxyApplyResult result = await proxyProvider.RollbackAsync(document, cancellationToken);
+        ProxyApplyResult result =
+            await proxyLifecycle.DeliverDynamicConfigurationAsync(server, document, cancellationToken);
         if (!result.Succeeded)
             throw new DomainException(redactor.Redact(result.Message));
 

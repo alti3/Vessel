@@ -26,6 +26,7 @@ public sealed class ApiRouteConventionTests
             typeof(NotificationsController),
             typeof(SettingsController),
             typeof(ProxyConfigurationsController),
+            typeof(ServerProxyController),
             typeof(TerminalsController),
             typeof(ServerHealthController)
         ];
@@ -58,6 +59,13 @@ public sealed class ApiRouteConventionTests
             VesselPermissions.ServersWrite);
         AssertActionPolicy<ProxyConfigurationsController>(
             nameof(ProxyConfigurationsController.Rollback),
+            VesselPermissions.ServersWrite);
+
+        AssertControllerPolicy<ServerProxyController>(VesselPermissions.ServersRead);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Update), VesselPermissions.ServersWrite);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Start), VesselPermissions.ServersWrite);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Stop), VesselPermissions.ServersWrite);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Restart),
             VesselPermissions.ServersWrite);
     }
 

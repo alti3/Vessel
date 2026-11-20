@@ -8,6 +8,7 @@ using Vessel.Application.Jobs;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -174,10 +175,12 @@ public sealed class Phase12OperationalTests
         Scenario scenario = Scenario.Create();
         var runtime = new TestContainerRuntime();
         var realtime = new TestRealtimeNotifier();
+        var proxyStatus = new TestProxyStatusProbe { Healthy = false };
         var service = new ServerHealthPollingService(
             scenario.Db,
             new VesselAuthorizationService(scenario.Db),
             runtime,
+            proxyStatus,
             realtime,
             new TestAuditWriter(),
             TimeProvider.System,
@@ -188,8 +191,24 @@ public sealed class Phase12OperationalTests
 
         Assert.True(result.RuntimeReachable);
         Assert.Equal(ServerStatus.Reachable, scenario.Server.Status);
-        Assert.Single(scenario.Db.ServerStatusSnapshotItems);
+        ServerStatusSnapshot snapshot = Assert.Single(scenario.Db.ServerStatusSnapshotItems);
+        // Proxy health comes from the real container probe, not from proxy configuration history.
+        Assert.False(snapshot.ProxyHealthy);
+        Assert.Equal(1, proxyStatus.Calls);
         Assert.Contains(realtime.Messages, message => message.Message.Type == "server.health");
+    }
+
+    private sealed class TestProxyStatusProbe : IProxyStatusProbe
+    {
+        public bool Healthy { get; init; }
+
+        public int Calls { get; private set; }
+
+        public Task<bool> IsHealthyAsync(Server server, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(Healthy);
+        }
     }
 
     [Fact]
@@ -202,6 +221,7 @@ public sealed class Phase12OperationalTests
             scenario.Db,
             new VesselAuthorizationService(scenario.Db),
             runtime,
+            new TestProxyStatusProbe(),
             new TestRealtimeNotifier(),
             new TestAuditWriter(),
             TimeProvider.System,
@@ -270,13 +290,16 @@ public sealed class Phase12OperationalTests
         INotificationEventPublisher notifications)
     {
         var authorization = new VesselAuthorizationService(scenario.Db);
+        var proxyLifecycle = new ProxyLifecycleService(scenario.Db, authorization, locks, [],
+            ThrowingProxy.Create<IProxyContainerRuntime>(), ThrowingProxy.Create<IProxyRuntimeRenderer>(),
+            new TestAuditWriter(), new TestRedactor(), TimeProvider.System);
         var proxy = new Vessel.Application.Proxy.ProxyConfigurationService(scenario.Db, authorization,
-            ThrowingProxy.Create<Vessel.Application.Proxy.IProxyProvider>(), locks, new TestAuditWriter(),
-            new TestRedactor(), TimeProvider.System, notifications);
+            ThrowingProxy.Create<Vessel.Application.Proxy.IProxyProvider>(), proxyLifecycle, locks,
+            new TestAuditWriter(), new TestRedactor(), TimeProvider.System, notifications);
         return new DeploymentRunner(scenario.Db, ThrowingProxy.Create<Vessel.Application.Git.IGitClient>(),
             new TestContainerRuntime(), ThrowingProxy.Create<IDeploymentWorkspaceManager>(), locks,
             ThrowingProxy.Create<ISecretVault>(), new TestRedactor(), new TestRealtimeNotifier(), proxy,
-            new TestAuditWriter(), TimeProvider.System, notifications);
+            proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications);
     }
 
     private sealed class SwallowingPublisher : INotificationEventPublisher
@@ -417,6 +440,7 @@ public sealed class Phase12OperationalTests
         public IQueryable<ApplicationPreview> ApplicationPreviews => Empty<ApplicationPreview>();
         public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => Empty<ProxyConfigurationVersion>();
         public IQueryable<Certificate> Certificates => Empty<Certificate>();
+        public IQueryable<ServerProxySettings> ServerProxySettings => Empty<ServerProxySettings>();
         public IQueryable<TerminalSession> TerminalSessions => TerminalSessionItems.AsQueryable();
 
         public IRepository<User, UserId> UserRepository => new ListRepository<User, UserId>(UserItems);
@@ -442,6 +466,7 @@ public sealed class Phase12OperationalTests
         public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository => EmptyRepo<ApplicationPreview, ApplicationPreviewId>();
         public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository => EmptyRepo<ProxyConfigurationVersion, ProxyConfigurationVersionId>();
         public IRepository<Certificate, CertificateId> CertificateRepository => EmptyRepo<Certificate, CertificateId>();
+        public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository => EmptyRepo<ServerProxySettings, ServerId>();
         public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository => new ListRepository<TerminalSession, TerminalSessionId>(TerminalSessionItems);
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(1);

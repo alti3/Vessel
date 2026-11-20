@@ -1,8 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using Vessel.Application.Files;
-using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
 using Vessel.Domain;
 using Vessel.Domain.Proxy;
@@ -12,7 +10,7 @@ using YamlDotNet.Serialization;
 
 namespace Vessel.Infrastructure.Proxy;
 
-public sealed class TraefikProxyProvider(IProcessRunner processRunner, IPathSafetyService pathSafety) : IProxyProvider
+public sealed class TraefikProxyProvider : IProxyProvider
 {
     // DNS host names (underscores allowed per upstream v4.2.0 #10663). IP/wildcard forms are handled by NET-03.
     private static readonly Regex HostPattern = new(
@@ -26,8 +24,6 @@ public sealed class TraefikProxyProvider(IProcessRunner processRunner, IPathSafe
         .WithQuotingNecessaryStrings()
         .DisableAliases()
         .Build();
-
-    private readonly string _rootDirectory = Path.Combine(AppContext.BaseDirectory, "proxy", "traefik");
 
     public IReadOnlyList<ProxyRouteRejection> ValidateRoutes(IReadOnlyList<ProxyRoute> routes)
     {
@@ -252,65 +248,5 @@ public sealed class TraefikProxyProvider(IProcessRunner processRunner, IPathSafe
         }
 
         return errors;
-    }
-
-    public async Task<ProxyApplyResult> ApplyAsync(
-        ProxyConfigurationDocument document,
-        ProxyConfigurationDocument? previous,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var dynamicDirectory = pathSafety.EnsureOwnedRelativePath(_rootDirectory, "dynamic");
-            Directory.CreateDirectory(dynamicDirectory);
-            var target =
-                pathSafety.EnsureOwnedRelativePath(dynamicDirectory, $"server-{document.ServerId.Value:N}.yml");
-            var temp = target + ".tmp";
-            await File.WriteAllTextAsync(temp, document.Contents, Encoding.UTF8, cancellationToken);
-            File.Move(temp, target, true);
-            ProxyApplyResult reload = await ReloadAsync(document.ServerId, cancellationToken);
-            if (!reload.Succeeded && previous is not null)
-                await RollbackAsync(previous, cancellationToken);
-            return reload;
-        }
-        catch (Exception ex)
-        {
-            return new ProxyApplyResult(false, ex.Message);
-        }
-    }
-
-    public async Task<ProxyApplyResult> ReloadAsync(ServerId serverId, CancellationToken cancellationToken = default)
-    {
-        ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
-            "docker",
-            ["kill", "--signal=HUP", "vessel-proxy"],
-            Timeout: TimeSpan.FromSeconds(20)), cancellationToken);
-        if (result.Succeeded)
-            return new ProxyApplyResult(true, "Traefik reloaded.");
-
-        if (result.ExitInfo.ExitCode == 1 &&
-            result.StandardError.Contains("No such container", StringComparison.OrdinalIgnoreCase))
-            return new ProxyApplyResult(true, "Traefik dynamic configuration written; proxy container is not running.");
-
-        return new ProxyApplyResult(false, result.StandardError.Trim());
-    }
-
-    public async Task<ProxyApplyResult> RollbackAsync(
-        ProxyConfigurationDocument previous,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var dynamicDirectory = pathSafety.EnsureOwnedRelativePath(_rootDirectory, "dynamic");
-            Directory.CreateDirectory(dynamicDirectory);
-            var target =
-                pathSafety.EnsureOwnedRelativePath(dynamicDirectory, $"server-{previous.ServerId.Value:N}.yml");
-            await File.WriteAllTextAsync(target, previous.Contents, Encoding.UTF8, cancellationToken);
-            return await ReloadAsync(previous.ServerId, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            return new ProxyApplyResult(false, ex.Message);
-        }
     }
 }
