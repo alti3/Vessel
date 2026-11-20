@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
 using Vessel.Application.Authorization;
 using Vessel.Web.Controllers.Api.V1;
 using Vessel.Web.Hubs;
@@ -71,6 +72,27 @@ public sealed class ApiRouteConventionTests
         AssertActionPolicy<ServerHealthController>(nameof(ServerHealthController.Poll), VesselPermissions.ServersWrite);
         AssertActionPolicy<DeploymentsController>(nameof(DeploymentsController.Logs), VesselPermissions.DeploymentsReadLogs);
         AssertActionPolicy<DeploymentsController>(nameof(DeploymentsController.ExportLogs), VesselPermissions.DeploymentsReadLogs);
+    }
+
+    [Fact]
+    public void NotificationEndpointsRequireNotificationPermissions()
+    {
+        AssertControllerPolicy<NotificationsController>(VesselPermissions.NotificationsRead);
+        AssertActionPolicy<NotificationsController>(nameof(NotificationsController.UpsertTarget),
+            VesselPermissions.NotificationsWrite);
+        AssertActionPolicy<NotificationsController>(nameof(NotificationsController.SendTest),
+            VesselPermissions.NotificationsWrite);
+    }
+
+    [Fact]
+    public void NotificationEventsCannotBeRaisedThroughThePublicApi()
+    {
+        IEnumerable<string?> templates = typeof(NotificationsController).GetMethods()
+            .SelectMany(method => method.GetCustomAttributes<HttpMethodAttribute>(true))
+            .Select(attribute => attribute.Template);
+
+        Assert.DoesNotContain(templates, template => template is not null &&
+                                                     template.StartsWith("events", StringComparison.Ordinal));
     }
 
     [Fact]

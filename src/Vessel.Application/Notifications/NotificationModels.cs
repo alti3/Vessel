@@ -10,7 +10,8 @@ public sealed record NotificationTargetListItem(
     NotificationSeverity MinimumSeverity,
     bool DeploymentEvents,
     bool BackupEvents,
-    bool ServerEvents);
+    bool ServerEvents,
+    bool HasCredentials);
 
 public sealed record InAppNotificationListItem(
     Guid Id,

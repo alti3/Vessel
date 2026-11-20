@@ -1,3 +1,4 @@
+using Vessel.Application.Authorization;
 using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
 using Vessel.Domain;
@@ -7,11 +8,13 @@ namespace Vessel.Application.Notifications;
 
 public sealed class NotificationCenterService(
     IVesselDbContext dbContext,
+    VesselAuthorizationService authorization,
     IRealtimeNotifier realtimeNotifier,
     TimeProvider timeProvider)
 {
     public IReadOnlyList<InAppNotificationListItem> ListInApp(TeamId teamId, UserId userId, bool includeArchived = false)
     {
+        Require(userId, teamId);
         var allowedStatuses = includeArchived
             ? new[] { InAppNotificationStatus.Unread, InAppNotificationStatus.Read, InAppNotificationStatus.Archived }
             : [InAppNotificationStatus.Unread, InAppNotificationStatus.Read];
@@ -81,8 +84,16 @@ public sealed class NotificationCenterService(
         }
     }
 
+    private void Require(UserId userId, TeamId teamId)
+    {
+        if (!authorization.HasPermission(userId, teamId, VesselPermissions.NotificationsRead))
+            throw new UnauthorizedAccessException(
+                $"Missing required permission '{VesselPermissions.NotificationsRead}'.");
+    }
+
     private InAppNotification GetAuthorizedNotification(TeamId teamId, UserId userId, InAppNotificationId notificationId)
     {
+        Require(userId, teamId);
         return dbContext.InAppNotifications.FirstOrDefault(notification =>
                    notification.Id == notificationId
                    && notification.TeamId == teamId
