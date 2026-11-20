@@ -1,3 +1,5 @@
+using Vessel.Application.Processes;
+
 namespace Vessel.Application.Docker;
 
 public enum ContainerRuntimeProvider
@@ -45,17 +47,21 @@ public sealed record VolumeSummary(string Name, string Driver, string Mountpoint
 
 public sealed record ContainerEvent(string Type, string Action, string ActorId, DateTimeOffset Timestamp);
 
+/// <summary>A compose invocation. <paramref name="Redaction" /> carries the deployment's secret context for its output.</summary>
 public sealed record ComposeCommand(
     string WorkingDirectory,
     IReadOnlyList<string> ComposeFiles,
     IReadOnlyList<string> Arguments,
     string? EnvironmentFile = null,
-    TimeSpan? Timeout = null);
+    TimeSpan? Timeout = null,
+    ProcessRedactionProfile? Redaction = null);
 
+/// <summary>An image build. Build argument values are always redacted, plus anything in <paramref name="Redaction" />.</summary>
 public sealed record DockerBuildCommand(
     string WorkingDirectory,
     string DockerfilePath,
     string ImageName,
     IReadOnlyDictionary<string, string> Labels,
     IReadOnlyDictionary<string, string> BuildArguments,
-    TimeSpan? Timeout = null);
+    TimeSpan? Timeout = null,
+    ProcessRedactionProfile? Redaction = null);

@@ -3,9 +3,11 @@ using System.Globalization;
 using System.Text;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Deployments.Queue;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
 using Vessel.Application.Git;
+using Vessel.Application.Jobs;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
@@ -20,6 +22,7 @@ using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Servers;
+using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
@@ -42,46 +45,123 @@ public sealed partial class DeploymentRunner(
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
     INotificationEventPublisher notifications,
-    VesselAuthorizationService authorization)
+    VesselAuthorizationService authorization,
+    DeploymentQueueService queue,
+    IDeploymentCancellationRegistry cancellations,
+    IBackgroundJobDispatcher backgroundJobs)
     : IDeploymentRunner
 {
-    public async Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
-    {
-        var startedAt = Stopwatch.GetTimestamp();
-        DeploymentStatus finalStatus = DeploymentStatus.Failed;
-        using Activity? activity = VesselDiagnostics.ActivitySource.StartActivity("RunDeployment");
-        activity?.SetTag("vessel.deployment_id", deploymentId.Value);
-        VesselDiagnostics.ActiveDeployments.Add(1);
+    /// <summary>How long a deployment waits for the run lock of its application before it is retried.</summary>
+    public static readonly TimeSpan ContentionRetryDelay = TimeSpan.FromSeconds(15);
 
+    /// <summary>Retries for a contended run lock (one hour at <see cref="ContentionRetryDelay" />).</summary>
+    public const int MaxContentionAttempts = 240;
+
+    private DeploymentLogRedactor? _logRedactor;
+
+    private DeploymentLogRedactor LogRedactor => _logRedactor ??= new DeploymentLogRedactor(redactor);
+
+    public Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
+    {
+        return RunAsync(deploymentId, 0, cancellationToken);
+    }
+
+    public async Task RunAsync(DeploymentId deploymentId, int attempt, CancellationToken cancellationToken = default)
+    {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        activity?.SetTag("vessel.application_id", deployment.ApplicationId.Value);
-        activity?.SetTag("vessel.server_id", deployment.ServerId.Value);
+        await dbContext.RefreshAsync(deployment, cancellationToken);
+        if (Deployment.IsTerminal(deployment.Status)) return;
+
         ApplicationPreview? preview = LoadPreview(deployment);
         // Production and each preview are separate stacks, so they lock independently.
         var lockKey = preview is null
             ? $"deployment:{deployment.ApplicationId.Value:D}"
             : $"deployment:{deployment.ApplicationId.Value:D}:pr:{preview.PullRequestNumber}";
-        await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
-            lockKey,
-            TimeSpan.FromHours(2),
-            TimeSpan.Zero,
+        DeploymentRunClaim claim;
+        DistributedLockHandle? handle = await locks.TryAcquireAsync(lockKey, TimeSpan.FromHours(2), TimeSpan.Zero,
             cancellationToken);
-
         if (handle is null)
         {
-            await AppendAsync(deploymentId, "stderr", "Another deployment is already running for this application.",
-                cancellationToken);
-            await FailAsync(deploymentId, cancellationToken);
-            finalStatus = DeploymentStatus.Failed;
-            await NotifyFinishedAsync(deploymentId, finalStatus);
+            // DEP-04: lock contention never fails the deployment (Queued -> Failed is not a valid transition and the
+            // deployment did nothing wrong). It keeps its state and the job is dispatched again.
+            await HandleContentionAsync(deployment, attempt, cancellationToken);
             return;
         }
 
+        await using (handle)
+        {
+            claim = await queue.ClaimRunAsync(deployment, cancellationToken);
+            switch (claim)
+            {
+                case DeploymentRunClaim.Terminal or DeploymentRunClaim.Waiting:
+                    break;
+                case DeploymentRunClaim.Orphaned:
+                    // The run lock was free while the deployment was running: the worker that ran it stopped.
+                    await FailAsync(deploymentId,
+                        "Deployment failed: the worker that ran it stopped before it finished. Deploy again.",
+                        CancellationToken.None);
+                    await NotifyFinishedAsync(deploymentId, DeploymentStatus.Failed);
+                    break;
+                case DeploymentRunClaim.Started:
+                    await ExecuteAsync(deployment, preview, cancellationToken);
+                    break;
+            }
+        }
+
+        // Every terminal transition advances the queue, after the run lock is released so the next deployment of
+        // this application can take it.
+        if (claim is DeploymentRunClaim.Started or DeploymentRunClaim.Orphaned)
+            try
+            {
+                await queue.AdvanceAsync(deployment.ServerId, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is DomainException or InvalidOperationException)
+            {
+                // The recurring queue maintenance job advances the queue later.
+            }
+    }
+
+    private async Task HandleContentionAsync(Deployment deployment, int attempt, CancellationToken cancellationToken)
+    {
+        if (attempt == 0)
+            await AppendAsync(deployment.Id, "system",
+                "Another deployment of this application still holds its run lock; waiting for it to finish.",
+                cancellationToken);
+        if (attempt >= MaxContentionAttempts) return; // The queue maintenance job dispatches or fails it later.
+        try
+        {
+            backgroundJobs.Schedule<RunDeploymentJob>(
+                job => job.RunAttemptAsync(deployment.Id.Value, attempt + 1, CancellationToken.None),
+                ContentionRetryDelay);
+        }
+        catch (BackgroundJobsUnavailableException)
+        {
+            // Without job storage the deployment stays queued for the queue maintenance job.
+        }
+    }
+
+    private async Task<DeploymentStatus> ExecuteAsync(Deployment deployment, ApplicationPreview? preview,
+        CancellationToken cancellationToken)
+    {
+        DeploymentId deploymentId = deployment.Id;
+        var startedAt = Stopwatch.GetTimestamp();
+        DeploymentStatus finalStatus = DeploymentStatus.Failed;
+        using Activity? activity = VesselDiagnostics.ActivitySource.StartActivity("RunDeployment");
+        activity?.SetTag("vessel.deployment_id", deploymentId.Value);
+        activity?.SetTag("vessel.application_id", deployment.ApplicationId.Value);
+        activity?.SetTag("vessel.server_id", deployment.ServerId.Value);
+        activity?.SetTag("vessel.deployment_trigger", deployment.Trigger.ToString());
+        VesselDiagnostics.ActiveDeployments.Add(1);
+        await PublishStatusAsync(deployment, cancellationToken);
+
+        // Build steps use a token that a user cancel or a superseding deployment can trigger; once the deploy phase
+        // starts only the job token applies, so containers are never left half replaced.
+        DeploymentCancellationScope run = cancellations.Register(deploymentId, cancellationToken);
+        CancellationToken buildToken = run.Token;
         DeploymentWorkspace? workspace = null;
         try
         {
-            await StartAsync(deploymentId, cancellationToken);
-            await ThrowIfCanceledAsync(deploymentId, cancellationToken);
+            await ThrowIfCanceledAsync(deploymentId, buildToken);
 
             (AppEntity application, Server server, EnvironmentEntity environment, TeamId teamId) =
                 LoadDeploymentContext(deploymentId);
@@ -98,7 +178,7 @@ public sealed partial class DeploymentRunner(
             ContainerRuntimeTarget target = RuntimeTarget(server);
             if (preview is not null)
             {
-                if (preview.Status != ApplicationPreviewStatus.Open)
+                if (preview.Status == ApplicationPreviewStatus.Archived)
                     throw new DomainException("Preview is closed; its pull request is no longer deployed.");
                 if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose &&
                     !preview.IsSameRepository)
@@ -106,53 +186,70 @@ public sealed partial class DeploymentRunner(
                         "Docker Compose previews only deploy pull requests from the application repository; a fork's compose file is not trusted.");
             }
 
-            // Refs are validated again at start (queue-time validation may predate a settings change).
-            workspace = await workspaces.PrepareAsync(deploymentId, cancellationToken);
-            GitCheckoutRequest checkout =
-                DeploymentPlanBuilder.Checkout(application, deployment, preview, workspace.RepositoryDirectory);
+            workspace = await workspaces.PrepareAsync(deploymentId, buildToken);
+            // DEP-06: a rollback to a listed local image skips clone and build.
+            var reuseImage = await RollbackImageAvailableAsync(target, application, deployment, preview, buildToken);
+            if (reuseImage)
+            {
+                await AppendAsync(deploymentId, "system",
+                    $"Rolling back to image {deployment.RollbackImage}; clone and build are skipped.", buildToken);
+            }
+            else
+            {
+                // Refs are validated again at start (queue-time validation may predate a settings change).
+                GitCheckoutRequest checkout =
+                    DeploymentPlanBuilder.Checkout(application, deployment, preview, workspace.RepositoryDirectory);
+                await AppendAsync(deploymentId, "system", CheckoutMessage(checkout), buildToken);
+                await git.CheckoutAsync(checkout, buildToken);
+                GitCommitInfo commit = await git.GetCommitAsync(workspace.RepositoryDirectory, "HEAD", buildToken);
+                await RecordSourceAsync(deploymentId, application, preview, commit, buildToken);
+            }
 
-            await AppendAsync(deploymentId, "system", CheckoutMessage(checkout), cancellationToken);
-            await git.CheckoutAsync(checkout, cancellationToken);
-            GitCommitInfo commit = await git.GetCommitAsync(workspace.RepositoryDirectory, "HEAD", cancellationToken);
-            await RecordSourceAsync(deploymentId, application, preview, commit, cancellationToken);
-            await ThrowIfCanceledAsync(deploymentId, cancellationToken);
+            await ThrowIfCanceledAsync(deploymentId, buildToken);
 
-            DeploymentRuntimePlan plan = await CreatePlanAsync(application, environment, server, teamId, deploymentId,
-                preview, workspace, cancellationToken);
+            DeploymentRuntimePlan plan = await CreatePlanAsync(application, environment, server, teamId, deployment,
+                preview, workspace, buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, ".env", plan.EnvironmentFile, true,
-                cancellationToken);
+                buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, false,
-                cancellationToken);
+                buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/docker-compose.redacted.yml",
-                plan.RedactedComposeYaml, false, cancellationToken);
+                plan.RedactedComposeYaml, false, buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/env.redacted",
-                plan.RedactedEnvironmentFile, false, cancellationToken);
-            await RecordSnapshotAsync(deploymentId, "snapshots/docker-compose.redacted.yml", cancellationToken);
+                plan.RedactedEnvironmentFile, false, buildToken);
+            await RecordSnapshotAsync(deploymentId, "snapshots/docker-compose.redacted.yml", buildToken);
 
-            await AppendAsync(deploymentId, "system", "Ensuring deployment network exists.", cancellationToken);
+            await AppendAsync(deploymentId, "system", "Ensuring deployment network exists.", buildToken);
             await runtime.EnsureNetworkAsync(target, plan.NetworkName, Labels(deploymentId, application),
-                cancellationToken);
+                buildToken);
             // Attach the proxy before application containers start (upstream v4.4.0); proxy type None skips this.
             ProxyEnsureResult proxy =
-                await proxyLifecycle.EnsureForDeploymentAsync(server.Id, plan.NetworkName, cancellationToken);
-            await AppendAsync(deploymentId, proxy.Succeeded ? "system" : "stderr", redactor.Redact(proxy.Message),
-                cancellationToken);
-            await ThrowIfCanceledAsync(deploymentId, cancellationToken);
+                await proxyLifecycle.EnsureForDeploymentAsync(server.Id, plan.NetworkName, buildToken);
+            await AppendAsync(deploymentId, proxy.Succeeded ? "system" : "stderr", proxy.Message, buildToken);
+            await ThrowIfCanceledAsync(deploymentId, buildToken);
 
-            if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile)
+            if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile && !reuseImage)
             {
                 var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "Dockerfile");
                 // The Dockerfile is read by the runtime CLI on this host: reject symlinks/escapes from the repository.
                 workspaces.EnsureRegularFile(workspace.RepositoryDirectory, dockerfile);
-                await StreamBuildAsync(target, plan, workspace, dockerfile, deploymentId, cancellationToken);
-                await ThrowIfCanceledAsync(deploymentId, cancellationToken);
+                await StreamBuildAsync(target, plan, workspace, dockerfile, deployment, application, buildToken);
+                await ThrowIfCanceledAsync(deploymentId, buildToken);
             }
 
-            await StreamComposeAsync(target, plan, workspace, deploymentId, ["config", "--quiet"], cancellationToken);
-            await ThrowIfCanceledAsync(deploymentId, cancellationToken);
+            await StreamComposeAsync(target, plan, workspace, deploymentId, ["config", "--quiet"], buildToken);
+            await ThrowIfCanceledAsync(deploymentId, buildToken);
+
+            // DEP-05: from here on containers are replaced; the deployment is never auto-cancelled any more.
+            if (!await queue.TryStartDeployPhaseAsync(deployment, buildToken))
+                throw new DeploymentCanceledException();
+            run.Dispose();
+            await AppendAsync(deploymentId, "system", "Deploy phase started; replacing containers.", cancellationToken);
+
             await StreamComposeAsync(target, plan, workspace, deploymentId,
-                ["up", "--detach", "--remove-orphans", "--build"], cancellationToken);
-            await ThrowIfCanceledAsync(deploymentId, cancellationToken);
+                reuseImage
+                    ? ["up", "--detach", "--remove-orphans", "--no-build"]
+                    : ["up", "--detach", "--remove-orphans", "--build"], cancellationToken);
 
             var healthCheckUrl = preview is null
                 ? plan.HealthCheckUrl
@@ -169,26 +266,27 @@ public sealed partial class DeploymentRunner(
                 new AuditTarget("deployment", deploymentId.Value.ToString("D")), null,
                 new Dictionary<string, object?> { ["status"] = DeploymentStatus.Succeeded.ToString() },
                 cancellationToken);
+            if (preview is null)
+                await PruneImagesAsync(target, application, plan.ImageName, CancellationToken.None);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (run.IsCancellationRequested || buildToken.IsCancellationRequested)
         {
-            await CancelAsync(deploymentId, cancellationToken);
+            await CancelAsync(deploymentId, CancellationToken.None);
             finalStatus = DeploymentStatus.CanceledByUser;
         }
         catch (DeploymentCanceledException)
         {
-            await CancelAsync(deploymentId, cancellationToken);
+            await CancelAsync(deploymentId, CancellationToken.None);
             finalStatus = DeploymentStatus.CanceledByUser;
         }
         catch (Exception ex)
         {
-            await AppendAsync(deploymentId, "stderr", $"Deployment failed: {redactor.Redact(ex.Message)}",
-                CancellationToken.None);
-            await FailAsync(deploymentId, CancellationToken.None);
+            await FailAsync(deploymentId, $"Deployment failed: {ex.Message}", CancellationToken.None);
             finalStatus = DeploymentStatus.Failed;
         }
         finally
         {
+            run.Dispose();
             if (workspace is not null)
                 await workspaces.CleanupAsync(deploymentId, CancellationToken.None);
             activity?.SetTag("vessel.deployment_status", finalStatus.ToString());
@@ -200,6 +298,8 @@ public sealed partial class DeploymentRunner(
             VesselDiagnostics.ActiveDeployments.Add(-1);
             await NotifyFinishedAsync(deploymentId, finalStatus);
         }
+
+        return finalStatus;
     }
 
     private Task NotifyFinishedAsync(DeploymentId deploymentId, DeploymentStatus finalStatus)
@@ -225,21 +325,25 @@ public sealed partial class DeploymentRunner(
         DeploymentRuntimePlan plan,
         DeploymentWorkspace workspace,
         string dockerfile,
-        DeploymentId deploymentId,
+        Deployment deployment,
+        AppEntity application,
         CancellationToken cancellationToken)
     {
-        await AppendAsync(deploymentId, "system", "Building Docker image.", cancellationToken);
+        await AppendAsync(deployment.Id, "system", "Building Docker image.", cancellationToken);
+        Dictionary<string, string> labels = Labels(deployment.Id, application);
+        if (GitRef.IsCommitShaValue(deployment.CommitSha)) labels["vessel.commit"] = deployment.CommitSha!;
         await foreach (ProcessOutputLine line in runtime.BuildImageAsync(
                            target,
                            new DockerBuildCommand(
                                workspace.RepositoryDirectory,
                                dockerfile,
                                plan.ImageName,
-                               Labels(deploymentId, LoadApplication(deploymentId)),
+                               labels,
                                new Dictionary<string, string>(),
-                               TimeSpan.FromMinutes(30)),
+                               TimeSpan.FromMinutes(30),
+                               LogRedactor.ProcessProfile),
                            cancellationToken))
-            await AppendAsync(deploymentId, StreamName(line.Stream), line.Content, cancellationToken);
+            await AppendAsync(deployment.Id, StreamName(line.Stream), line.Content, cancellationToken);
     }
 
     private async Task StreamComposeAsync(
@@ -262,7 +366,8 @@ public sealed partial class DeploymentRunner(
                                [workspace.ComposeFilePath],
                                commandArgs,
                                workspace.EnvironmentFilePath,
-                               TimeSpan.FromMinutes(30)),
+                               TimeSpan.FromMinutes(30),
+                               LogRedactor.ProcessProfile),
                            cancellationToken))
             await AppendAsync(deploymentId, StreamName(line.Stream), line.Content, cancellationToken);
     }
@@ -287,7 +392,8 @@ public sealed partial class DeploymentRunner(
                                ["--project-name", plan.ProjectName, "--project-directory", workspace.RootDirectory,
                                    "port", plan.ServiceName, port],
                                workspace.EnvironmentFilePath,
-                               TimeSpan.FromMinutes(1)),
+                               TimeSpan.FromMinutes(1),
+                               LogRedactor.ProcessProfile),
                            cancellationToken))
             if (line.Stream == ProcessStreamKind.StandardOutput && !string.IsNullOrWhiteSpace(line.Content))
                 published = line.Content.Trim();
@@ -326,8 +432,8 @@ public sealed partial class DeploymentRunner(
                 lastError = ex;
             }
 
+            // The deploy phase already started: a cancel request no longer interrupts the deployment.
             await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
-            await ThrowIfCanceledAsync(deploymentId, cancellationToken);
         }
 
         throw new DomainException($"Health check failed before timeout. {lastError?.Message}");
@@ -338,17 +444,29 @@ public sealed partial class DeploymentRunner(
         EnvironmentEntity environment,
         Server server,
         TeamId teamId,
-        DeploymentId deploymentId,
+        Deployment deployment,
         ApplicationPreview? preview,
         DeploymentWorkspace workspace,
         CancellationToken cancellationToken)
     {
-        IReadOnlyDictionary<string, string> env =
+        DeploymentId deploymentId = deployment.Id;
+        ResolvedEnvironment resolved =
             await ResolveEnvironmentAsync(application, environment, server, teamId, deploymentId, preview,
                 cancellationToken);
+        IReadOnlyDictionary<string, string> env = resolved.Values;
+        // DEP-03/SEC-09: from here on every log line and command output is redacted with the deployment's values.
+        _logRedactor = new DeploymentLogRedactor(redactor, DeploymentLogRedactor.CreateContext(env,
+            resolved.SecretKeys, application.DeploymentSettings.RedactAllEnvValuesInLogs));
         var envFile = BuildEnvironmentFile(env);
         var redactedEnv = redactor.Redact(envFile, new RedactionContext(env.Values.ToArray()));
         DeploymentNaming naming = DeploymentPlanBuilder.Naming(application.Id, server.Id, deploymentId, preview);
+        // DEP-06: production images are tagged by commit (rollback targets); a rollback reuses its listed image.
+        if (preview is null)
+            naming = naming with
+            {
+                ImageName = deployment.RollbackImage ??
+                            DeploymentPlanBuilder.ProductionImage(application.Id, deployment.CommitSha, deploymentId)
+            };
         var port = application.RuntimeConfiguration.ExposedPort?.Value ?? DeploymentPlanBuilder.DefaultPort;
         var healthPath = application.RuntimeConfiguration.HealthCheckPath.StartsWith('/')
             ? application.RuntimeConfiguration.HealthCheckPath
@@ -440,7 +558,11 @@ public sealed partial class DeploymentRunner(
             labels));
     }
 
-    private async Task<IReadOnlyDictionary<string, string>> ResolveEnvironmentAsync(
+    private sealed record ResolvedEnvironment(
+        IReadOnlyDictionary<string, string> Values,
+        IReadOnlySet<string> SecretKeys);
+
+    private async Task<ResolvedEnvironment> ResolveEnvironmentAsync(
         AppEntity application,
         EnvironmentEntity environment,
         Server server,
@@ -474,14 +596,19 @@ public sealed partial class DeploymentRunner(
                 string.Join(", ", selection.WithheldKeys),
                 cancellationToken);
 
+        var secretKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (EnvironmentVariable variable in selection.Variables)
-            values[variable.Key.Value] = variable.ValueKind == EnvironmentVariableValueKind.Secret &&
-                                         variable.SecretReferenceId.HasValue
+        {
+            var isSecret = variable.ValueKind == EnvironmentVariableValueKind.Secret;
+            values[variable.Key.Value] = isSecret && variable.SecretReferenceId.HasValue
                 ? await secretVault.RevealForDeploymentAsync(teamId, variable.SecretReferenceId.Value,
                     cancellationToken)
                 : variable.PlainValue ?? string.Empty;
+            if (isSecret) secretKeys.Add(variable.Key.Value);
+            else secretKeys.Remove(variable.Key.Value);
+        }
 
-        return values;
+        return new ResolvedEnvironment(values, secretKeys);
     }
 
     private static bool AppliesTo(EnvironmentVariable variable, AppEntity application, EnvironmentEntity environment,
@@ -516,15 +643,6 @@ public sealed partial class DeploymentRunner(
         return value;
     }
 
-    private async Task StartAsync(DeploymentId deploymentId, CancellationToken cancellationToken)
-    {
-        Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        deployment.Start(timeProvider.GetUtcNow());
-        deployment.AddLogLine("system", "Deployment started.", timeProvider.GetUtcNow());
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await PublishStatusAsync(deployment, cancellationToken);
-    }
-
     private async Task RecordSourceAsync(
         DeploymentId deploymentId,
         AppEntity application,
@@ -533,13 +651,10 @@ public sealed partial class DeploymentRunner(
         CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        deployment.RecordSource(application.GitSource.RepositoryUrl.Value,
-            preview?.SourceBranch ?? application.GitSource.Branch, commit.Sha,
-            commit.Subject, timeProvider.GetUtcNow());
-        deployment.AddLogLine("system", $"Checked out {commit.Sha[..Math.Min(12, commit.Sha.Length)]} {commit.Subject}",
-            timeProvider.GetUtcNow());
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await PublishStatusAsync(deployment, cancellationToken);
+        await queue.TransitionAsync(deployment, (item, now) => item.RecordSource(application.GitSource.RepositoryUrl.Value,
+            preview?.SourceBranch ?? application.GitSource.Branch, commit.Sha, commit.Subject, now), cancellationToken);
+        await AppendAsync(deploymentId, "system",
+            $"Checked out {commit.Sha[..Math.Min(12, commit.Sha.Length)]} {commit.Subject}", cancellationToken);
     }
 
     /// <summary>Gives the preview its own routing record (<c>{pr}.{domain}</c>), routed to the preview alias.</summary>
@@ -588,47 +703,57 @@ public sealed partial class DeploymentRunner(
         CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        deployment.RecordConfigurationSnapshot(reference, timeProvider.GetUtcNow());
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await queue.TransitionAsync(deployment, (item, now) => item.RecordConfigurationSnapshot(reference, now),
+            cancellationToken);
     }
 
     private async Task SucceedAsync(DeploymentId deploymentId, string artifactReference,
         CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        deployment.MarkSucceeded(artifactReference, timeProvider.GetUtcNow());
-        deployment.AddLogLine("system", "Deployment completed successfully.", timeProvider.GetUtcNow());
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await PublishStatusAsync(deployment, cancellationToken);
+        await queue.TransitionAsync(deployment, (item, now) =>
+        {
+            var lateCancel = item.Status == DeploymentStatus.CancelRequested;
+            item.MarkSucceeded(artifactReference, now);
+            DeploymentLog.Append(dbContext, item, "system",
+                lateCancel
+                    ? "Deployment completed successfully. Cancellation was requested after containers started being replaced, so it was not applied."
+                    : "Deployment completed successfully.", now);
+        }, cancellationToken);
     }
 
-    private async Task FailAsync(DeploymentId deploymentId, CancellationToken cancellationToken)
+    private async Task FailAsync(DeploymentId deploymentId, string reason, CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        if (!Deployment.IsTerminal(deployment.Status))
-            deployment.MarkFailed(timeProvider.GetUtcNow());
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await PublishStatusAsync(deployment, cancellationToken);
+        var message = LogRedactor.Redact(reason);
+        await queue.TransitionAsync(deployment, (item, now) =>
+        {
+            DeploymentLog.Append(dbContext, item, "stderr", message, now);
+            if (!Deployment.IsTerminal(item.Status)) item.MarkFailed(now);
+        }, cancellationToken);
     }
 
     private async Task CancelAsync(DeploymentId deploymentId, CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        if (!Deployment.IsTerminal(deployment.Status))
-            deployment.CancelByUser(timeProvider.GetUtcNow());
-        deployment.AddLogLine("system", "Deployment canceled.", timeProvider.GetUtcNow());
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await PublishStatusAsync(deployment, cancellationToken);
+        await queue.TransitionAsync(deployment, (item, now) =>
+        {
+            if (!Deployment.IsTerminal(item.Status)) item.CancelByUser(now);
+            DeploymentLog.Append(dbContext, item, "system",
+                string.IsNullOrWhiteSpace(item.CancellationReason)
+                    ? "Deployment canceled."
+                    : $"Deployment canceled. {item.CancellationReason}", now);
+        }, cancellationToken);
     }
 
     private async Task AppendAsync(DeploymentId deploymentId, string stream, string message,
         CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        var redacted = redactor.Redact(message);
-        deployment.AddLogLine(stream, redacted, timeProvider.GetUtcNow());
+        var redacted = LogRedactor.Redact(message);
+        DeploymentLogLine line = DeploymentLog.Append(dbContext, deployment, stream, redacted,
+            timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
-        DeploymentLogLine line = deployment.LogLines.OrderBy(item => item.Sequence).Last();
         await realtime.PublishAsync(
             new RealtimeGroup(RealtimeGroupKind.Deployment, deployment.Id.Value.ToString("D")),
             new RealtimeMessage("deployment.log",
@@ -640,21 +765,73 @@ public sealed partial class DeploymentRunner(
     {
         cancellationToken.ThrowIfCancellationRequested();
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
+        // Another scope (user cancel, superseding deployment) may have changed the status.
+        await dbContext.RefreshAsync(deployment, cancellationToken);
         if (deployment.Status == DeploymentStatus.CancelRequested ||
             deployment.Status == DeploymentStatus.CanceledByUser)
             throw new DeploymentCanceledException();
+    }
+
+    /// <summary>
+    ///     A rollback reuses its image when it is a Dockerfile production rollback and the image is still present
+    ///     locally; otherwise it rebuilds the target commit (only successful production commits are allowed).
+    /// </summary>
+    private async Task<bool> RollbackImageAvailableAsync(ContainerRuntimeTarget target, AppEntity application,
+        Deployment deployment, ApplicationPreview? preview, CancellationToken cancellationToken)
+    {
+        if (!deployment.IsRollback || preview is not null || string.IsNullOrWhiteSpace(deployment.RollbackImage) ||
+            application.BuildConfiguration.BuildPack != ApplicationBuildPack.Dockerfile)
+            return false;
+        IReadOnlyList<ImageSummary> images = await runtime.ListImagesAsync(target, cancellationToken);
+        var available = images.Any(image => image.RepoTags.Contains(deployment.RollbackImage, StringComparer.Ordinal));
+        if (!available)
+            await AppendAsync(deployment.Id, "system",
+                $"Image {deployment.RollbackImage} is no longer present locally; rebuilding commit {deployment.CommitSha}.",
+                cancellationToken);
+        return available;
+    }
+
+    /// <summary>
+    ///     Keeps the images of the most recent successful production deployments (<c>ImagesToKeep</c>, Coolify
+    ///     <c>docker_images_to_keep</c>) as rollback targets and removes older images of the application. Images still
+    ///     used by a container are never forced out.
+    /// </summary>
+    private async Task PruneImagesAsync(ContainerRuntimeTarget target, AppEntity application, string currentImage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var repository = DeploymentPlanBuilder.ImageRepository(application.Id) + ":";
+            var keep = dbContext.Deployments
+                .Where(item => item.ApplicationId == application.Id && item.PreviewId == null &&
+                               item.Status == DeploymentStatus.Succeeded && item.ArtifactReference != null)
+                .OrderByDescending(item => item.FinishedAt)
+                .Select(item => item.ArtifactReference!)
+                .AsEnumerable()
+                .Distinct(StringComparer.Ordinal)
+                .Take(application.DeploymentSettings.ImagesToKeep + 1)
+                .Append(currentImage)
+                .ToHashSet(StringComparer.Ordinal);
+            IReadOnlyList<ImageSummary> images = await runtime.ListImagesAsync(target, cancellationToken);
+            string[] remove = images.SelectMany(image => image.RepoTags)
+                .Where(tag => tag.StartsWith(repository, StringComparison.Ordinal) &&
+                              !tag[repository.Length..].StartsWith("pr-", StringComparison.Ordinal) &&
+                              !keep.Contains(tag))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            foreach (var image in remove)
+                await runtime.RemoveImageAsync(target, image, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Image retention is best effort; a failure never changes the deployment result.
+        }
     }
 
     private async Task<Deployment> GetDeploymentAsync(DeploymentId deploymentId, CancellationToken cancellationToken)
     {
         return await dbContext.DeploymentRepository.GetByIdAsync(deploymentId, cancellationToken)
                ?? throw new InvalidOperationException("Deployment was not found.");
-    }
-
-    private AppEntity LoadApplication(DeploymentId deploymentId)
-    {
-        Deployment deployment = dbContext.Deployments.Single(item => item.Id == deploymentId);
-        return dbContext.Applications.Single(application => application.Id == deployment.ApplicationId);
     }
 
     private (AppEntity Application, Server Server, EnvironmentEntity Environment, TeamId TeamId) LoadDeploymentContext(

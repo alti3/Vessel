@@ -26,6 +26,16 @@ namespace Vessel.Application.Persistence;
 
 public interface IVesselDbContext : IUnitOfWork
 {
+    /// <summary>
+    ///     Re-reads a tracked entity's current database values, discarding stale tracked state. Long-running work
+    ///     (deployment runs, queue decisions) calls it before acting on state other scopes may have changed. In-memory
+    ///     contexts share instances and need no refresh.
+    /// </summary>
+    Task RefreshAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default) where TEntity : class
+    {
+        return Task.CompletedTask;
+    }
+
     IQueryable<User> Users { get; }
 
     IQueryable<Team> Teams { get; }

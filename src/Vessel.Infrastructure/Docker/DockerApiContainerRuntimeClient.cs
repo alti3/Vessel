@@ -135,6 +135,23 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         return cliFallback.RunComposeAsync(target, command, cancellationToken);
     }
 
+    public Task<bool> RemoveComposeProjectAsync(
+        ContainerRuntimeTarget target,
+        string projectName,
+        bool removeVolumes,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.RemoveComposeProjectAsync(target, projectName, removeVolumes, cancellationToken);
+    }
+
+    public Task<bool> RemoveImageAsync(
+        ContainerRuntimeTarget target,
+        string imageReference,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.RemoveImageAsync(target, imageReference, cancellationToken);
+    }
+
     private static DockerClient CreateClient(ContainerRuntimeTarget target)
     {
         Uri endpoint = target.ApiEndpoint ?? DefaultDockerEndpoint();

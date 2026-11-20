@@ -53,9 +53,16 @@ public sealed record ProcessTerminationPolicy(
     public static ProcessTerminationPolicy Default { get; } = new(TimeSpan.FromSeconds(5), true, true);
 }
 
+/// <summary>
+///     How command output is redacted: <paramref name="SecretValues" /> are always hidden, <paramref name="KnownValues" />
+///     (plain environment values) only when long enough to be matched safely. <paramref name="IsLogOutput" /> marks
+///     output persisted to logs (ANSI/control characters stripped, emails hidden).
+/// </summary>
 public sealed record ProcessRedactionProfile(
     IReadOnlyList<string> SecretValues,
-    IReadOnlyList<string> PatternNames)
+    IReadOnlyList<string> PatternNames,
+    IReadOnlyList<string>? KnownValues = null,
+    bool IsLogOutput = false)
 {
     public static ProcessRedactionProfile Empty { get; } = new([], []);
 }

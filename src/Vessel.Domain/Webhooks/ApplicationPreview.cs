@@ -116,6 +116,24 @@ public sealed class ApplicationPreview : Entity<ApplicationPreviewId>
         Touch(now);
     }
 
+    /// <summary>Stops an open preview (its containers are removed, volumes kept). A redeploy reopens it.</summary>
+    public void Stop(DateTimeOffset now)
+    {
+        if (Status == ApplicationPreviewStatus.Archived)
+            throw new DomainException("Preview is closed.");
+        Status = ApplicationPreviewStatus.Stopped;
+        Touch(now);
+    }
+
+    /// <summary>Reopens a stopped preview for a redeploy. A closed (archived) preview reopens only with its pull request.</summary>
+    public void Reopen(DateTimeOffset now)
+    {
+        if (Status == ApplicationPreviewStatus.Archived)
+            throw new DomainException("Preview is closed; it reopens when its pull request is reopened.");
+        Status = ApplicationPreviewStatus.Open;
+        Touch(now);
+    }
+
     public void Archive(DateTimeOffset now)
     {
         Status = ApplicationPreviewStatus.Archived;

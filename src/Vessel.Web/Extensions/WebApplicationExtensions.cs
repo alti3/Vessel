@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Serilog;
 using Vessel.Application.Deployments;
+using Vessel.Application.Deployments.Queue;
 using Vessel.Application.Jobs;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Proxy;
@@ -43,7 +44,13 @@ public static class WebApplicationExtensions
         {
             CertificateRecurringJobs.Register(scheduler);
             DeploymentLogRecurringJobs.Register(scheduler);
+            DeploymentQueueRecurringJobs.Register(scheduler);
             ServerHealthRecurringJobs.Register(scheduler);
+            // Deployments that were running when the previous control-plane process stopped have no worker any
+            // more: fail them and restart the queues.
+            DeploymentQueueRecurringJobs.EnqueueStartupRecovery(
+                app.Services.GetRequiredService<IBackgroundJobDispatcher>(),
+                app.Services.GetRequiredService<TimeProvider>().GetUtcNow());
         }
         catch (BackgroundJobsUnavailableException exception)
         {

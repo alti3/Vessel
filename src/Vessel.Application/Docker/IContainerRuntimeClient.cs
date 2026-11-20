@@ -49,4 +49,27 @@ public interface IContainerRuntimeClient
         ContainerRuntimeTarget target,
         ComposeCommand command,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Stops and removes the containers and project networks of one compose project (<c>compose down</c>), and its
+    ///     named volumes when <paramref name="removeVolumes" /> is set. Needs no compose file. Returns false when the
+    ///     runtime reported a failure.
+    /// </summary>
+    Task<bool> RemoveComposeProjectAsync(
+        ContainerRuntimeTarget target,
+        string projectName,
+        bool removeVolumes,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot remove compose projects.");
+    }
+
+    /// <summary>Removes one image reference (never forced: an image used by a container stays). False on failure.</summary>
+    Task<bool> RemoveImageAsync(
+        ContainerRuntimeTarget target,
+        string imageReference,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot remove images.");
+    }
 }

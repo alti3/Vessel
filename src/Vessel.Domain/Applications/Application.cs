@@ -115,6 +115,12 @@ public sealed class Application : Entity<ApplicationId>
         Touch(now);
     }
 
+    public void UpdateDeploymentSettings(DeploymentSettings deploymentSettings, DateTimeOffset now)
+    {
+        DeploymentSettings = deploymentSettings.Validated();
+        Touch(now);
+    }
+
     public void UpdateSettings(
         ResourceName name,
         Description? description,
