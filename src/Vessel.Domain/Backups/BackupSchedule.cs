@@ -5,6 +5,13 @@ namespace Vessel.Domain.Backups;
 
 public sealed class BackupSchedule : Entity<BackupScheduleId>
 {
+    /// <summary>Default per-run backup timeout (1 hour), matching upstream Coolify's database backup default.</summary>
+    public const int DefaultTimeoutSeconds = 3600;
+
+    public const int MinTimeoutSeconds = 60;
+
+    public const int MaxTimeoutSeconds = 86400;
+
     private BackupSchedule()
     {
     }
@@ -17,6 +24,7 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
         string cronExpression,
         int retentionCount,
         BackupStorageKind storageKind,
+        int timeoutSeconds,
         DateTimeOffset createdAt)
         : base(id, createdAt)
     {
@@ -26,6 +34,7 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
         CronExpression = ValidateCron(cronExpression);
         RetentionCount = ValidateRetention(retentionCount);
         StorageKind = storageKind;
+        TimeoutSeconds = ValidateTimeout(timeoutSeconds);
     }
 
     public TeamId TeamId { get; private set; }
@@ -42,6 +51,11 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
 
     public bool Enabled { get; private set; } = true;
 
+    /// <summary>
+    /// Deadline for one whole backup run (dump, compression and upload). Each step only gets the time that remains.
+    /// </summary>
+    public int TimeoutSeconds { get; private set; } = DefaultTimeoutSeconds;
+
     public DateTimeOffset? LastRunAt { get; private set; }
 
     public static BackupSchedule Create(
@@ -51,7 +65,8 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
         string cronExpression,
         int retentionCount,
         BackupStorageKind storageKind,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        int timeoutSeconds = DefaultTimeoutSeconds)
     {
         return new BackupSchedule(
             BackupScheduleId.New(),
@@ -61,7 +76,14 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
             cronExpression,
             retentionCount,
             storageKind,
+            timeoutSeconds,
             now);
+    }
+
+    public void ChangeTimeout(int timeoutSeconds, DateTimeOffset now)
+    {
+        TimeoutSeconds = ValidateTimeout(timeoutSeconds);
+        Touch(now);
     }
 
     public void Update(ResourceName name, string cronExpression, int retentionCount, BackupStorageKind storageKind,
@@ -87,6 +109,14 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
         if (value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 5)
             throw new DomainException("Backup schedule cron expression must contain at least five fields.");
         return value;
+    }
+
+    private static int ValidateTimeout(int timeoutSeconds)
+    {
+        return timeoutSeconds is >= MinTimeoutSeconds and <= MaxTimeoutSeconds
+            ? timeoutSeconds
+            : throw new DomainException(
+                $"Backup timeout must be between {MinTimeoutSeconds} and {MaxTimeoutSeconds} seconds.");
     }
 
     private static int ValidateRetention(int retentionCount)

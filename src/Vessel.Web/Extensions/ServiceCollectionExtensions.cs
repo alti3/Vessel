@@ -96,6 +96,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ServerHealthPollingService>();
         services.AddScoped<ServerHealthPollingJob>();
         services.AddScoped<ManagedDatabaseService>();
+        services.AddScoped<DatabaseRestoreService>();
         services.AddSingleton<ServiceTemplateCatalog>();
         services.AddScoped<DomainRoutingService>();
         services.AddScoped<ProxyConfigurationService>();

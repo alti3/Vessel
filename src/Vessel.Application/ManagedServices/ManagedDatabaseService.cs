@@ -36,6 +36,8 @@ public sealed class ManagedDatabaseService(
     IAuditWriter auditWriter,
     TimeProvider timeProvider)
 {
+    private static readonly TimeSpan LockLeaseMargin = TimeSpan.FromMinutes(10);
+
     public IReadOnlyList<ServiceTemplateSummary> ListTemplates()
     {
         return templates.List();
@@ -70,9 +72,8 @@ public sealed class ManagedDatabaseService(
             ?? throw new InvalidOperationException("Database was not found.");
         Server server = dbContext.Servers.Single(server => server.Id == database.ServerId);
         TeamId teamId = ResolveTeam(database.EnvironmentId);
-        var lockKey = $"database:{database.Id.Value:D}";
-        await using DistributedLockHandle? handle = await locks.TryAcquireAsync(lockKey, TimeSpan.FromHours(1),
-            TimeSpan.Zero, cancellationToken);
+        await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
+            DatabaseOperationLocks.KeyFor(database.Id), TimeSpan.FromHours(1), TimeSpan.Zero, cancellationToken);
         if (handle is null) throw new DomainException("Another database operation is already running.");
 
         try
@@ -186,7 +187,8 @@ public sealed class ManagedDatabaseService(
         DatabaseResource database =
             await GetDatabaseForTeamAsync(teamId, new DatabaseResourceId(request.DatabaseId), cancellationToken);
         var schedule = BackupSchedule.Create(teamId, database.Id, new ResourceName(request.Name),
-            request.CronExpression, request.RetentionCount, request.StorageKind, timeProvider.GetUtcNow());
+            request.CronExpression, request.RetentionCount, request.StorageKind, timeProvider.GetUtcNow(),
+            request.TimeoutSeconds ?? BackupSchedule.DefaultTimeoutSeconds);
         await dbContext.BackupScheduleRepository.AddAsync(schedule, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         recurringJobs.AddOrUpdate<RunBackupJob>(
@@ -241,37 +243,73 @@ public sealed class ManagedDatabaseService(
         BackupExecution execution =
             await dbContext.BackupExecutionRepository.GetByIdAsync(executionId, cancellationToken)
             ?? throw new InvalidOperationException("Backup execution was not found.");
+        // Retry-safe: a Hangfire retry of an execution that already ran must not dump again.
+        if (execution.Status != BackupExecutionStatus.Queued) return ToSummary(execution);
         DatabaseResource database =
             await dbContext.DatabaseResourceRepository.GetByIdAsync(execution.DatabaseResourceId, cancellationToken)
             ?? throw new InvalidOperationException("Database was not found.");
+        TimeSpan timeout = ResolveBackupTimeout(execution);
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
-            $"backup:{database.Id.Value:D}", TimeSpan.FromHours(2), TimeSpan.Zero, cancellationToken);
-        if (handle is null) throw new DomainException("Another backup or restore is running for this database.");
+            DatabaseOperationLocks.KeyFor(database.Id), timeout + LockLeaseMargin, TimeSpan.Zero, cancellationToken);
+        if (handle is null)
+        {
+            execution.Fail("Backup skipped: another lifecycle, backup or restore operation is running for this " +
+                           "database.", timeProvider.GetUtcNow());
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            return ToSummary(execution);
+        }
 
         execution.Start(timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
         try
         {
+            Server server = dbContext.Servers.Single(item => item.Id == database.ServerId);
             var credentials = await secretVault.RevealForDeploymentAsync(execution.TeamId,
-                database.CredentialsReferenceId, cancellationToken);
-            BackupArtifact artifact = await backupProvider.BackupAsync(database, credentials, cancellationToken);
-            await objectStorage.PutAsync(new ObjectStoragePutRequest(
-                new ObjectStorageKey(artifact.Bucket, artifact.Key),
-                artifact.Content,
-                "application/octet-stream",
-                new Dictionary<string, string>
-                {
-                    ["vessel.databaseId"] = database.Id.Value.ToString("D"),
-                    ["vessel.backupExecutionId"] = execution.Id.Value.ToString("D")
-                }), cancellationToken);
+                database.CredentialsReferenceId, deadline.Token);
+            await using BackupArtifactFile artifact = await backupProvider.BackupAsync(
+                new DatabaseBackupRequest(database, ManagedRuntimeTargets.For(server), credentials, execution.Id),
+                deadline.Token);
+            await using (Stream content = artifact.OpenRead())
+            {
+                await objectStorage.PutAsync(new ObjectStoragePutRequest(
+                    new ObjectStorageKey(artifact.Bucket, artifact.Key),
+                    content,
+                    artifact.ContentType,
+                    new Dictionary<string, string>
+                    {
+                        ["vessel.databaseId"] = database.Id.Value.ToString("D"),
+                        ["vessel.backupExecutionId"] = execution.Id.Value.ToString("D"),
+                        ["vessel.format"] = artifact.Format,
+                        ["vessel.sha256"] = artifact.Sha256
+                    },
+                    artifact.SizeBytes), deadline.Token);
+            }
+
             execution.Succeed(artifact.Bucket, artifact.Key, artifact.SizeBytes, artifact.Sha256,
                 timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(cancellationToken);
             await PruneRetentionAsync(execution.TeamId, database.Id, cancellationToken);
             await auditWriter.RecordAsync(execution.TeamId, null, AuditActions.BackupCompleted,
                 new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
-                new Dictionary<string, object?> { ["databaseId"] = database.Id.Value.ToString("D") },
+                new Dictionary<string, object?>
+                {
+                    ["databaseId"] = database.Id.Value.ToString("D"),
+                    ["sizeBytes"] = artifact.SizeBytes,
+                    ["format"] = artifact.Format
+                },
                 cancellationToken);
+            return ToSummary(execution);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested &&
+                                                 !cancellationToken.IsCancellationRequested)
+        {
+            // A timed-out run is a recorded failure, not an exception: retrying it immediately would only time
+            // out again while holding the database lock.
+            execution.Fail($"Backup exceeded its timeout of {timeout.TotalSeconds:0} seconds and was stopped. " +
+                           "Increase the schedule timeout for large databases.", timeProvider.GetUtcNow());
+            await dbContext.SaveChangesAsync(CancellationToken.None);
             return ToSummary(execution);
         }
         catch (Exception ex)
@@ -282,81 +320,13 @@ public sealed class ManagedDatabaseService(
         }
     }
 
-    public async Task<RestoreValidationResult> ValidateRestoreAsync(
-        UserId actorUserId,
-        TeamId teamId,
-        BackupExecutionId backupExecutionId,
-        DatabaseResourceId targetDatabaseId,
-        bool dryRun,
-        CancellationToken cancellationToken = default)
+    private TimeSpan ResolveBackupTimeout(BackupExecution execution)
     {
-        Require(actorUserId, teamId, VesselPermissions.ProjectsWrite);
-        BackupExecution execution = await GetBackupForTeamAsync(teamId, backupExecutionId, cancellationToken);
-        DatabaseResource target = await GetDatabaseForTeamAsync(teamId, targetDatabaseId, cancellationToken);
-        if (execution.Status is not (BackupExecutionStatus.Succeeded or BackupExecutionStatus.RestoreValidated))
-            throw new DomainException("Only successful backup artifacts can be restored.");
-        if (execution.ArtifactBucket is null || execution.ArtifactKey is null)
-            throw new DomainException("Backup artifact location is missing.");
-        if (target.LifecycleState is DatabaseLifecycleState.Deleting or DatabaseLifecycleState.Deleted)
-            throw new DomainException("Deleted databases cannot be restore targets.");
-        if (!dryRun)
-        {
-            if (execution.Status == BackupExecutionStatus.Succeeded)
-                execution.MarkRestoreValidated(timeProvider.GetUtcNow());
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-
-        await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.RestoreValidated,
-            new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
-            new Dictionary<string, object?>
-            { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
-            cancellationToken);
-        return new RestoreValidationResult(execution.Id.Value, target.Id.Value, dryRun,
-            dryRun
-                ? "Dry run will validate artifact readability without overwriting target data."
-                : $"Restore will overwrite data in database '{target.Name.Value}'.");
-    }
-
-    public async Task<BackupExecutionSummary> RestoreAsync(
-        UserId actorUserId,
-        TeamId teamId,
-        BackupExecutionId backupExecutionId,
-        DatabaseResourceId targetDatabaseId,
-        bool dryRun,
-        string confirmation,
-        CancellationToken cancellationToken = default)
-    {
-        if (!dryRun && !string.Equals(confirmation, "RESTORE", StringComparison.Ordinal))
-            throw new DomainException("Restore confirmation must be RESTORE.");
-        await ValidateRestoreAsync(actorUserId, teamId, backupExecutionId, targetDatabaseId, dryRun, cancellationToken);
-        BackupExecution execution = await GetBackupForTeamAsync(teamId, backupExecutionId, cancellationToken);
-        DatabaseResource target = await GetDatabaseForTeamAsync(teamId, targetDatabaseId, cancellationToken);
-        await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
-            $"backup:{target.Id.Value:D}", TimeSpan.FromHours(2), TimeSpan.Zero, cancellationToken);
-        if (handle is null) throw new DomainException("Another backup or restore is running for this database.");
-        try
-        {
-            await using Stream artifact = await objectStorage.OpenReadAsync(
-                new ObjectStorageKey(execution.ArtifactBucket!, execution.ArtifactKey!), cancellationToken);
-            var credentials = await secretVault.RevealForDeploymentAsync(teamId, target.CredentialsReferenceId,
-                cancellationToken);
-            var output = await backupProvider.RestoreAsync(target, credentials, artifact, dryRun, cancellationToken);
-            _ = redactor.Redact(output);
-            if (!dryRun) execution.MarkRestoreSucceeded(timeProvider.GetUtcNow());
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.RestoreCompleted,
-                new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
-                new Dictionary<string, object?>
-                { ["targetDatabaseId"] = target.Id.Value.ToString("D"), ["dryRun"] = dryRun },
-                cancellationToken);
-            return ToSummary(execution);
-        }
-        catch (Exception ex)
-        {
-            execution.MarkRestoreFailed(redactor.Redact(ex.Message), timeProvider.GetUtcNow());
-            await dbContext.SaveChangesAsync(CancellationToken.None);
-            throw;
-        }
+        var seconds = execution.ScheduleId is { } scheduleId
+            ? dbContext.BackupSchedules.Where(schedule => schedule.Id == scheduleId)
+                .Select(schedule => (int?)schedule.TimeoutSeconds).SingleOrDefault()
+            : null;
+        return TimeSpan.FromSeconds(seconds ?? BackupSchedule.DefaultTimeoutSeconds);
     }
 
     private async Task StartDatabaseAsync(DatabaseResource database, Server server, CancellationToken cancellationToken)
@@ -393,11 +363,7 @@ public sealed class ManagedDatabaseService(
     private async Task RunComposeAsync(Server server, ManagedServiceWorkspace workspace, string projectName,
         IReadOnlyList<string> args, CancellationToken cancellationToken)
     {
-        if (server.ConnectionType == ServerConnectionType.Ssh)
-            throw new DomainException("Managed services currently support local runtime targets.");
-        var target = new ContainerRuntimeTarget(server.Runtime == ContainerRuntimeKind.Podman
-            ? ContainerRuntimeProvider.Podman
-            : ContainerRuntimeProvider.Docker);
+        ContainerRuntimeTarget target = ManagedRuntimeTargets.For(server);
         var commandArgs = new List<string>
             { "--project-name", projectName, "--project-directory", workspace.RootDirectory };
         commandArgs.AddRange(args);
@@ -505,17 +471,6 @@ public sealed class ManagedDatabaseService(
         return database;
     }
 
-    private async Task<BackupExecution> GetBackupForTeamAsync(TeamId teamId, BackupExecutionId executionId,
-        CancellationToken cancellationToken)
-    {
-        BackupExecution execution =
-            await dbContext.BackupExecutionRepository.GetByIdAsync(executionId, cancellationToken)
-            ?? throw new InvalidOperationException("Backup execution was not found.");
-        if (execution.TeamId != teamId)
-            throw new UnauthorizedAccessException("Backup is outside the active team.");
-        return execution;
-    }
-
     private TeamId ResolveTeam(EnvironmentId environmentId)
     {
         ProjectId projectId = dbContext.Environments.Where(environment => environment.Id == environmentId)
@@ -573,14 +528,14 @@ public sealed class ManagedDatabaseService(
     {
         return new BackupScheduleSummary(schedule.Id.Value, schedule.DatabaseResourceId.Value, schedule.Name.Value,
             schedule.CronExpression, schedule.RetentionCount, schedule.StorageKind, schedule.Enabled,
-            schedule.LastRunAt);
+            schedule.LastRunAt, schedule.TimeoutSeconds);
     }
 
-    private static BackupExecutionSummary ToSummary(BackupExecution execution)
+    internal static BackupExecutionSummary ToSummary(BackupExecution execution)
     {
         return new BackupExecutionSummary(execution.Id.Value, execution.DatabaseResourceId.Value,
             execution.ScheduleId?.Value, execution.Status, execution.StorageKind, execution.ArtifactBucket,
-            execution.ArtifactKey, execution.SizeBytes, execution.Protected, execution.CreatedAt,
+            execution.ArtifactKey, execution.SizeBytes, execution.ChecksumSha256, execution.Protected, execution.CreatedAt,
             execution.FinishedAt, execution.FailureReason, execution.LastRestoreFailedAt,
             execution.LastRestoreFailureReason);
     }

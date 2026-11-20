@@ -9,7 +9,18 @@ public enum ContainerRuntimeProvider
 public sealed record ContainerRuntimeTarget(
     ContainerRuntimeProvider Provider,
     Uri? ApiEndpoint = null,
-    string? CliExecutable = null);
+    string? CliExecutable = null)
+{
+    /// <summary>
+    /// The runtime CLI used for this target: an explicit <see cref="CliExecutable" />, otherwise the provider's
+    /// default binary (<c>docker</c> or <c>podman</c>).
+    /// </summary>
+    public string ResolveCliExecutable()
+    {
+        if (!string.IsNullOrWhiteSpace(CliExecutable)) return CliExecutable;
+        return Provider == ContainerRuntimeProvider.Podman ? "podman" : "docker";
+    }
+}
 
 public sealed record ContainerRuntimeInfo(
     ContainerRuntimeProvider Provider,

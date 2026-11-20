@@ -391,3 +391,16 @@ public readonly record struct TeamInvitationId(Guid Value) : IStronglyTypedId
         return Value.ToString("D");
     }
 }
+
+public readonly record struct DatabaseRestoreId(Guid Value) : IStronglyTypedId
+{
+    public static DatabaseRestoreId New()
+    {
+        return new DatabaseRestoreId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}

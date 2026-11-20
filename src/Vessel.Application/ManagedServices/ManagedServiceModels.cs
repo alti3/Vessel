@@ -54,7 +54,8 @@ public sealed record CreateBackupScheduleRequest(
     string Name,
     string CronExpression,
     int RetentionCount,
-    BackupStorageKind StorageKind);
+    BackupStorageKind StorageKind,
+    int? TimeoutSeconds = null);
 
 public sealed record BackupScheduleSummary(
     Guid Id,
@@ -64,7 +65,8 @@ public sealed record BackupScheduleSummary(
     int RetentionCount,
     BackupStorageKind StorageKind,
     bool Enabled,
-    DateTimeOffset? LastRunAt);
+    DateTimeOffset? LastRunAt,
+    int TimeoutSeconds);
 
 public sealed record BackupExecutionSummary(
     Guid Id,
@@ -75,6 +77,7 @@ public sealed record BackupExecutionSummary(
     string? ArtifactBucket,
     string? ArtifactKey,
     long? SizeBytes,
+    string? ChecksumSha256,
     bool Protected,
     DateTimeOffset CreatedAt,
     DateTimeOffset? FinishedAt,
@@ -101,10 +104,3 @@ public sealed record ServiceProvisioningPlan(
     string ServiceName,
     string ComposeYaml,
     IReadOnlyDictionary<string, string> SecretValues);
-
-public sealed record BackupArtifact(
-    string Bucket,
-    string Key,
-    long SizeBytes,
-    string Sha256,
-    Stream Content);

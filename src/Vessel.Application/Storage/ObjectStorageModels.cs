@@ -6,7 +6,8 @@ public sealed record ObjectStoragePutRequest(
     ObjectStorageKey Location,
     Stream Content,
     string? ContentType = null,
-    IReadOnlyDictionary<string, string>? Metadata = null);
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    long? ContentLength = null);
 
 public sealed record ObjectStorageObject(
     ObjectStorageKey Location,
