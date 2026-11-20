@@ -12,14 +12,17 @@ namespace Vessel.Application.Auth;
 public sealed class VesselTeamService
 {
     private readonly IAuditWriter _auditWriter;
+    private readonly AuthEmailService? _authEmails;
     private readonly ITokenGenerator _tokenGenerator;
     private readonly IVesselDbContext _unitOfWork;
 
     public VesselTeamService(
         IVesselDbContext unitOfWork,
         ITokenGenerator tokenGenerator,
-        IAuditWriter auditWriter)
+        IAuditWriter auditWriter,
+        AuthEmailService? authEmails = null)
     {
+        _authEmails = authEmails;
         _unitOfWork = unitOfWork;
         _tokenGenerator = tokenGenerator;
         _auditWriter = auditWriter;
@@ -73,8 +76,16 @@ public sealed class VesselTeamService
             },
             cancellationToken);
 
-        return new TeamInvitationResult(invitation.Id, $"{invitation.Id.Value:N}|{plainTextToken}",
-            invitation.ExpiresAt);
+        var presentedToken = $"{invitation.Id.Value:N}|{plainTextToken}";
+        if (_authEmails is not null)
+        {
+            // IAM-10: send the invitation link through the instance mailer (link from the configured instance URL).
+            Team? team = await _unitOfWork.TeamRepository.GetByIdAsync(teamId, cancellationToken);
+            _authEmails.QueueInvitation(invitation.Email.Value, team?.Name.Value ?? "a team", presentedToken,
+                invitation.ExpiresAt);
+        }
+
+        return new TeamInvitationResult(invitation.Id, presentedToken, invitation.ExpiresAt);
     }
 
     public async Task<bool> AcceptInvitationAsync(

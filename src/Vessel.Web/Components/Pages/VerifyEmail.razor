@@ -1,0 +1,40 @@
+@page "/verify-email"
+@attribute [AllowAnonymous]
+@layout AuthLayout
+
+<PageTitle>Verify email | Vessel</PageTitle>
+
+<div class="auth-shell">
+    <section class="auth-panel">
+        <div class="brand brand-auth">
+            <span class="brand-mark">V</span>
+            <div><strong>Vessel</strong><span>Email verification</span></div>
+        </div>
+        <h1>Verify your email address</h1>
+        @if (Status == "verified")
+        {
+            <div class="form-alert">Your email address is verified.</div>
+        }
+        else if (Status == "invalid")
+        {
+            <div class="form-alert">The verification link is invalid or expired. Request a new one from your profile.</div>
+        }
+        else if (!string.IsNullOrWhiteSpace(Token))
+        {
+            @* Confirmation needs a click (POST), so mail scanners that open links cannot redeem the token. *@
+            <form class="form-stack" method="post" action="/auth/verify-email">
+                <input type="hidden" name="Token" value="@Token"/>
+                <button class="button button-primary button-full" type="submit">Confirm email address</button>
+            </form>
+        }
+        <div class="auth-links"><a href="/login">Back to login</a></div>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "token")]
+    public string? Token { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? Status { get; set; }
+}

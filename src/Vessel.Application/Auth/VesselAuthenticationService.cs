@@ -15,6 +15,7 @@ namespace Vessel.Application.Auth;
 public sealed class VesselAuthenticationService
 {
     private readonly IAuditWriter _auditWriter;
+    private readonly AuthEmailService? _authEmails;
     private readonly AuthOptions _options;
     private readonly IPasswordHasher _passwordHasher;
     private readonly ITokenGenerator _tokenGenerator;
@@ -29,8 +30,10 @@ public sealed class VesselAuthenticationService
         TotpService totpService,
         IAuditWriter auditWriter,
         IOptions<AuthOptions> options,
-        ISecretCipher secretCipher)
+        ISecretCipher secretCipher,
+        AuthEmailService? authEmails = null)
     {
+        _authEmails = authEmails;
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _tokenGenerator = tokenGenerator;
@@ -73,6 +76,9 @@ public sealed class VesselAuthenticationService
             correlationId,
             new Dictionary<string, object?> { ["email"] = user.Email.Value },
             cancellationToken);
+
+        // IAM-10: verification mail when instance email is configured (the first user verifies later from Profile).
+        if (!isFirstUser) _authEmails?.QueueEmailVerification(user);
 
         return new AuthenticatedUser(user.Id, team.Id, user.Name.Value, user.Email.Value, false);
     }
@@ -154,12 +160,13 @@ public sealed class VesselAuthenticationService
         if (user is not null)
         {
             var token = _tokenGenerator.GenerateUrlSafeToken();
-            user.StartPasswordReset(
-                TokenHashing.Sha256(token),
-                now.AddMinutes(Math.Max(5, _options.PasswordResetTokenMinutes)),
-                now);
+            DateTimeOffset expiresAt = now.AddMinutes(Math.Max(5, _options.PasswordResetTokenMinutes));
+            user.StartPasswordReset(TokenHashing.Sha256(token), expiresAt, now);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            // IAM-10: deliver the token by email (link from the configured instance URL). The response stays the
+            // same whether or not the account exists or mail is configured.
+            _authEmails?.QueuePasswordReset(user, token, expiresAt);
         }
 
         await _auditWriter.RecordAsync(

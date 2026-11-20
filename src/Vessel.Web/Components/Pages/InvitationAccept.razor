@@ -1,0 +1,32 @@
+@page "/invitations/accept"
+@attribute [Authorize]
+
+<PageTitle>Team invitation | Vessel</PageTitle>
+
+<section class="page-header">
+    <div>
+        <h1>Team invitation</h1>
+        <p>Join the team you were invited to. The invitation must match the email address of your account.</p>
+    </div>
+</section>
+
+@if (Status == "invalid")
+{
+    <div class="form-alert">The invitation is invalid, expired, already used, or for another email address.</div>
+}
+else if (!string.IsNullOrWhiteSpace(Token))
+{
+    @* The emailed link only opens this page; joining needs an explicit confirmation (POST). *@
+    <form class="form-stack" method="post" action="/teams/invitations/accept">
+        <input type="hidden" name="Token" value="@Token"/>
+        <button class="button button-primary" type="submit">Accept invitation</button>
+    </form>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "token")]
+    public string? Token { get; set; }
+
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? Status { get; set; }
+}

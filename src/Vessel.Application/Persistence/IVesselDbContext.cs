@@ -84,6 +84,10 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts { get; }
 
+    /// <summary>The singleton instance email settings row (NTF-06); empty until an administrator saves it.</summary>
+    IQueryable<InstanceEmailSettings> InstanceEmailSettings =>
+        Enumerable.Empty<InstanceEmailSettings>().AsQueryable();
+
     IQueryable<AuditLog> AuditLogs { get; }
 
     IQueryable<SettingEntry> Settings { get; }
@@ -154,6 +158,9 @@ public interface IVesselDbContext : IUnitOfWork
 
     IRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId> NotificationDeliveryAttemptRepository =>
         throw new InvalidOperationException("Notification delivery attempt persistence is not available.");
+
+    IRepository<InstanceEmailSettings, InstanceEmailSettingsId> InstanceEmailSettingsRepository =>
+        throw new InvalidOperationException("Instance email settings persistence is not available.");
 
     IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 

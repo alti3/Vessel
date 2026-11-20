@@ -75,4 +75,8 @@ public static class AuditActions
     public const string DeploymentLogsPruned = "deployment.logs_pruned";
     public const string NotificationTargetConfigured = "notification.target_configured";
     public const string NotificationTargetTested = "notification.target_tested";
+    public const string NotificationTargetAutoDisabled = "notification.target_auto_disabled";
+    public const string InstanceEmailSettingsUpdated = "settings.email_updated";
+    public const string InstanceEmailTestSent = "settings.email_test_sent";
+    public const string EmailVerified = "auth.email_verified";
 }
