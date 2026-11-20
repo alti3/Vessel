@@ -1,6 +1,7 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Docker;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
@@ -18,7 +19,8 @@ public sealed class ServerHealthPollingService(
     IProxyStatusProbe proxyStatus,
     IRealtimeNotifier realtime,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
 {
     public async Task<IReadOnlyList<ServerHealthPollingResult>> PollAllAsync(
         CancellationToken cancellationToken = default)
@@ -43,8 +45,8 @@ public sealed class ServerHealthPollingService(
         ServerId serverId,
         CancellationToken cancellationToken = default)
     {
-        if (!authorizationService.HasPermission(actorUserId, teamId, VesselPermissions.ServersWrite)
-            || !authorizationService.CanAccessServer(actorUserId, serverId))
+        if (!authorizationService.IsAuthorized(actorUserId, teamId, ResourceRef.Server(serverId),
+                VesselPermissions.ServersWrite))
             throw new UnauthorizedAccessException("The current user is not authorized to poll this server.");
 
         return await PollCoreAsync(serverId, actorUserId, cancellationToken);
@@ -94,6 +96,7 @@ public sealed class ServerHealthPollingService(
                 (certificate, _) => certificate)
             .Any(certificate => certificate.Status != CertificateStatus.Issued);
 
+        ServerStatus previousStatus = server.Status;
         server.ChangeStatus(nextStatus, now);
         ServerStatusSnapshot snapshot = ServerStatusSnapshot.Create(
             server.Id,
@@ -137,7 +140,26 @@ public sealed class ServerHealthPollingService(
                     now)),
             cancellationToken);
 
+        // Notify on reachability transitions only, never on every poll, so a down server raises one alert.
+        if (IsReachabilityTransition(previousStatus, nextStatus))
+            await notifications.PublishAsync(server.TeamId,
+                OperationalNotifications.ServerReachabilityChanged(server.Id.Value, server.Name.Value,
+                    nextStatus == ServerStatus.Reachable),
+                CancellationToken.None);
+
         return new ServerHealthPollingResult(server.Id.Value, nextStatus, runningContainers, runtimeReachable);
+    }
+
+    private static bool IsReachabilityTransition(ServerStatus previous, ServerStatus next)
+    {
+        return next switch
+        {
+            // Became unreachable from any monitored state (a brand-new server failing its first poll included).
+            ServerStatus.Unreachable => previous is not (ServerStatus.Unreachable or ServerStatus.Disabled),
+            // Recovered: only announce when we previously announced it was down.
+            ServerStatus.Reachable => previous == ServerStatus.Unreachable,
+            _ => false
+        };
     }
 
     private static ContainerRuntimeTarget RuntimeTarget(Server server)

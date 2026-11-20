@@ -7,6 +7,13 @@ public static class VesselDiagnostics
 {
     public const string InstrumentationName = "Vessel";
 
+    /// <summary>
+    ///     Set to <c>true</c> on an activity whose child HTTP client spans carry secrets in the URL path (for example
+    ///     chat webhook URLs or bot tokens). The telemetry pipeline reduces <c>url.full</c> on those spans to
+    ///     scheme, host, and port.
+    /// </summary>
+    public const string RedactChildHttpUrlTag = "vessel.redact_child_http_url";
+
     public static readonly ActivitySource ActivitySource = new(InstrumentationName);
     public static readonly Meter Meter = new(InstrumentationName);
 

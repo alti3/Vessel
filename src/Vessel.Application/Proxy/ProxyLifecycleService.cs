@@ -488,10 +488,7 @@ public sealed class ProxyLifecycleService(
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, permission))
-            throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
     }
 
     private static ServerProxyType? ParseProxyType(string? value)

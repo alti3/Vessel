@@ -27,14 +27,20 @@ public sealed class TraefikProxyProvider : IProxyProvider
 
     public IReadOnlyList<ProxyRouteRejection> ValidateRoutes(IReadOnlyList<ProxyRoute> routes)
     {
+        // A host claimed by more than one resource is rejected for every claimant: picking a winner would let a
+        // newly configured resource hijack traffic from an existing one. Save-time conflict checks prevent this case.
+        var duplicatedHosts = routes
+            .GroupBy(route => route.Host, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rejections = new List<ProxyRouteRejection>();
-        var seenHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (ProxyRoute route in routes.OrderBy(route => route.Host, StringComparer.OrdinalIgnoreCase)
                      .ThenBy(route => route.ApplicationId.Value))
         {
-            var reason = RouteError(route, routes);
-            if (reason is null && !seenHosts.Add(route.Host))
-                reason = $"Domain host '{route.Host}' is configured by more than one resource on this server.";
+            var reason = duplicatedHosts.Contains(route.Host)
+                ? $"Domain host '{route.Host}' is configured by more than one resource on this server."
+                : RouteError(route, routes);
             if (reason is not null)
                 rejections.Add(new ProxyRouteRejection(route, reason));
         }

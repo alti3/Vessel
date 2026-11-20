@@ -6,9 +6,11 @@ using Vessel.Application.Deployments;
 using Vessel.Application.Docker;
 using Vessel.Application.Jobs;
 using Vessel.Application.Monitoring;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
+using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Terminals;
 using Vessel.Domain;
@@ -181,7 +183,8 @@ public sealed class Phase12OperationalTests
             proxyStatus,
             realtime,
             new TestAuditWriter(),
-            TimeProvider.System);
+            TimeProvider.System,
+            new RecordingNotificationEventPublisher());
 
         ServerHealthPollingResult result =
             await service.PollAsync(scenario.Server.Id, TestContext.Current.CancellationToken);
@@ -205,6 +208,133 @@ public sealed class Phase12OperationalTests
         {
             Calls++;
             return Task.FromResult(Healthy);
+        }
+    }
+
+    [Fact]
+    public async Task ServerHealthPolling_NotifiesOnlyOnReachabilityTransitions()
+    {
+        Scenario scenario = Scenario.Create();
+        var runtime = new TestContainerRuntime();
+        var notifications = new RecordingNotificationEventPublisher();
+        var service = new ServerHealthPollingService(
+            scenario.Db,
+            new VesselAuthorizationService(scenario.Db),
+            runtime,
+            new TestProxyStatusProbe(),
+            new TestRealtimeNotifier(),
+            new TestAuditWriter(),
+            TimeProvider.System,
+            notifications);
+        CancellationToken token = TestContext.Current.CancellationToken;
+
+        await service.PollAsync(scenario.Server.Id, token); // Unknown -> Reachable: no alert.
+        Assert.Empty(notifications.Published);
+
+        runtime.Fail = true;
+        await service.PollAsync(scenario.Server.Id, token); // Reachable -> Unreachable: alert.
+        await service.PollAsync(scenario.Server.Id, token); // still Unreachable: de-duplicated.
+        TeamNotification down = Assert.Single(notifications.Published);
+        Assert.Equal(NotificationEventTypes.ServerUnreachable, down.Notification.EventType);
+        Assert.Equal(scenario.Team.Id, down.TeamId);
+        Assert.Equal(NotificationSeverity.Critical, down.Notification.Severity);
+
+        runtime.Fail = false;
+        await service.PollAsync(scenario.Server.Id, token); // Unreachable -> Reachable: recovery alert.
+        await service.PollAsync(scenario.Server.Id, token);
+        Assert.Equal(2, notifications.Published.Count);
+        Assert.Equal(NotificationEventTypes.ServerReachable, notifications.Published[1].Notification.EventType);
+    }
+
+    [Fact]
+    public async Task DeploymentRunnerNotifiesFailedDeploymentAfterTerminalState()
+    {
+        Scenario scenario = Scenario.Create();
+        scenario.Server.ChangeStatus(ServerStatus.Unreachable, scenario.Now);
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            "0123456789abcdef0123", scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+        var notifications = new RecordingNotificationEventPublisher();
+        DeploymentRunner runner = CreateRunner(scenario, new InMemoryDistributedLockManager(TimeProvider.System),
+            notifications);
+
+        await runner.RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DeploymentStatus.Failed, deployment.Status);
+        TeamNotification notification = Assert.Single(notifications.Published);
+        Assert.Equal(scenario.Team.Id, notification.TeamId);
+        Assert.Equal(NotificationEventTypes.DeploymentFailed, notification.Notification.EventType);
+        Assert.Equal(deployment.Id.Value.ToString("D"), notification.Notification.TargetId);
+        Assert.Contains("app", notification.Notification.Title, StringComparison.Ordinal);
+        Assert.DoesNotContain("unreachable", notification.Notification.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeploymentRunnerSurvivesNotificationBuildFailure()
+    {
+        Scenario scenario = Scenario.Create();
+        scenario.Server.ChangeStatus(ServerStatus.Unreachable, scenario.Now);
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            null, scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+
+        // A publisher that swallows builder failures (the production contract) must not affect the runner.
+        await CreateRunner(scenario, new InMemoryDistributedLockManager(TimeProvider.System),
+                new SwallowingPublisher())
+            .RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DeploymentStatus.Failed, deployment.Status);
+    }
+
+    private static DeploymentRunner CreateRunner(Scenario scenario, IDistributedLockManager locks,
+        INotificationEventPublisher notifications)
+    {
+        var authorization = new VesselAuthorizationService(scenario.Db);
+        var proxyLifecycle = new ProxyLifecycleService(scenario.Db, authorization, locks, [],
+            ThrowingProxy.Create<IProxyContainerRuntime>(), ThrowingProxy.Create<IProxyRuntimeRenderer>(),
+            new TestAuditWriter(), new TestRedactor(), TimeProvider.System);
+        var proxy = new Vessel.Application.Proxy.ProxyConfigurationService(scenario.Db, authorization,
+            ThrowingProxy.Create<Vessel.Application.Proxy.IProxyProvider>(), proxyLifecycle, locks,
+            new TestAuditWriter(), new TestRedactor(), TimeProvider.System, notifications);
+        return new DeploymentRunner(scenario.Db, ThrowingProxy.Create<Vessel.Application.Git.IGitClient>(),
+            new TestContainerRuntime(), ThrowingProxy.Create<IDeploymentWorkspaceManager>(), locks,
+            ThrowingProxy.Create<ISecretVault>(), new TestRedactor(), new TestRealtimeNotifier(), proxy,
+            proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications);
+    }
+
+    private sealed class SwallowingPublisher : INotificationEventPublisher
+    {
+        public Task PublishAsync(TeamId teamId, RaiseNotificationRequest notification,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task PublishAsync(Func<TeamNotification?> build, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                _ = build();
+            }
+            catch (InvalidOperationException)
+            {
+                // Mirrors BackgroundNotificationEventPublisher: logged and swallowed.
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    public class ThrowingProxy : System.Reflection.DispatchProxy
+    {
+        public static T Create<T>() where T : class
+        {
+            return Create<T, ThrowingProxy>();
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+        {
+            throw new NotSupportedException($"{targetMethod?.Name} is not expected in this test.");
         }
     }
 
@@ -425,8 +555,12 @@ public sealed class Phase12OperationalTests
 
     private sealed class TestContainerRuntime : IContainerRuntimeClient
     {
+        public bool Fail { get; set; }
+
         public Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new ContainerRuntimeInfo(ContainerRuntimeProvider.Docker, "1", "1", "linux", "x64"));
+            Fail
+                ? throw new InvalidOperationException("runtime unavailable")
+                : Task.FromResult(new ContainerRuntimeInfo(ContainerRuntimeProvider.Docker, "1", "1", "linux", "x64"));
         public Task<IReadOnlyList<ContainerSummary>> ListContainersAsync(ContainerRuntimeTarget target, bool all, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ContainerSummary>>([new ContainerSummary("1", ["app"], "image", "running", "Up", new Dictionary<string, string>())]);
         public Task<string> InspectContainerAsync(ContainerRuntimeTarget target, string containerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

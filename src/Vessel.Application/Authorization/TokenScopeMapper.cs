@@ -31,6 +31,7 @@ public static class TokenScopeMapper
             permissions.Add(VesselPermissions.ServersRead);
             permissions.Add(VesselPermissions.ApplicationsRead);
             permissions.Add(VesselPermissions.DeploymentsReadLogs);
+            permissions.Add(VesselPermissions.NotificationsRead);
         }
 
         if (normalized.Contains(ReadSensitive)) permissions.Add(VesselPermissions.SecretsRead);
@@ -44,6 +45,7 @@ public static class TokenScopeMapper
             permissions.Add(VesselPermissions.DeploymentsCancel);
             permissions.Add(VesselPermissions.SettingsManage);
             permissions.Add(VesselPermissions.TeamsManage);
+            permissions.Add(VesselPermissions.NotificationsWrite);
         }
 
         if (normalized.Contains(WriteSensitive)) permissions.Add(VesselPermissions.SecretsWrite);

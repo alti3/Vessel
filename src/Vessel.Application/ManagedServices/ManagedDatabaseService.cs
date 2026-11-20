@@ -4,6 +4,7 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Docker;
 using Vessel.Application.Jobs;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Redis;
@@ -34,7 +35,8 @@ public sealed class ManagedDatabaseService(
     IObjectStorage objectStorage,
     ServiceTemplateCatalog templates,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
 {
     public IReadOnlyList<ServiceTemplateSummary> ListTemplates()
     {
@@ -272,12 +274,18 @@ public sealed class ManagedDatabaseService(
                 new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
                 new Dictionary<string, object?> { ["databaseId"] = database.Id.Value.ToString("D") },
                 cancellationToken);
+            await notifications.PublishAsync(execution.TeamId,
+                OperationalNotifications.BackupSucceeded(execution.Id.Value, database.Id.Value, database.Name.Value),
+                CancellationToken.None);
             return ToSummary(execution);
         }
         catch (Exception ex)
         {
             execution.Fail(redactor.Redact(ex.Message), timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            await notifications.PublishAsync(execution.TeamId,
+                OperationalNotifications.BackupFailed(execution.Id.Value, database.Id.Value, database.Name.Value),
+                CancellationToken.None);
             throw;
         }
     }
@@ -355,6 +363,9 @@ public sealed class ManagedDatabaseService(
         {
             execution.MarkRestoreFailed(redactor.Redact(ex.Message), timeProvider.GetUtcNow());
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            await notifications.PublishAsync(teamId,
+                OperationalNotifications.RestoreFailed(execution.Id.Value, target.Id.Value, target.Name.Value),
+                CancellationToken.None);
             throw;
         }
     }
@@ -531,16 +542,12 @@ public sealed class ManagedDatabaseService(
 
     private void RequireProject(UserId actorUserId, TeamId teamId, ProjectId projectId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessProject(actorUserId, projectId))
-            throw new UnauthorizedAccessException("Project is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Project(projectId), permission);
     }
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
     }
 
     private void EnsureEnvironmentBelongsToProject(EnvironmentId environmentId, ProjectId projectId)

@@ -1,5 +1,6 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -21,7 +22,8 @@ public sealed class ProxyConfigurationService(
     IDistributedLockManager locks,
     IAuditWriter auditWriter,
     ISecretRedactor redactor,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
 {
     private static readonly TimeSpan DeploymentLockWait = TimeSpan.FromSeconds(60);
 
@@ -57,10 +59,9 @@ public sealed class ProxyConfigurationService(
         ServerId serverId,
         CancellationToken cancellationToken = default)
     {
-        if (actorUserId.HasValue &&
-            !authorization.HasPermission(actorUserId.Value, teamId, VesselPermissions.DeploymentsStart))
-            throw new UnauthorizedAccessException(
-                $"Missing required permission '{VesselPermissions.DeploymentsStart}'.");
+        if (actorUserId.HasValue)
+            authorization.Demand(actorUserId.Value, teamId, ResourceRef.Server(serverId),
+                VesselPermissions.DeploymentsStart);
         if (!proxyLifecycle.IsRoutingEnabled(serverId))
             return null;
         // Concurrent deployments on one server queue briefly for the proxy lock instead of failing outright.
@@ -109,6 +110,9 @@ public sealed class ProxyConfigurationService(
             version.MarkValidationFailed(string.Join("; ", validation.Errors.Select(error => redactor.Redact(error))),
                 now);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await notifications.PublishAsync(teamId,
+                OperationalNotifications.ProxyApplyFailed(serverId.Value, server.Name.Value, "validation"),
+                CancellationToken.None);
             throw new DomainException(version.ValidationError ?? "Proxy configuration validation failed.");
         }
 
@@ -131,6 +135,9 @@ public sealed class ProxyConfigurationService(
                 await proxyLifecycle.DeliverDynamicConfigurationAsync(server, previousDocument, cancellationToken);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            await notifications.PublishAsync(teamId,
+                OperationalNotifications.ProxyApplyFailed(serverId.Value, server.Name.Value, "apply"),
+                CancellationToken.None);
             throw new DomainException(version.ApplyError ?? "Proxy configuration apply failed.");
         }
 
@@ -228,10 +235,7 @@ public sealed class ProxyConfigurationService(
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, permission))
-            throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
     }
 
     private static ProxyConfigurationSummary ToSummary(ProxyConfigurationVersion version)

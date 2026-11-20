@@ -147,16 +147,16 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | DATA-02 | Restore pipeline is synchronous, format-blind and unsafe | P0 | L | 11.12/11.13 (reopen), 15.10 | Open |
 | DEP-01 | Commit-pinned and webhook deployments fail: shallow clone uses `--branch <sha>`, and PR refs are never fetched | P0 | S–M | Fixes 8.05/9.10/9.11; prerequisite for DEP-02/DEP-07. | Open |
 | DEP-02 | Preview deployments are not isolated from production and fork PRs are not gated | P0 | M | Completes 9.12/9.13; cross-ref Phase 15.05. | Open |
-| IAM-01 | Identity-management endpoints accept any bearer token, so a token can escalate itself or strip 2FA | P0 | S | 4.06/4.07/4.10 (reopen); 15.02. | Open |
-| IAM-02 | Notification targets and notification events have no permission check | P0 | S | 13.x follow-up; 15.02, 15.16. | Open |
+| IAM-01 | Identity-management endpoints accept any bearer token, so a token can escalate itself or strip 2FA | P0 | S | 4.06/4.07/4.10 (reopen); 15.02. | Done |
+| IAM-02 | Notification targets and notification events have no permission check | P0 | S | 13.x follow-up; 15.02, 15.16. | Done |
 | NET-01 | Generated Traefik config is incorrect, and its blast radius is the whole server | P0 | M | Fix inside Phase 10 (10.03/10.04/10.13 regression), plus 15.05 and… | Partial (generator, naming, isolation done) |
 | NET-02 | Proxy lifecycle per server (static config, container, networks, status, NONE type) | P0 | L | Phase 10 gap (10.05 follow-up); 16.06 lock validation. | Open |
-| NTF-01 | The notification pipeline is not connected to any producer | P0 | M | 13.01/13.08 (reopen); prerequisite for NTF-03..05. | Open |
-| NTF-02 | Notification API and settings lack authorization, SSRF protection, and secret-safe URLs | P0 | M | 13.09 (reopen), 15.x security hardening. | Open |
+| NTF-01 | The notification pipeline is not connected to any producer | P0 | M | 13.01/13.08 (reopen); prerequisite for NTF-03..05. | Done |
+| NTF-02 | Notification API and settings lack authorization, SSRF protection, and secret-safe URLs | P0 | M | 13.09 (reopen), 15.x security hardening. | Done |
 | PLT-01 | Move from .NET 11 preview 4 to .NET 11 GA | P0 | S | Phase 1, PR §2 | Done |
-| PLT-02 | Vulnerable and outdated dependencies | P0 | S | 15.14, 15.15 | Partial (SSH.NET, Hangfire bumped) |
+| PLT-02 | Vulnerable and outdated dependencies | P0 | S | 15.14, 15.15 | Done (StackExchange.Redis 3.x and xunit.v3 4.x majors deferred to evaluation) |
 | SEC-01 | Cross-tenant webhook signature bypass (verified-once, trusted-for-all) | P0 | S | Phase 9 (fix), 15.02/15.16. | Open |
-| SEC-02 | Authorization mixes the active team's role with membership in any team | P0 | M | 15.02, 15.16 (move ahead of Phase 14). | Open |
+| SEC-02 | Authorization mixes the active team's role with membership in any team | P0 | M | 15.02, 15.16 (move ahead of Phase 14). | Done |
 | SEC-03 | Host-local execution available to every tenant (localhost/terminal boundary) | P0 | M | 15.01/15.02, plus Phase 4 follow-up (instance admin). | Open |
 | SEC-04 | Secret encryption key management: hard-coded fallback key, no rotation or re-encryption, plaintext TOTP secrets | P0 | M | 15.08, Phase 14 (installer key generation). | Open |
 | SEC-05 | Repository file reads follow symlinks; path containment is lexical only | P0 | S | 15.10, Phase 8 follow-up. | Open |
@@ -206,11 +206,11 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | OPS-01 | Update channels, version manifest, and automatic-update policy for Phase 14 | P1 | M | 14.11–14.15 (extend), new 14.23 "update channels & auto-update… | Open |
 | OPS-02 | Pre-update control-plane database backup, upgrade status, job draining, and single-flight upgrades | P1 | M | 14.11–14.15, 14.20, 16.12. | Open |
 | PLT-03 | YAML handling through a real parser/emitter | P1 | S | Phase 5 / 15.05 | Done |
-| PLT-05 | CI supply-chain hardening | P1 | S | 15.14, 15.15, 18.06 | Open |
+| PLT-05 | CI supply-chain hardening | P1 | S | 15.14, 15.15, 18.06 | Done |
 | PLT-06 | Ecosystem image pins for runtime components Vessel deploys | P1 | S–M | 10.x, 11.x, 15.14 | Open |
 | SEC-06 | Preview deployments from forks run untrusted code without an opt-in | P1 | S | Phase 9 follow-up, 15.05. | Open |
 | SEC-07 | Manual webhook secret strength, failure throttling, and real client IP | P1 | S | 15.04, Phase 9 follow-up. | Open |
-| SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Open |
+| SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Partial (notification SSRF guard via NTF-02; SMTP pinning remains) |
 | SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Open |
 | SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Open |
 | SEC-11 | Git-based Docker Compose validation and host-path policy | P1 | M | 15.05/15.10, Phase 8 follow-up. | Open |

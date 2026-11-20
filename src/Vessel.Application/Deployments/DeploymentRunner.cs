@@ -4,6 +4,7 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
 using Vessel.Application.Git;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
@@ -35,7 +36,8 @@ public sealed class DeploymentRunner(
     ProxyConfigurationService proxyConfiguration,
     ProxyLifecycleService proxyLifecycle,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    INotificationEventPublisher notifications)
     : IDeploymentRunner
 {
     public async Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
@@ -62,6 +64,7 @@ public sealed class DeploymentRunner(
                 cancellationToken);
             await FailAsync(deploymentId, cancellationToken);
             finalStatus = DeploymentStatus.Failed;
+            await NotifyFinishedAsync(deploymentId, finalStatus);
             return;
         }
 
@@ -169,7 +172,26 @@ public sealed class DeploymentRunner(
                 Stopwatch.GetElapsedTime(startedAt).TotalSeconds,
                 new TagList { { "status", finalStatus.ToString() } });
             VesselDiagnostics.ActiveDeployments.Add(-1);
+            await NotifyFinishedAsync(deploymentId, finalStatus);
         }
+    }
+
+    private Task NotifyFinishedAsync(DeploymentId deploymentId, DeploymentStatus finalStatus)
+    {
+        // Raised after the terminal state is persisted; the publisher never throws into the runner.
+        return notifications.PublishAsync(() =>
+        {
+            Deployment deployment = dbContext.Deployments.Single(item => item.Id == deploymentId);
+            (AppEntity application, _, _, TeamId teamId) = LoadDeploymentContext(deploymentId);
+            DeploymentNotificationOutcome outcome = finalStatus switch
+            {
+                DeploymentStatus.Succeeded => DeploymentNotificationOutcome.Succeeded,
+                DeploymentStatus.CanceledByUser => DeploymentNotificationOutcome.Cancelled,
+                _ => DeploymentNotificationOutcome.Failed
+            };
+            return new TeamNotification(teamId, OperationalNotifications.DeploymentFinished(
+                deploymentId.Value, application.Id.Value, application.Name.Value, deployment.CommitSha, outcome));
+        });
     }
 
     private async Task StreamBuildAsync(
