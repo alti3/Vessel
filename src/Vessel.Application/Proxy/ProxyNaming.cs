@@ -36,6 +36,16 @@ public static class ProxyNaming
     }
 
     /// <summary>
+    ///     Network alias of a preview deployment's primary service. Distinct from <see cref="UpstreamAlias" /> so preview
+    ///     traffic can never reach the production stack (or the reverse).
+    /// </summary>
+    public static string PreviewUpstreamAlias(AppId applicationId, int pullRequestNumber)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pullRequestNumber);
+        return $"{UpstreamAlias(applicationId)}-pr-{pullRequestNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
+    /// <summary>
     ///     Router/service key: readable host slug plus a hash of (application, host) so hosts that differ only by
     ///     punctuation or beyond the truncation point never collide. Keys are stable across configuration versions.
     /// </summary>

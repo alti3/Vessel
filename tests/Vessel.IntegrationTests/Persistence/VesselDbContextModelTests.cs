@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
@@ -194,6 +195,28 @@ public sealed class VesselDbContextModelTests
         Assert.Equal("backup_executions", execution?.GetTableName());
         Assert.Equal(512, execution?.FindProperty(nameof(BackupExecution.ArtifactKey))?.GetMaxLength());
         Assert.Equal(1000, execution?.FindProperty(nameof(BackupExecution.LastRestoreFailureReason))?.GetMaxLength());
+    }
+
+    [Fact]
+    public void Model_MapsPerApplicationWebhookVerificationAndPreviewIsolation()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType webhookEvent = context.Model.FindEntityType(typeof(WebhookEvent))!;
+        IProperty verified = webhookEvent.FindProperty(nameof(WebhookEvent.VerifiedApplicationIds))!;
+        Assert.Equal("uuid[]", verified.GetColumnType());
+        Assert.False(verified.IsNullable);
+
+        IEntityType preview = context.Model.FindEntityType(typeof(ApplicationPreview))!;
+        Assert.NotNull(preview.FindProperty(nameof(ApplicationPreview.SourceRepository)));
+        Assert.NotNull(preview.FindProperty(nameof(ApplicationPreview.IsSameRepository)));
+
+        // Index facets such as NULLS NOT DISTINCT are design-time annotations (used by migrations).
+        IModel designModel = context.GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>().Model;
+        IEntityType variable = designModel.FindEntityType(typeof(EnvironmentVariable))!;
+        IIndex unique = Assert.Single(variable.GetIndexes(), index => index.IsUnique);
+        Assert.Contains(unique.Properties, property => property.Name == nameof(EnvironmentVariable.IsPreview));
+        Assert.Equal(false, unique.FindAnnotation("Npgsql:NullsDistinct")?.Value);
     }
 
     [Fact]

@@ -300,7 +300,8 @@ public sealed class Phase12OperationalTests
             new TestAuditWriter(), new TestRedactor(), TimeProvider.System, notifications);
         return new DeploymentRunner(scenario.Db, ThrowingProxy.Create<Vessel.Application.Git.IGitClient>(),
             new TestContainerRuntime(), ThrowingProxy.Create<IDeploymentWorkspaceManager>(), locks,
-            ThrowingProxy.Create<ISecretVault>(), new TestRedactor(), new TestRealtimeNotifier(), proxy,
+            ThrowingProxy.Create<ISecretVault>(), new TestRedactor(), new TestRealtimeNotifier(),
+            ThrowingProxy.Create<IComposeDocumentBuilder>(), proxy,
             proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications, authorization);
     }
 

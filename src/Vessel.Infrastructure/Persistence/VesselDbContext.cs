@@ -1035,8 +1035,9 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 variable.ServerId,
                 variable.ApplicationId,
                 variable.DatabaseResourceId,
-                variable.Key
-            }).IsUnique();
+                variable.Key,
+                variable.IsPreview
+            }).IsUnique().AreNullsDistinct(false);
             builder.HasOne<Team>()
                 .WithMany()
                 .HasForeignKey(variable => variable.TeamId)
@@ -1287,6 +1288,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(webhook => webhook.SignatureStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(webhook => webhook.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(webhook => webhook.FailureReason).HasMaxLength(512);
+            // Applications whose own secret verified the delivery (SEC-01); stored as a PostgreSQL uuid[] column.
+            builder.PrimitiveCollection(webhook => webhook.VerifiedApplicationIds).IsRequired();
             builder.Property(webhook => webhook.ApplicationId)
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new AppId(value.Value) : null);
@@ -1341,6 +1344,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(preview => preview.PullRequestUrl).HasMaxLength(2048);
             builder.Property(preview => preview.Title).HasMaxLength(255);
             builder.Property(preview => preview.PreviewUrl).HasMaxLength(2048);
+            builder.Property(preview => preview.SourceRepository).HasMaxLength(512);
+            builder.Property(preview => preview.IsSameRepository).IsRequired();
             builder.Property(preview => preview.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(preview => preview.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(preview => preview.DomainEvents);

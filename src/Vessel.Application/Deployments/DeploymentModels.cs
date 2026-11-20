@@ -66,7 +66,10 @@ public sealed record DeploymentRuntimePlan(
     string RedactedComposeYaml,
     string EnvironmentFile,
     string RedactedEnvironmentFile,
-    string HealthCheckUrl);
+    string HealthCheckUrl,
+    DeploymentNaming? Naming = null,
+    int Port = DeploymentPlanBuilder.DefaultPort,
+    string HealthCheckPath = "/");
 
 public interface IDeploymentRunner
 {

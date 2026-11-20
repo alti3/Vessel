@@ -1,4 +1,5 @@
 using Vessel.Application.Auditing;
+using Vessel.Application.Deployments;
 using Vessel.Application.Authorization;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
@@ -10,6 +11,7 @@ using Vessel.Domain.Auditing;
 using Vessel.Domain.Common;
 using Vessel.Domain.Proxy;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
 
 namespace Vessel.Application.Proxy;
@@ -230,6 +232,22 @@ public sealed class ProxyConfigurationService(
                          StringComparer.OrdinalIgnoreCase))
                 routes.Add(new ProxyRoute(application.Id, application.ServerId, upstream, domain.DomainName.Value,
                     domain.TargetPort ?? defaultPort, domain.TlsEnabled, domain.Canonical, domain.RedirectToCanonical));
+
+            // Open previews with a recorded route get their own host, routed to the preview alias (never production).
+            ApplicationPreview[] previews = dbContext.ApplicationPreviews
+                .Where(preview => preview.ApplicationId == application.Id &&
+                                  preview.Status == ApplicationPreviewStatus.Open &&
+                                  preview.PreviewUrl != null)
+                .ToArray();
+            foreach (ApplicationPreview preview in previews)
+            {
+                PreviewRoute? route = DeploymentPlanBuilder.PreviewRoute(domains, preview.PullRequestNumber, defaultPort);
+                if (route is null || !string.Equals(route.Url, preview.PreviewUrl, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                routes.Add(new ProxyRoute(application.Id, application.ServerId,
+                    ProxyNaming.PreviewUpstreamAlias(application.Id, preview.PullRequestNumber), route.Host,
+                    route.TargetPort, route.TlsEnabled, false, false));
+            }
         }
 
         return routes.OrderBy(route => route.Host, StringComparer.OrdinalIgnoreCase).ToArray();

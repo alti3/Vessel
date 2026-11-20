@@ -1,6 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Diagnostics;
@@ -20,6 +20,7 @@ using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 using ProcessOutputLine = Vessel.Application.Processes.ProcessOutputLine;
@@ -35,6 +36,7 @@ public sealed partial class DeploymentRunner(
     ISecretVault secretVault,
     ISecretRedactor redactor,
     IRealtimeNotifier realtime,
+    IComposeDocumentBuilder composeDocuments,
     ProxyConfigurationService proxyConfiguration,
     ProxyLifecycleService proxyLifecycle,
     IAuditWriter auditWriter,
@@ -54,7 +56,11 @@ public sealed partial class DeploymentRunner(
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
         activity?.SetTag("vessel.application_id", deployment.ApplicationId.Value);
         activity?.SetTag("vessel.server_id", deployment.ServerId.Value);
-        var lockKey = $"deployment:{deployment.ApplicationId.Value:D}";
+        ApplicationPreview? preview = LoadPreview(deployment);
+        // Production and each preview are separate stacks, so they lock independently.
+        var lockKey = preview is null
+            ? $"deployment:{deployment.ApplicationId.Value:D}"
+            : $"deployment:{deployment.ApplicationId.Value:D}:pr:{preview.PullRequestNumber}";
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
             lockKey,
             TimeSpan.FromHours(2),
@@ -90,23 +96,29 @@ public sealed partial class DeploymentRunner(
                 throw new DomainException(HostLocalExecutionGuard.UnattendedNotAuthorizedMessage);
 
             ContainerRuntimeTarget target = RuntimeTarget(server);
-            workspace = await workspaces.PrepareAsync(deploymentId, cancellationToken);
+            if (preview is not null)
+            {
+                if (preview.Status != ApplicationPreviewStatus.Open)
+                    throw new DomainException("Preview is closed; its pull request is no longer deployed.");
+                if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose &&
+                    !preview.IsSameRepository)
+                    throw new DomainException(
+                        "Docker Compose previews only deploy pull requests from the application repository; a fork's compose file is not trusted.");
+            }
 
-            await AppendAsync(deploymentId, "system", "Cloning application source.", cancellationToken);
-            var checkoutRef = string.IsNullOrWhiteSpace(deployment.CommitSha)
-                              || string.Equals(deployment.CommitSha, "pending", StringComparison.OrdinalIgnoreCase)
-                ? application.GitSource.CommitSha ?? application.GitSource.Branch
-                : deployment.CommitSha;
-            await git.CloneAsync(new GitCloneRequest(
-                new Uri(application.GitSource.RepositoryUrl.Value),
-                workspace.RepositoryDirectory,
-                checkoutRef), cancellationToken);
+            // Refs are validated again at start (queue-time validation may predate a settings change).
+            workspace = await workspaces.PrepareAsync(deploymentId, cancellationToken);
+            GitCheckoutRequest checkout =
+                DeploymentPlanBuilder.Checkout(application, deployment, preview, workspace.RepositoryDirectory);
+
+            await AppendAsync(deploymentId, "system", CheckoutMessage(checkout), cancellationToken);
+            await git.CheckoutAsync(checkout, cancellationToken);
             GitCommitInfo commit = await git.GetCommitAsync(workspace.RepositoryDirectory, "HEAD", cancellationToken);
-            await RecordSourceAsync(deploymentId, application, commit, cancellationToken);
+            await RecordSourceAsync(deploymentId, application, preview, commit, cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
             DeploymentRuntimePlan plan = await CreatePlanAsync(application, environment, server, teamId, deploymentId,
-                workspace, cancellationToken);
+                preview, workspace, cancellationToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, ".env", plan.EnvironmentFile, true,
                 cancellationToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, false,
@@ -129,7 +141,7 @@ public sealed partial class DeploymentRunner(
 
             if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile)
             {
-                var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "Dockerfile");
+                var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "Dockerfile");
                 // The Dockerfile is read by the runtime CLI on this host: reject symlinks/escapes from the repository.
                 workspaces.EnsureRegularFile(workspace.RepositoryDirectory, dockerfile);
                 await StreamBuildAsync(target, plan, workspace, dockerfile, deploymentId, cancellationToken);
@@ -142,7 +154,12 @@ public sealed partial class DeploymentRunner(
                 ["up", "--detach", "--remove-orphans", "--build"], cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
-            await RunHealthCheckAsync(plan, deploymentId, cancellationToken);
+            var healthCheckUrl = preview is null
+                ? plan.HealthCheckUrl
+                : await ResolvePreviewHealthCheckUrlAsync(target, plan, workspace, cancellationToken);
+            await RunHealthCheckAsync(healthCheckUrl, deploymentId, cancellationToken);
+            if (preview is not null)
+                await RecordPreviewRouteAsync(deploymentId, application, preview, cancellationToken);
             await AppendAsync(deploymentId, "system", "Applying reverse proxy routes.", cancellationToken);
             await proxyConfiguration.ApplyForDeploymentAsync(deployment.ActorUserId, teamId, server.Id,
                 cancellationToken);
@@ -250,8 +267,40 @@ public sealed partial class DeploymentRunner(
             await AppendAsync(deploymentId, StreamName(line.Stream), line.Content, cancellationToken);
     }
 
-    private async Task RunHealthCheckAsync(
+    /// <summary>
+    ///     Previews publish their primary port on an ephemeral loopback port (no collisions with production or other
+    ///     previews); ask compose which host port was assigned.
+    /// </summary>
+    private async Task<string> ResolvePreviewHealthCheckUrlAsync(
+        ContainerRuntimeTarget target,
         DeploymentRuntimePlan plan,
+        DeploymentWorkspace workspace,
+        CancellationToken cancellationToken)
+    {
+        var port = plan.Port.ToString(CultureInfo.InvariantCulture);
+        string? published = null;
+        await foreach (ProcessOutputLine line in runtime.RunComposeAsync(
+                           target,
+                           new ComposeCommand(
+                               workspace.RootDirectory,
+                               [workspace.ComposeFilePath],
+                               ["--project-name", plan.ProjectName, "--project-directory", workspace.RootDirectory,
+                                   "port", plan.ServiceName, port],
+                               workspace.EnvironmentFilePath,
+                               TimeSpan.FromMinutes(1)),
+                           cancellationToken))
+            if (line.Stream == ProcessStreamKind.StandardOutput && !string.IsNullOrWhiteSpace(line.Content))
+                published = line.Content.Trim();
+
+        var hostPort = published?[(published.LastIndexOf(':') + 1)..];
+        if (!int.TryParse(hostPort, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+            parsed is < 1 or > 65535)
+            throw new DomainException("Could not determine the published port of the preview deployment.");
+        return $"http://127.0.0.1:{parsed.ToString(CultureInfo.InvariantCulture)}{plan.HealthCheckPath}";
+    }
+
+    private async Task RunHealthCheckAsync(
+        string healthCheckUrl,
         DeploymentId deploymentId,
         CancellationToken cancellationToken)
     {
@@ -264,7 +313,7 @@ public sealed partial class DeploymentRunner(
         {
             try
             {
-                using HttpResponseMessage response = await client.GetAsync(plan.HealthCheckUrl, cancellationToken);
+                using HttpResponseMessage response = await client.GetAsync(healthCheckUrl, cancellationToken);
                 if ((int)response.StatusCode < 500)
                 {
                     await AppendAsync(deploymentId, "system", $"Health check passed: {(int)response.StatusCode}.",
@@ -290,94 +339,105 @@ public sealed partial class DeploymentRunner(
         Server server,
         TeamId teamId,
         DeploymentId deploymentId,
+        ApplicationPreview? preview,
         DeploymentWorkspace workspace,
         CancellationToken cancellationToken)
     {
         IReadOnlyDictionary<string, string> env =
-            await ResolveEnvironmentAsync(application, environment, server, teamId, cancellationToken);
+            await ResolveEnvironmentAsync(application, environment, server, teamId, deploymentId, preview,
+                cancellationToken);
         var envFile = BuildEnvironmentFile(env);
         var redactedEnv = redactor.Redact(envFile, new RedactionContext(env.Values.ToArray()));
-        var projectName = $"vessel-{application.Id.Value:N}"[..39];
-        var serviceName = SanitizeName(application.Name.Value);
-        var imageName = $"vessel/{application.Id.Value:N}:{deploymentId.Value:N}";
-        var networkName = $"vessel-{server.Id.Value:N}"[..39];
-        var port = application.RuntimeConfiguration.ExposedPort?.Value ?? 8080;
+        DeploymentNaming naming = DeploymentPlanBuilder.Naming(application.Id, server.Id, deploymentId, preview);
+        var port = application.RuntimeConfiguration.ExposedPort?.Value ?? DeploymentPlanBuilder.DefaultPort;
         var healthPath = application.RuntimeConfiguration.HealthCheckPath.StartsWith('/')
             ? application.RuntimeConfiguration.HealthCheckPath
             : "/" + application.RuntimeConfiguration.HealthCheckPath;
         var healthUrl = $"http://localhost:{port}{healthPath}";
-        var compose = application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
-            ? await CreateComposePassthroughAsync(workspace, application, serviceName, imageName, networkName, port,
-                cancellationToken)
-            : CreateDockerfileCompose(application, serviceName, imageName, networkName, port);
+        IReadOnlyDictionary<string, string> labels = Labels(deploymentId, application, preview);
+        var serviceName = naming.ServiceName;
+        string compose;
+        ComposeNormalizationResult? normalized =
+            application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
+                ? await CreateComposePassthroughAsync(workspace, application, naming, port, labels, cancellationToken)
+                : null;
+        if (normalized is null)
+        {
+            compose = CreateDockerfileCompose(application, naming, port, labels);
+        }
+        else
+        {
+            compose = normalized.Yaml;
+            serviceName = normalized.PrimaryService;
+            foreach (var warning in normalized.Warnings)
+                await AppendAsync(deploymentId, "system", warning, cancellationToken);
+        }
 
         return new DeploymentRuntimePlan(
-            projectName,
+            naming.ProjectName,
             serviceName,
-            imageName,
-            networkName,
+            naming.ImageName,
+            naming.NetworkName,
             compose,
             redactor.Redact(compose, new RedactionContext(env.Values.ToArray())),
             envFile,
             redactedEnv,
-            healthUrl);
+            healthUrl,
+            naming,
+            port,
+            healthPath);
     }
 
-    private async Task<string> CreateComposePassthroughAsync(
+    private async Task<ComposeNormalizationResult?> CreateComposePassthroughAsync(
         DeploymentWorkspace workspace,
         AppEntity application,
-        string serviceName,
-        string imageName,
-        string networkName,
+        DeploymentNaming naming,
         int port,
+        IReadOnlyDictionary<string, string> labels,
         CancellationToken cancellationToken)
     {
-        var composePath = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "docker-compose.yml");
+        var composePath = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "docker-compose.yml");
+        string raw;
         try
         {
-            var raw = await workspaces.ReadTextAsync(workspace.RepositoryDirectory, composePath, cancellationToken);
-            if (ParentTraversalPattern().IsMatch(raw))
-                throw new DomainException("Compose file references parent directories ('../'), which is not supported.");
-            return raw;
+            raw = await workspaces.ReadTextAsync(workspace.RepositoryDirectory, composePath, cancellationToken);
         }
         catch (FileNotFoundException)
         {
-            return CreateDockerfileCompose(application, serviceName, imageName, networkName, port);
+            return null;
         }
+
+        // Parsed and normalized: build contexts, bind mounts and env files must resolve inside the repository, and
+        // the primary service joins the server network under the per-application (or per-preview) upstream alias.
+        return composeDocuments.NormalizeRepositoryCompose(raw, new RepositoryComposeSpec(
+            workspace.RepositoryDirectory,
+            composePath,
+            naming.NetworkName,
+            naming.UpstreamAlias,
+            port,
+            labels,
+            naming.PreviewSuffix));
     }
 
-    private static string CreateDockerfileCompose(
+    private string CreateDockerfileCompose(
         AppEntity application,
-        string serviceName,
-        string imageName,
-        string networkName,
-        int port)
+        DeploymentNaming naming,
+        int port,
+        IReadOnlyDictionary<string, string> labels)
     {
-        var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath ?? "Dockerfile");
-        var builder = new StringBuilder();
-        builder.AppendLine("services:");
-        builder.AppendLine($"  {serviceName}:");
-        builder.AppendLine($"    image: {imageName}");
-        builder.AppendLine("    build:");
-        builder.AppendLine("      context: ./repository");
-        builder.AppendLine($"      dockerfile: {dockerfile.Replace("\\", "/", StringComparison.Ordinal)}");
-        builder.AppendLine("    env_file:");
-        builder.AppendLine("      - .env");
-        builder.AppendLine("    labels:");
-        builder.AppendLine("      vessel.managed: \"true\"");
-        builder.AppendLine($"      vessel.application: \"{application.Id.Value:D}\"");
-        builder.AppendLine("    networks:");
-        builder.AppendLine($"      {networkName}:");
-        builder.AppendLine("        aliases:");
-        // Stable per-application alias used by proxy upstreams; never the user-controlled display name.
-        builder.AppendLine($"          - {ProxyNaming.UpstreamAlias(application.Id)}");
-        builder.AppendLine("    ports:");
-        builder.AppendLine($"      - \"{port}:{port}\"");
-        builder.AppendLine("    restart: unless-stopped");
-        builder.AppendLine("networks:");
-        builder.AppendLine($"  {networkName}:");
-        builder.AppendLine("    external: true");
-        return builder.ToString();
+        var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "Dockerfile");
+        var portText = port.ToString(CultureInfo.InvariantCulture);
+        // Production keeps its fixed host port; previews bind an ephemeral loopback port so they never collide.
+        var binding = naming.IsPreview ? $"127.0.0.1::{portText}" : $"{portText}:{portText}";
+        return composeDocuments.CreateDockerfileStack(new DockerfileStackSpec(
+            naming.ServiceName,
+            naming.ImageName,
+            "./repository",
+            dockerfile,
+            naming.NetworkName,
+            naming.UpstreamAlias,
+            binding,
+            labels));
     }
 
     private async Task<IReadOnlyDictionary<string, string>> ResolveEnvironmentAsync(
@@ -385,6 +445,8 @@ public sealed partial class DeploymentRunner(
         EnvironmentEntity environment,
         Server server,
         TeamId teamId,
+        DeploymentId deploymentId,
+        ApplicationPreview? preview,
         CancellationToken cancellationToken)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -393,13 +455,26 @@ public sealed partial class DeploymentRunner(
             ["VESSEL_ENVIRONMENT_ID"] = environment.Id.Value.ToString("D"),
             ["VESSEL_SERVER_ID"] = server.Id.Value.ToString("D")
         };
+        if (preview is not null)
+            values["VESSEL_PULL_REQUEST_ID"] = preview.PullRequestNumber.ToString(CultureInfo.InvariantCulture);
 
-        EnvironmentVariable[] variables = dbContext.EnvironmentVariables
+        EnvironmentVariable[] applicable = dbContext.EnvironmentVariables
             .Where(variable => variable.TeamId == teamId && variable.IsRuntime)
+            .AsEnumerable()
+            .Where(variable => AppliesTo(variable, application, environment, server))
             .ToArray();
+        // Production never receives preview copies; previews follow Coolify's preview-variable rules.
+        DeploymentVariableSelection selection = DeploymentPlanBuilder.SelectVariables(applicable, preview is not null,
+            application.DeploymentSettings.PublicPreviewsEnabled);
+        if (selection.WithheldKeys.Count > 0)
+            await AppendAsync(deploymentId, "system",
+                (application.DeploymentSettings.PublicPreviewsEnabled
+                    ? "Public previews never receive production values; variables not passed: "
+                    : "Preview variables are missing for these production variables, which are not passed: ") +
+                string.Join(", ", selection.WithheldKeys),
+                cancellationToken);
 
-        foreach (EnvironmentVariable variable in variables.Where(variable =>
-                     AppliesTo(variable, application, environment, server)))
+        foreach (EnvironmentVariable variable in selection.Variables)
             values[variable.Key.Value] = variable.ValueKind == EnvironmentVariableValueKind.Secret &&
                                          variable.SecretReferenceId.HasValue
                 ? await secretVault.RevealForDeploymentAsync(teamId, variable.SecretReferenceId.Value,
@@ -453,16 +528,60 @@ public sealed partial class DeploymentRunner(
     private async Task RecordSourceAsync(
         DeploymentId deploymentId,
         AppEntity application,
+        ApplicationPreview? preview,
         GitCommitInfo commit,
         CancellationToken cancellationToken)
     {
         Deployment deployment = await GetDeploymentAsync(deploymentId, cancellationToken);
-        deployment.RecordSource(application.GitSource.RepositoryUrl.Value, application.GitSource.Branch, commit.Sha,
+        deployment.RecordSource(application.GitSource.RepositoryUrl.Value,
+            preview?.SourceBranch ?? application.GitSource.Branch, commit.Sha,
             commit.Subject, timeProvider.GetUtcNow());
         deployment.AddLogLine("system", $"Checked out {commit.Sha[..Math.Min(12, commit.Sha.Length)]} {commit.Subject}",
             timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         await PublishStatusAsync(deployment, cancellationToken);
+    }
+
+    /// <summary>Gives the preview its own routing record (<c>{pr}.{domain}</c>), routed to the preview alias.</summary>
+    private async Task RecordPreviewRouteAsync(
+        DeploymentId deploymentId,
+        AppEntity application,
+        ApplicationPreview preview,
+        CancellationToken cancellationToken)
+    {
+        ApplicationDomain[] domains = dbContext.ApplicationDomains
+            .Where(domain => domain.ApplicationId == application.Id)
+            .ToArray();
+        PreviewRoute? route = DeploymentPlanBuilder.PreviewRoute(domains, preview.PullRequestNumber,
+            application.RuntimeConfiguration.ExposedPort?.Value ?? DeploymentPlanBuilder.DefaultPort);
+        preview.SetPreviewUrl(route?.Url, timeProvider.GetUtcNow());
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await AppendAsync(deploymentId, "system",
+            route is null
+                ? "Preview has no public route because the application has no domain."
+                : $"Preview available at {route.Url}.", cancellationToken);
+    }
+
+    private ApplicationPreview? LoadPreview(Deployment deployment)
+    {
+        if (!deployment.PreviewId.HasValue) return null;
+        ApplicationPreviewId previewId = deployment.PreviewId.Value;
+        ApplicationPreview preview = dbContext.ApplicationPreviews.SingleOrDefault(item => item.Id == previewId)
+                                     ?? throw new InvalidOperationException("Preview was not found.");
+        if (preview.ApplicationId != deployment.ApplicationId)
+            throw new InvalidOperationException("Preview does not belong to the deployed application.");
+        return preview;
+    }
+
+    private static string CheckoutMessage(GitCheckoutRequest checkout)
+    {
+        return checkout.Kind switch
+        {
+            GitCheckoutKind.Commit =>
+                $"Fetching commit {checkout.Reference[..Math.Min(12, checkout.Reference.Length)]}.",
+            GitCheckoutKind.PullRequest => $"Fetching pull request ref {checkout.Reference}.",
+            _ => $"Fetching {checkout.Reference}."
+        };
     }
 
     private async Task RecordSnapshotAsync(DeploymentId deploymentId, string reference,
@@ -576,41 +695,38 @@ public sealed partial class DeploymentRunner(
             : ContainerRuntimeProvider.Docker);
     }
 
-    private static IReadOnlyDictionary<string, string> Labels(DeploymentId deploymentId, AppEntity application)
+    private static Dictionary<string, string> Labels(DeploymentId deploymentId, AppEntity application,
+        ApplicationPreview? preview = null)
     {
-        return new Dictionary<string, string>
+        var labels = new Dictionary<string, string>
         {
             ["vessel.managed"] = "true",
             ["vessel.deployment"] = deploymentId.Value.ToString("D"),
             ["vessel.application"] = application.Id.Value.ToString("D")
         };
-    }
-
-    private static string NormalizeRelativePath(string value)
-    {
-        var trimmed = string.IsNullOrWhiteSpace(value) ? "Dockerfile" : value.Trim().TrimStart('/', '\\');
-        string[] segments = trimmed.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
-            .Where(segment => segment != ".")
-            .ToArray();
-        if (segments.Length == 0 || segments.Any(segment => segment == ".." || segment.Contains('\0')))
-            throw new DomainException("Path traversal is not allowed in deployment file paths.");
-        return string.Join('/', segments);
+        if (preview is not null)
+            labels["vessel.preview"] = preview.Id.Value.ToString("D");
+        return labels;
     }
 
     /// <summary>
-    /// Matches a '..' path segment (e.g. <c>../data</c> or <c>./a/../b</c>) in compose values, without
-    /// rejecting unrelated '..' text such as version ranges or ellipses.
+    ///     Validates a repository-relative file path segment by segment (no <c>..</c> segment, no absolute or drive paths,
+    ///     no control characters) instead of rejecting any value that merely contains two dots.
     /// </summary>
-    [GeneratedRegex(@"(?:^|[\s""':=,\[(/\\])\.\.(?:[/\\]|[\s""',\])]|$)", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
-    private static partial Regex ParentTraversalPattern();
-
-    private static string SanitizeName(string value)
+    public static string NormalizeRelativePath(string? value, string defaultPath)
     {
-        string normalized = new(value.ToLowerInvariant()
-            .Select(character => char.IsLetterOrDigit(character) ? character : '-')
-            .ToArray());
-        normalized = normalized.Trim('-');
-        return string.IsNullOrWhiteSpace(normalized) ? "app" : normalized[..Math.Min(40, normalized.Length)];
+        var trimmed = string.IsNullOrWhiteSpace(value) ? defaultPath : value.Trim();
+        if (trimmed.Any(char.IsControl))
+            throw new DomainException("Deployment file paths must not contain control characters.");
+        var normalized = trimmed.Replace('\\', '/').TrimStart('/');
+        if (normalized.Length > 1 && normalized[1] == ':')
+            throw new DomainException("Deployment file paths must be relative to the repository.");
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment != ".")
+            .ToArray();
+        if (segments.Length == 0 || segments.Any(segment => segment == ".."))
+            throw new DomainException("Path traversal is not allowed in deployment file paths.");
+        return string.Join('/', segments);
     }
 
     private static string StreamName(ProcessStreamKind stream)

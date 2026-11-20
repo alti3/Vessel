@@ -47,8 +47,25 @@ public sealed class StartDeploymentService(
             throw new DomainException("Deployment server is unreachable.");
         HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
 
+        // Refs are validated before queueing and again when the deployment starts.
+        var requestedRef = NormalizeCommit(request.CommitSha);
+        ApplicationPreviewId? previewId = null;
+        if (request.PreviewId.HasValue)
+        {
+            var requestedPreview = new ApplicationPreviewId(request.PreviewId.Value);
+            Domain.Webhooks.ApplicationPreview preview =
+                dbContext.ApplicationPreviews.SingleOrDefault(item => item.Id == requestedPreview)
+                ?? throw new InvalidOperationException("Preview was not found.");
+            if (preview.ApplicationId != applicationId)
+                throw new UnauthorizedAccessException("Preview does not belong to the application.");
+            if (preview.Status != Domain.Webhooks.ApplicationPreviewStatus.Open)
+                throw new DomainException("Preview is closed and cannot be deployed.");
+            previewId = preview.Id;
+        }
+
         var alreadyActive = dbContext.Deployments.Any(deployment =>
             deployment.ApplicationId == applicationId &&
+            deployment.PreviewId == previewId &&
             (deployment.Status == DeploymentStatus.Queued ||
              deployment.Status == DeploymentStatus.InProgress ||
              deployment.Status == DeploymentStatus.CancelRequested));
@@ -60,14 +77,14 @@ public sealed class StartDeploymentService(
             application.Id,
             application.ServerId,
             actorUserId,
-            NormalizeCommit(request.CommitSha) ?? application.GitSource.CommitSha,
-            request.PreviewId.HasValue ? new ApplicationPreviewId(request.PreviewId.Value) : null,
+            requestedRef ?? application.GitSource.CommitSha,
+            previewId,
             request.WebhookEventId.HasValue ? new WebhookEventId(request.WebhookEventId.Value) : null,
             now);
         deployment.RecordSource(
             application.GitSource.RepositoryUrl.Value,
             application.GitSource.Branch,
-            NormalizeCommit(request.CommitSha) ?? application.GitSource.CommitSha ?? "pending",
+            requestedRef ?? application.GitSource.CommitSha ?? "pending",
             null,
             now);
         deployment.AddLogLine("system",
@@ -85,7 +102,7 @@ public sealed class StartDeploymentService(
                 ["applicationId"] = application.Id.Value,
                 ["serverId"] = application.ServerId.Value,
                 ["forceRebuild"] = request.ForceRebuild,
-                ["commitSha"] = NormalizeCommit(request.CommitSha),
+                ["commitSha"] = requestedRef,
                 ["previewId"] = request.PreviewId,
                 ["webhookEventId"] = request.WebhookEventId
             }, cancellationToken);
@@ -113,7 +130,7 @@ public sealed class StartDeploymentService(
         if (string.IsNullOrWhiteSpace(commitSha)) return null;
         var trimmed = commitSha.Trim();
         if (trimmed.Length > 80) throw new DomainException("Commit reference is too long.");
-        return trimmed;
+        return DeploymentPlanBuilder.NormalizeRequestedRef(trimmed);
     }
 
     public async Task CancelAsync(

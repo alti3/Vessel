@@ -20,15 +20,29 @@ public sealed class WebhookDomainTests
             WebhookSignatureStatus.Missing,
             now);
 
-        webhookEvent.MarkSignatureVerified(now.AddSeconds(1));
+        var verifiedApp = AppId.New();
+        webhookEvent.MarkSignatureVerified([verifiedApp], now.AddSeconds(1));
         webhookEvent.MarkQueued(now.AddSeconds(2));
         webhookEvent.StartProcessing(now.AddSeconds(3));
-        webhookEvent.MarkProcessed(AppId.New(), DeploymentId.New(), null, now.AddSeconds(4));
+        webhookEvent.MarkProcessed(verifiedApp, DeploymentId.New(), null, now.AddSeconds(4));
 
         Assert.Equal(WebhookSignatureStatus.Verified, webhookEvent.SignatureStatus);
+        Assert.True(webhookEvent.IsVerifiedFor(verifiedApp));
+        Assert.False(webhookEvent.IsVerifiedFor(AppId.New()));
         Assert.Equal(WebhookEventStatus.Processed, webhookEvent.Status);
         Assert.NotNull(webhookEvent.PayloadReference);
         Assert.NotNull(webhookEvent.ProcessedAt);
+    }
+
+    [Fact]
+    public void WebhookEvent_CannotBeVerifiedWithoutAnApplication()
+    {
+        var webhookEvent = WebhookEvent.Receive(WebhookProvider.GitHub, "push", "delivery-2",
+            "GitHub:push:delivery-2", "{}", WebhookSignatureStatus.Missing, DateTimeOffset.UtcNow);
+
+        Assert.Throws<Vessel.Domain.Common.DomainException>(() =>
+            webhookEvent.MarkSignatureVerified([], DateTimeOffset.UtcNow));
+        Assert.False(webhookEvent.IsVerifiedFor(AppId.New()));
     }
 
     [Fact]
