@@ -50,7 +50,7 @@ public static class DeploymentPlanBuilder
         ApplicationPreview? preview)
     {
         var app = applicationId.Value.ToString("N");
-        var network = $"vessel-{serverId.Value:N}";
+        var network = ProxyNaming.ServerNetwork(serverId);
         if (preview is null)
         {
             var alias = ProxyNaming.UpstreamAlias(applicationId);

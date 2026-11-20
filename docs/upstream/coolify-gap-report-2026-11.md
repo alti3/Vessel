@@ -145,17 +145,17 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 |---|---|---|---|---|---|
 | DATA-01 | Backups are buffered in memory, capped at 10 MiB, uncompressed and short-timed out | P0 | M | 11.08/11.09 (reopen), 16.04, 16.05 | Done |
 | DATA-02 | Restore pipeline is synchronous, format-blind and unsafe | P0 | L | 11.12/11.13 (reopen), 15.10 | Done |
-| DEP-01 | Commit-pinned and webhook deployments fail: shallow clone uses `--branch <sha>`, and PR refs are never fetched | P0 | S–M | Fixes 8.05/9.10/9.11; prerequisite for DEP-02/DEP-07. | Open |
-| DEP-02 | Preview deployments are not isolated from production and fork PRs are not gated | P0 | M | Completes 9.12/9.13; cross-ref Phase 15.05. | Open |
+| DEP-01 | Commit-pinned and webhook deployments fail: shallow clone uses `--branch <sha>`, and PR refs are never fetched | P0 | S–M | Fixes 8.05/9.10/9.11; prerequisite for DEP-02/DEP-07. | Done |
+| DEP-02 | Preview deployments are not isolated from production and fork PRs are not gated | P0 | M | Completes 9.12/9.13; cross-ref Phase 15.05. | Done |
 | IAM-01 | Identity-management endpoints accept any bearer token, so a token can escalate itself or strip 2FA | P0 | S | 4.06/4.07/4.10 (reopen); 15.02. | Done |
 | IAM-02 | Notification targets and notification events have no permission check | P0 | S | 13.x follow-up; 15.02, 15.16. | Done |
-| NET-01 | Generated Traefik config is incorrect, and its blast radius is the whole server | P0 | M | Fix inside Phase 10 (10.03/10.04/10.13 regression), plus 15.05 and… | Partial (generator, naming, isolation done) |
+| NET-01 | Generated Traefik config is incorrect, and its blast radius is the whole server | P0 | M | Fix inside Phase 10 (10.03/10.04/10.13 regression), plus 15.05 and… | Done |
 | NET-02 | Proxy lifecycle per server (static config, container, networks, status, NONE type) | P0 | L | Phase 10 gap (10.05 follow-up); 16.06 lock validation. | Done (network reconcile in health poll and Hangfire restart job remain, tracked with SRV-02) |
 | NTF-01 | The notification pipeline is not connected to any producer | P0 | M | 13.01/13.08 (reopen); prerequisite for NTF-03..05. | Done |
 | NTF-02 | Notification API and settings lack authorization, SSRF protection, and secret-safe URLs | P0 | M | 13.09 (reopen), 15.x security hardening. | Done |
 | PLT-01 | Move from .NET 11 preview 4 to .NET 11 GA | P0 | S | Phase 1, PR §2 | Done |
 | PLT-02 | Vulnerable and outdated dependencies | P0 | S | 15.14, 15.15 | Done (StackExchange.Redis 3.x and xunit.v3 4.x majors deferred to evaluation) |
-| SEC-01 | Cross-tenant webhook signature bypass (verified-once, trusted-for-all) | P0 | S | Phase 9 (fix), 15.02/15.16. | Open |
+| SEC-01 | Cross-tenant webhook signature bypass (verified-once, trusted-for-all) | P0 | S | Phase 9 (fix), 15.02/15.16. | Done |
 | SEC-02 | Authorization mixes the active team's role with membership in any team | P0 | M | 15.02, 15.16 (move ahead of Phase 14). | Done |
 | SEC-03 | Host-local execution available to every tenant (localhost/terminal boundary) | P0 | M | 15.01/15.02, plus Phase 4 follow-up (instance admin). | Done |
 | SEC-04 | Secret encryption key management: hard-coded fallback key, no rotation or re-encryption, plaintext TOTP secrets | P0 | M | 15.08, Phase 14 (installer key generation). | Done |
@@ -183,7 +183,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | DEP-09 | Build packs: Railpack (and Static) unimplemented, Nixpacks deprecated, build-time variables never passed | P1 | L | New Phase 8b "Build packs"; 17.06 import mapping. | Open |
 | DEP-10 | Environment variable value semantics (exact values, literal/multiline, empty values, order, preview copies, duplicates) | P1 | M | 7.13/8.09 rework; 17.07. | Open |
 | DEP-11 | Docker Compose build pack: parse and validate instead of raw passthrough | P1 | L | 8.08 rework; new Compose items; Phase 10 (routing) cross-ref. | Open |
-| DEP-12 | Webhook fan-out and repository matching correctness | P1 | S–M | 9.10 fix. | Open |
+| DEP-12 | Webhook fan-out and repository matching correctness | P1 | S–M | 9.10 fix. | Partial (exact repo match and per-app fan-out done in SEC-01) |
 | IAM-03 | Member role is read-only upstream; Vessel members can still deploy and cancel, and role hierarchy is not enforced | P1 | S–M | 4.08/4.09/4.16 (reopen). | Open |
 | IAM-04 | Token ability model is behind (no `delete`, wrong hierarchy, no pause/roll/edit, no sensitive-response policy) | P1 | M | 4.06/4.07 (reopen). | Open |
 | IAM-05 | Fine-grained access grants (team, project, environment and resource scopes) for members, invitations and tokens | P1 | XL | New: Phase 4b "Fine-grained access" (before Phase 15). | Open |
@@ -208,7 +208,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | PLT-03 | YAML handling through a real parser/emitter | P1 | S | Phase 5 / 15.05 | Done |
 | PLT-05 | CI supply-chain hardening | P1 | S | 15.14, 15.15, 18.06 | Done |
 | PLT-06 | Ecosystem image pins for runtime components Vessel deploys | P1 | S–M | 10.x, 11.x, 15.14 | Open |
-| SEC-06 | Preview deployments from forks run untrusted code without an opt-in | P1 | S | Phase 9 follow-up, 15.05. | Open |
+| SEC-06 | Preview deployments from forks run untrusted code without an opt-in | P1 | S | Phase 9 follow-up, 15.05. | Partial (default-deny fork previews done; API/UI toggle with DEP-07) |
 | SEC-07 | Manual webhook secret strength, failure throttling, and real client IP | P1 | S | 15.04, Phase 9 follow-up. | Open |
 | SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Partial (notification SSRF guard via NTF-02; SMTP pinning remains) |
 | SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Open |

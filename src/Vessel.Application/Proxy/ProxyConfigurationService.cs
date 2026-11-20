@@ -1,6 +1,6 @@
 using Vessel.Application.Auditing;
-using Vessel.Application.Deployments;
 using Vessel.Application.Authorization;
+using Vessel.Application.Deployments;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Redis;

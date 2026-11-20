@@ -157,7 +157,7 @@ public sealed class WebhookProcessingService(
                 await auditWriter.RecordAsync(teamId, null, AuditActions.PreviewArchived,
                     new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
                     new Dictionary<string, object?>
-                        { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
+                    { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
                     cancellationToken);
                 outcomes.Archived(application.Id, preview.Id);
                 continue;

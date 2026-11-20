@@ -158,40 +158,40 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
             case YamlScalarNode scalar:
                 return new YamlScalarNode(scalar.Value) { Style = scalar.Style, Tag = scalar.Tag };
             case YamlSequenceNode sequence:
-            {
-                var copy = new YamlSequenceNode { Tag = sequence.Tag };
-                foreach (YamlNode child in sequence.Children)
-                    copy.Add(Materialize(child, depth + 1, ref budget));
-                return copy;
-            }
-            case YamlMappingNode mapping:
-            {
-                var copy = new YamlMappingNode { Tag = mapping.Tag };
-                var merges = new List<YamlMappingNode>();
-                foreach (var (key, value) in mapping.Children)
                 {
-                    if (key is YamlScalarNode { Value: "<<" } && key.Tag.IsEmpty)
+                    var copy = new YamlSequenceNode { Tag = sequence.Tag };
+                    foreach (YamlNode child in sequence.Children)
+                        copy.Add(Materialize(child, depth + 1, ref budget));
+                    return copy;
+                }
+            case YamlMappingNode mapping:
+                {
+                    var copy = new YamlMappingNode { Tag = mapping.Tag };
+                    var merges = new List<YamlMappingNode>();
+                    foreach (var (key, value) in mapping.Children)
                     {
-                        YamlNode merged = Materialize(value, depth + 1, ref budget);
-                        if (merged is YamlMappingNode single) merges.Add(single);
-                        else if (merged is YamlSequenceNode many && many.Children.All(item => item is YamlMappingNode))
-                            merges.AddRange(many.Children.Cast<YamlMappingNode>());
-                        else throw new ComposeValidationException("Compose merge key '<<' must reference mappings.");
-                        continue;
+                        if (key is YamlScalarNode { Value: "<<" } && key.Tag.IsEmpty)
+                        {
+                            YamlNode merged = Materialize(value, depth + 1, ref budget);
+                            if (merged is YamlMappingNode single) merges.Add(single);
+                            else if (merged is YamlSequenceNode many && many.Children.All(item => item is YamlMappingNode))
+                                merges.AddRange(many.Children.Cast<YamlMappingNode>());
+                            else throw new ComposeValidationException("Compose merge key '<<' must reference mappings.");
+                            continue;
+                        }
+
+                        YamlNode keyCopy = Materialize(key, depth + 1, ref budget);
+                        if (copy.Children.ContainsKey(keyCopy))
+                            throw new ComposeValidationException($"Compose file has a duplicate key '{key}'.");
+                        copy.Children[keyCopy] = Materialize(value, depth + 1, ref budget);
                     }
 
-                    YamlNode keyCopy = Materialize(key, depth + 1, ref budget);
-                    if (copy.Children.ContainsKey(keyCopy))
-                        throw new ComposeValidationException($"Compose file has a duplicate key '{key}'.");
-                    copy.Children[keyCopy] = Materialize(value, depth + 1, ref budget);
+                    foreach (YamlMappingNode merge in merges)
+                        foreach (var (key, value) in merge.Children)
+                            if (!copy.Children.ContainsKey(key))
+                                copy.Children[key] = value;
+                    return copy;
                 }
-
-                foreach (YamlMappingNode merge in merges)
-                foreach (var (key, value) in merge.Children)
-                    if (!copy.Children.ContainsKey(key))
-                        copy.Children[key] = value;
-                return copy;
-            }
             default:
                 throw new ComposeValidationException("Compose file contains an unsupported YAML node.");
         }

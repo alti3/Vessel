@@ -270,20 +270,20 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
                     "--format=custom"
                 ], false, "postgresql-custom", ".pgdump", "application/octet-stream");
             case DatabaseEngine.MySql or DatabaseEngine.MariaDb:
-            {
-                var (client, dump) = MySqlBinaries(database.Engine);
-                IReadOnlyList<string> databases =
-                    await ListUserDatabasesAsync(cli, container, database, client, credentials, cancellationToken);
-                if (databases.Count == 0)
-                    return new BackupPlan(dump, null, true, "mysql-sql+gzip", ".sql.gz", "application/gzip");
-                var arguments = new List<string>
+                {
+                    var (client, dump) = MySqlBinaries(database.Engine);
+                    IReadOnlyList<string> databases =
+                        await ListUserDatabasesAsync(cli, container, database, client, credentials, cancellationToken);
+                    if (databases.Count == 0)
+                        return new BackupPlan(dump, null, true, "mysql-sql+gzip", ".sql.gz", "application/gzip");
+                    var arguments = new List<string>
                 {
                     "exec", "--env", "MYSQL_PWD", container, dump, "--user=root", "--single-transaction", "--quick",
                     "--routines", "--events", "--triggers", "--hex-blob", "--databases"
                 };
-                arguments.AddRange(databases);
-                return new BackupPlan(dump, arguments, true, "mysql-sql+gzip", ".sql.gz", "application/gzip");
-            }
+                    arguments.AddRange(databases);
+                    return new BackupPlan(dump, arguments, true, "mysql-sql+gzip", ".sql.gz", "application/gzip");
+                }
             case DatabaseEngine.Redis:
                 return new BackupPlan("redis-cli",
                 [
@@ -555,7 +555,7 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
         {
             DatabaseEngine.PostgreSql => new Dictionary<string, string?> { ["PGPASSWORD"] = credentials },
             DatabaseEngine.MySql or DatabaseEngine.MariaDb => new Dictionary<string, string?>
-                { ["MYSQL_PWD"] = credentials },
+            { ["MYSQL_PWD"] = credentials },
             DatabaseEngine.Redis => new Dictionary<string, string?> { ["REDISCLI_AUTH"] = credentials },
             _ => throw new InvalidOperationException("Backup provider supports PostgreSQL, MySQL, MariaDB, and Redis.")
         };

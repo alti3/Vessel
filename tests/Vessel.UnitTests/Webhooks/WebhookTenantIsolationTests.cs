@@ -232,7 +232,7 @@ public sealed class WebhookTenantIsolationTests
             return System.Text.Json.JsonSerializer.Serialize(new
             {
                 headers = new Dictionary<string, string>
-                    { ["X-GitHub-Event"] = "push", ["X-Hub-Signature-256"] = signature },
+                { ["X-GitHub-Event"] = "push", ["X-Hub-Signature-256"] = signature },
                 rawBody = body,
                 payload = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(body)
             });

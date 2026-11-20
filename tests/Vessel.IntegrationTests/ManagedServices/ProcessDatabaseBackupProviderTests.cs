@@ -168,7 +168,8 @@ public sealed class ProcessDatabaseBackupProviderTests : IDisposable
     {
         var runner = new FakeProcessRunner();
         DatabaseRestoreRequest request = RestoreRequest(DatabaseEngine.PostgreSql,
-            Encoding.UTF8.GetBytes("-- PostgreSQL database dump\n")) with { ExpectedSha256 = new string('0', 64) };
+            Encoding.UTF8.GetBytes("-- PostgreSQL database dump\n")) with
+        { ExpectedSha256 = new string('0', 64) };
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             CreateProvider(runner).RestoreAsync(request, TestContext.Current.CancellationToken));
