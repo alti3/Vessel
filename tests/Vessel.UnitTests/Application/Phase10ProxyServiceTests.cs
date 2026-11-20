@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Jobs;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Redis;
@@ -34,7 +35,7 @@ using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.UnitTests.Application;
 
-public sealed class Phase10ProxyServiceTests
+public sealed partial class Phase10ProxyServiceTests
 {
     [Fact]
     public async Task ConfigureDomain_NormalizesHostCreatesCertificateAndUpdatesCanonical()
@@ -170,7 +171,7 @@ public sealed class Phase10ProxyServiceTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(certificate.Id.Value, summary.Id);
-        Assert.Single(fixture.ProxyProvider.AppliedDocuments);
+        Assert.True(fixture.Files.Contents.ContainsKey(ProxyLayout.DynamicConfigurationFile));
         Assert.Equal("app.example.com", fixture.ProxyProvider.GeneratedRoutes.Single().Host);
     }
 
@@ -209,6 +210,72 @@ public sealed class Phase10ProxyServiceTests
     }
 
     [Fact]
+    public async Task ProxyApplyFailure_RaisesProxyApplyFailedNotification()
+    {
+        var fixture = ServiceFixture.Create();
+        fixture.Files.FailNextWrites = 1;
+        fixture.Files.FailureMessage = "traefik exited";
+
+        await Assert.ThrowsAsync<DomainException>(() => fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(
+            fixture.UserId, fixture.TeamId, fixture.Server.Id, TestContext.Current.CancellationToken));
+
+        TeamNotification notification = Assert.Single(fixture.Notifications.Published);
+        Assert.Equal(fixture.TeamId, notification.TeamId);
+        Assert.Equal(NotificationEventTypes.ProxyApplyFailed, notification.Notification.EventType);
+        Assert.Equal(fixture.Server.Id.Value.ToString("D"), notification.Notification.TargetId);
+        Assert.DoesNotContain("traefik exited", notification.Notification.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProxyApplySuccess_RaisesNoNotification()
+    {
+        var fixture = ServiceFixture.Create();
+
+        await fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(
+            fixture.UserId, fixture.TeamId, fixture.Server.Id, TestContext.Current.CancellationToken);
+
+        Assert.Empty(fixture.Notifications.Published);
+    }
+
+    [Fact]
+    public async Task RequestIssuance_WhenProxyApplyFails_RaisesCertificateIssuanceFailed()
+    {
+        var fixture = ServiceFixture.Create();
+        fixture.Application.UpsertDomain(new DomainName("app.example.com"), 8080, true, true, false, fixture.Now);
+        var certificate = Certificate.Create(fixture.TeamId, fixture.Application.Id, "app.example.com",
+            CertificateProvider.TraefikAcme, fixture.Now);
+        fixture.Db.CertificateItems.Add(certificate);
+        fixture.Files.FailNextWrites = 1;
+        fixture.Files.FailureMessage = "acme failed";
+
+        await Assert.ThrowsAsync<DomainException>(() => fixture.Certificates.RequestIssuanceAsync(certificate.Id,
+            TestContext.Current.CancellationToken));
+
+        Assert.Contains(fixture.Notifications.Published, item =>
+            item.Notification.EventType == NotificationEventTypes.CertificateIssuanceFailed
+            && item.Notification.Title.Contains("app.example.com", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RenewDue_NotifiesOnceWhenRenewalFails()
+    {
+        var fixture = ServiceFixture.Create();
+        var certificate = Certificate.Create(fixture.TeamId, fixture.Application.Id, "due.example.com",
+            CertificateProvider.TraefikAcme, fixture.Now.AddDays(-90));
+        certificate.MarkIssued(fixture.Now.AddDays(-90), fixture.Now.AddDays(7), null, null);
+        certificate.QueueRenewal(fixture.Now);
+        fixture.Db.CertificateItems.Add(certificate);
+
+        // RenewalQueued is not Issued, so the next renewal attempt fails and should alert once.
+        await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
+        await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(CertificateStatus.Failed, certificate.Status);
+        TeamNotification notification = Assert.Single(fixture.Notifications.Published);
+        Assert.Equal(NotificationEventTypes.CertificateRenewalFailed, notification.Notification.EventType);
+    }
+
+    [Fact]
     public void CertificateRecurringJobs_RegisterSchedulesRenewalJob()
     {
         var scheduler = new TestRecurringJobScheduler();
@@ -237,7 +304,10 @@ public sealed class Phase10ProxyServiceTests
         ProxyConfigurationVersion version = Assert.Single(fixture.Db.ProxyConfigurationVersionItems);
         Assert.Equal(ProxyConfigurationStatus.Applied, version.Status);
         Assert.Equal(version.Id.Value, summary.Id);
-        Assert.Single(fixture.ProxyProvider.AppliedDocuments);
+        Assert.Equal("http:\n  routers: {}\n  services: {}\n",
+            fixture.Files.Contents[ProxyLayout.DynamicConfigurationFile]);
+        Assert.Equal(new string('a', 64),
+            Assert.Single(fixture.Db.ServerProxySettingsItems).LastAppliedDynamicHash);
         Assert.Collection(
             fixture.ProxyProvider.GeneratedRoutes.OrderBy(route => route.Host, StringComparer.OrdinalIgnoreCase),
             route =>
@@ -268,7 +338,7 @@ public sealed class Phase10ProxyServiceTests
         ProxyConfigurationVersion version = Assert.Single(fixture.Db.ProxyConfigurationVersionItems);
         Assert.Equal(ProxyConfigurationStatus.Failed, version.Status);
         Assert.Contains("[redacted]", version.ValidationError, StringComparison.Ordinal);
-        Assert.Empty(fixture.ProxyProvider.AppliedDocuments);
+        Assert.Empty(fixture.Files.Contents);
         Assert.Contains("[redacted]", exception.Message, StringComparison.Ordinal);
     }
 
@@ -287,7 +357,8 @@ public sealed class Phase10ProxyServiceTests
         previous.MarkValidated(fixture.Now.AddMinutes(-9));
         previous.MarkApplied(fixture.Now.AddMinutes(-8));
         fixture.Db.ProxyConfigurationVersionItems.Add(previous);
-        fixture.ProxyProvider.ApplyResult = new ProxyApplyResult(false, "password leaked");
+        fixture.Files.FailNextWrites = 1;
+        fixture.Files.FailureMessage = "password leaked";
 
         DomainException exception = await Assert.ThrowsAsync<DomainException>(() =>
             fixture.ProxyConfigurations.GenerateValidateAndApplyAsync(fixture.UserId, fixture.TeamId,
@@ -298,7 +369,8 @@ public sealed class Phase10ProxyServiceTests
         Assert.Equal(previous.Id, current.PreviousVersionId);
         Assert.Equal(ProxyConfigurationStatus.Failed, current.Status);
         Assert.Contains("[redacted]", current.ApplyError, StringComparison.Ordinal);
-        Assert.Single(fixture.ProxyProvider.RolledBackDocuments);
+        // The previous applied version is delivered again after the failed write.
+        Assert.Equal(previous.Configuration, fixture.Files.Contents[ProxyLayout.DynamicConfigurationFile]);
         Assert.Contains("[redacted]", exception.Message, StringComparison.Ordinal);
     }
 
@@ -358,8 +430,11 @@ public sealed class Phase10ProxyServiceTests
     {
         private ServiceFixture()
         {
+            ProxyLifecycle = new ProxyLifecycleService(Db, Authorization, Locks, [Files], Runtime, Renderer, Audit,
+                Redactor, Time);
             ProxyConfigurations =
-                new ProxyConfigurationService(Db, Authorization, ProxyProvider, Locks, Audit, Redactor, Time);
+                new ProxyConfigurationService(Db, Authorization, ProxyProvider, ProxyLifecycle, Locks, Audit, Redactor,
+                    Time, Notifications);
             Domains = new DomainRoutingService(Db, Authorization, Audit, Redactor, Time);
             Certificates = new CertificateManagementService(
                 Db,
@@ -369,8 +444,11 @@ public sealed class Phase10ProxyServiceTests
                 ProxyConfigurations,
                 Audit,
                 Redactor,
-                Time);
+                Time,
+                Notifications);
         }
+
+        public RecordingNotificationEventPublisher Notifications { get; } = new();
 
         public DateTimeOffset Now { get; } = new(2026, 5, 24, 12, 0, 0, TimeSpan.Zero);
 
@@ -385,6 +463,14 @@ public sealed class Phase10ProxyServiceTests
         public TestRedactor Redactor { get; } = new();
 
         public TestProxyProvider ProxyProvider { get; } = new();
+
+        public TestServerFileChannel Files { get; } = new();
+
+        public TestProxyContainerRuntime Runtime { get; } = new();
+
+        public TestProxyRuntimeRenderer Renderer { get; } = new();
+
+        public ProxyLifecycleService ProxyLifecycle { get; }
 
         public TimeProvider Time => new FixedTimeProvider(Now);
 
@@ -461,6 +547,11 @@ public sealed class Phase10ProxyServiceTests
         public List<AppEntity> ApplicationItems { get; } = [];
         public List<Certificate> CertificateItems { get; } = [];
         public List<ProxyConfigurationVersion> ProxyConfigurationVersionItems { get; } = [];
+        public List<ServerProxySettings> ServerProxySettingsItems { get; } = [];
+        public IQueryable<ServerProxySettings> ServerProxySettings => ServerProxySettingsItems.AsQueryable();
+
+        public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository =>
+            new ListRepository<ServerProxySettings, ServerId>(ServerProxySettingsItems);
 
         public int SaveCount { get; private set; }
 
@@ -734,13 +825,14 @@ public sealed class Phase10ProxyServiceTests
     {
         public ProxyValidationResult ValidationResult { get; set; } = ProxyValidationResult.Success;
 
-        public ProxyApplyResult ApplyResult { get; set; } = new(true, "applied");
-
         public List<ProxyRoute> GeneratedRoutes { get; private set; } = [];
 
-        public List<ProxyConfigurationDocument> AppliedDocuments { get; } = [];
+        public List<ProxyRouteRejection> RouteRejections { get; } = [];
 
-        public List<ProxyConfigurationDocument> RolledBackDocuments { get; } = [];
+        public IReadOnlyList<ProxyRouteRejection> ValidateRoutes(IReadOnlyList<ProxyRoute> routes)
+        {
+            return RouteRejections;
+        }
 
         public ProxyConfigurationDocument Generate(ServerId serverId, IReadOnlyList<ProxyRoute> routes)
         {
@@ -757,28 +849,6 @@ public sealed class Phase10ProxyServiceTests
         public ProxyValidationResult Validate(ProxyConfigurationDocument document)
         {
             return ValidationResult;
-        }
-
-        public Task<ProxyApplyResult> ApplyAsync(
-            ProxyConfigurationDocument document,
-            ProxyConfigurationDocument? previous,
-            CancellationToken cancellationToken = default)
-        {
-            AppliedDocuments.Add(document);
-            return Task.FromResult(ApplyResult);
-        }
-
-        public Task<ProxyApplyResult> RollbackAsync(
-            ProxyConfigurationDocument previous,
-            CancellationToken cancellationToken = default)
-        {
-            RolledBackDocuments.Add(previous);
-            return Task.FromResult(new ProxyApplyResult(true, "rolled back"));
-        }
-
-        public Task<ProxyApplyResult> ReloadAsync(ServerId serverId, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(new ProxyApplyResult(true, "reloaded"));
         }
     }
 

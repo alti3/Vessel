@@ -131,6 +131,23 @@ public sealed class VesselDbContextModelTests
     }
 
     [Fact]
+    public void Model_MapsServerProxySettingsKeyedByServer()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? settings = context.Model.FindEntityType(typeof(ServerProxySettings));
+
+        Assert.Equal("server_proxy_settings", settings?.GetTableName());
+        IProperty key = Assert.Single(settings!.FindPrimaryKey()!.Properties);
+        Assert.Equal("ServerId", key.GetColumnName());
+        Assert.Equal(255, settings.FindProperty(nameof(ServerProxySettings.Image))?.GetMaxLength());
+        Assert.Null(settings.FindProperty(nameof(ServerProxySettings.ServerId)));
+        Assert.Contains(settings.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(Server) &&
+                          foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
+    }
+
+    [Fact]
     public void Model_MapsDeploymentMvpMetadata()
     {
         using VesselDbContext context = CreateContext();

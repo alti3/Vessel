@@ -265,8 +265,8 @@ public sealed class HostExecutionBoundaryTests
     }
 
     private ServerHealthPollingService Polling(CountingContainerRuntime runtime, RecordingSshClient ssh) =>
-        new(_db, new VesselAuthorizationService(_db), runtime, new NullRealtimeNotifier(), new RecordingAuditWriter(),
-            TimeProvider.System, ssh);
+        new(_db, new VesselAuthorizationService(_db), runtime, new FixedProxyStatusProbe(true), new NullRealtimeNotifier(),
+            new RecordingAuditWriter(), TimeProvider.System, new RecordingNotificationEventPublisher(), ssh);
 
     private ResourceManagementService Resources(CountingContainerRuntime? runtime = null, RecordingSshClient? ssh = null) =>
         new(_db, new VesselAuthorizationService(_db), new UnavailableSecretVault(), new RecordingAuditWriter(),

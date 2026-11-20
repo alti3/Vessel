@@ -6,6 +6,7 @@ using Vessel.Application.Authorization;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
 using Vessel.Application.Git;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
@@ -35,8 +36,10 @@ public sealed partial class DeploymentRunner(
     ISecretRedactor redactor,
     IRealtimeNotifier realtime,
     ProxyConfigurationService proxyConfiguration,
+    ProxyLifecycleService proxyLifecycle,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
+    INotificationEventPublisher notifications,
     VesselAuthorizationService authorization)
     : IDeploymentRunner
 {
@@ -64,6 +67,7 @@ public sealed partial class DeploymentRunner(
                 cancellationToken);
             await FailAsync(deploymentId, cancellationToken);
             finalStatus = DeploymentStatus.Failed;
+            await NotifyFinishedAsync(deploymentId, finalStatus);
             return;
         }
 
@@ -115,6 +119,11 @@ public sealed partial class DeploymentRunner(
 
             await AppendAsync(deploymentId, "system", "Ensuring deployment network exists.", cancellationToken);
             await runtime.EnsureNetworkAsync(target, plan.NetworkName, Labels(deploymentId, application),
+                cancellationToken);
+            // Attach the proxy before application containers start (upstream v4.4.0); proxy type None skips this.
+            ProxyEnsureResult proxy =
+                await proxyLifecycle.EnsureForDeploymentAsync(server.Id, plan.NetworkName, cancellationToken);
+            await AppendAsync(deploymentId, proxy.Succeeded ? "system" : "stderr", redactor.Redact(proxy.Message),
                 cancellationToken);
             await ThrowIfCanceledAsync(deploymentId, cancellationToken);
 
@@ -172,7 +181,26 @@ public sealed partial class DeploymentRunner(
                 Stopwatch.GetElapsedTime(startedAt).TotalSeconds,
                 new TagList { { "status", finalStatus.ToString() } });
             VesselDiagnostics.ActiveDeployments.Add(-1);
+            await NotifyFinishedAsync(deploymentId, finalStatus);
         }
+    }
+
+    private Task NotifyFinishedAsync(DeploymentId deploymentId, DeploymentStatus finalStatus)
+    {
+        // Raised after the terminal state is persisted; the publisher never throws into the runner.
+        return notifications.PublishAsync(() =>
+        {
+            Deployment deployment = dbContext.Deployments.Single(item => item.Id == deploymentId);
+            (AppEntity application, _, _, TeamId teamId) = LoadDeploymentContext(deploymentId);
+            DeploymentNotificationOutcome outcome = finalStatus switch
+            {
+                DeploymentStatus.Succeeded => DeploymentNotificationOutcome.Succeeded,
+                DeploymentStatus.CanceledByUser => DeploymentNotificationOutcome.Cancelled,
+                _ => DeploymentNotificationOutcome.Failed
+            };
+            return new TeamNotification(teamId, OperationalNotifications.DeploymentFinished(
+                deploymentId.Value, application.Id.Value, application.Name.Value, deployment.CommitSha, outcome));
+        });
     }
 
     private async Task StreamBuildAsync(
@@ -339,7 +367,10 @@ public sealed partial class DeploymentRunner(
         builder.AppendLine("      vessel.managed: \"true\"");
         builder.AppendLine($"      vessel.application: \"{application.Id.Value:D}\"");
         builder.AppendLine("    networks:");
-        builder.AppendLine($"      - {networkName}");
+        builder.AppendLine($"      {networkName}:");
+        builder.AppendLine("        aliases:");
+        // Stable per-application alias used by proxy upstreams; never the user-controlled display name.
+        builder.AppendLine($"          - {ProxyNaming.UpstreamAlias(application.Id)}");
         builder.AppendLine("    ports:");
         builder.AppendLine($"      - \"{port}:{port}\"");
         builder.AppendLine("    restart: unless-stopped");

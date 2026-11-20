@@ -90,6 +90,8 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<Certificate> Certificates { get; }
 
+    IQueryable<ServerProxySettings> ServerProxySettings { get; }
+
     IRepository<User, UserId> UserRepository { get; }
 
     IRepository<Team, TeamId> TeamRepository { get; }
@@ -149,6 +151,8 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository { get; }
 
     IRepository<Certificate, CertificateId> CertificateRepository { get; }
+
+    IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
 
     IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; }
 }

@@ -22,5 +22,6 @@
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL"/>
         <PackageReference Include="SSH.NET"/>
         <PackageReference Include="StackExchange.Redis"/>
+        <PackageReference Include="YamlDotNet"/>
     </ItemGroup>
 </Project>

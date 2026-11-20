@@ -35,11 +35,8 @@ public sealed class StartDeploymentService(
         activity?.SetTag("vessel.webhook_event_id", request.WebhookEventId);
 
         var applicationId = new ApplicationId(request.ApplicationId);
-        if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.DeploymentsStart))
-            throw new UnauthorizedAccessException(
-                $"Missing required permission '{VesselPermissions.DeploymentsStart}'.");
-        if (!authorization.CanAccessApplication(actorUserId, applicationId))
-            throw new UnauthorizedAccessException("Application is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Application(applicationId),
+            VesselPermissions.DeploymentsStart);
 
         Domain.Applications.Application application =
             dbContext.Applications.SingleOrDefault(application => application.Id == applicationId)
@@ -125,11 +122,8 @@ public sealed class StartDeploymentService(
         DeploymentId deploymentId,
         CancellationToken cancellationToken = default)
     {
-        if (!authorization.HasPermission(actorUserId, teamId, VesselPermissions.DeploymentsCancel))
-            throw new UnauthorizedAccessException(
-                $"Missing required permission '{VesselPermissions.DeploymentsCancel}'.");
-        if (!authorization.CanAccessDeployment(actorUserId, deploymentId))
-            throw new UnauthorizedAccessException("Deployment is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Deployment(deploymentId),
+            VesselPermissions.DeploymentsCancel);
 
         Deployment deployment = await dbContext.DeploymentRepository.GetByIdAsync(deploymentId, cancellationToken)
                                 ?? throw new InvalidOperationException("Deployment was not found.");

@@ -81,6 +81,7 @@ internal sealed class SecurityTestDbContext : IVesselDbContext
     public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => Empty<ProxyConfigurationVersion>();
     public IQueryable<Certificate> Certificates => Empty<Certificate>();
     public IQueryable<TerminalSession> TerminalSessions => TerminalSessionItems.AsQueryable();
+    public IQueryable<ServerProxySettings> ServerProxySettings => Empty<ServerProxySettings>();
 
     public IRepository<User, UserId> UserRepository => new ListRepository<User, UserId>(UserItems);
     public IRepository<Team, TeamId> TeamRepository => new ListRepository<Team, TeamId>(TeamItems);
@@ -106,6 +107,7 @@ internal sealed class SecurityTestDbContext : IVesselDbContext
     public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository => EmptyRepo<ProxyConfigurationVersion, ProxyConfigurationVersionId>();
     public IRepository<Certificate, CertificateId> CertificateRepository => EmptyRepo<Certificate, CertificateId>();
     public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository => new ListRepository<TerminalSession, TerminalSessionId>(TerminalSessionItems);
+    public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository => EmptyRepo<ServerProxySettings, ServerId>();
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -227,8 +229,15 @@ internal sealed class RecordingSshClient(bool reachable) : ISshClient
     }
 
     public Task<SshCommandResult> RunCommandAsync(SshCommandRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<SshCommandResult> RunCommandWithInputAsync(SshCommandRequest request, Stream standardInput, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task UploadAsync(SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task DownloadAsync(SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+}
+
+internal sealed class FixedProxyStatusProbe(bool healthy) : Vessel.Application.Proxy.IProxyStatusProbe
+{
+    public Task<bool> IsHealthyAsync(Server server, CancellationToken cancellationToken = default) =>
+        Task.FromResult(healthy);
 }
 
 internal sealed class RecordingJobDispatcher : IBackgroundJobDispatcher

@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,23 +31,21 @@ public sealed class TeamsController : ControllerBase
     }
 
     [HttpPost("{teamId:guid}/switch")]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     public async Task<IActionResult> Switch(Guid teamId)
     {
         var selectedTeamId = new TeamId(teamId);
         if (!_teamService.IsTeamMember(User.GetUserId(), selectedTeamId)) return Forbid();
 
-        var claims = User.Claims
-            .Where(claim => claim.Type != VesselClaimTypes.TeamId)
-            .Append(new Claim(VesselClaimTypes.TeamId, selectedTeamId.Value.ToString("D")))
-            .ToList();
-
+        // Re-issue the session from an explicit claim allow-list; never copy the caller's claims wholesale.
         await HttpContext.SignInAsync(
             VesselAuthenticationSchemes.Cookie,
-            new ClaimsPrincipal(new ClaimsIdentity(claims, VesselAuthenticationSchemes.Cookie)));
+            VesselSessionPrincipal.WithTeam(User, selectedTeamId));
         return NoContent();
     }
 
     [HttpPost("{teamId:guid}/invitations")]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     public async Task<ActionResult<TeamInvitationResponse>> Invite(
         Guid teamId,
         TeamInvitationRequest request,
@@ -67,6 +64,7 @@ public sealed class TeamsController : ControllerBase
     }
 
     [HttpPost("invitations/accept")]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     public async Task<IActionResult> AcceptInvitation(
         AcceptInvitationRequest request,
         CancellationToken cancellationToken)
@@ -81,6 +79,7 @@ public sealed class TeamsController : ControllerBase
     }
 
     [HttpPut("{teamId:guid}/members/{userId:guid}/role")]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     public async Task<IActionResult> ChangeRole(
         Guid teamId,
         Guid userId,
@@ -98,6 +97,7 @@ public sealed class TeamsController : ControllerBase
     }
 
     [HttpDelete("{teamId:guid}/members/{userId:guid}")]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     public async Task<IActionResult> RemoveMember(Guid teamId, Guid userId, CancellationToken cancellationToken)
     {
         await _teamService.RemoveMemberAsync(

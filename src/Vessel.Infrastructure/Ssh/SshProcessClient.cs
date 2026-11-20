@@ -28,6 +28,19 @@ public sealed class SshProcessClient(IProcessRunner processRunner) : ISshClient
         return new SshCommandResult(result.ExitInfo.ExitCode, result.StandardOutput, result.StandardError);
     }
 
+    public async Task<SshCommandResult> RunCommandWithInputAsync(
+        SshCommandRequest request,
+        Stream standardInput,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await processRunner.RunTextWithInputAsync(new ProcessCommand(
+            "ssh",
+            BuildSshArgs(request.Connection, request.Command),
+            Timeout: request.Timeout ?? TimeSpan.FromMinutes(5),
+            Redaction: new ProcessRedactionProfile(request.SecretValues ?? [], [])), standardInput, cancellationToken);
+        return new SshCommandResult(result.ExitInfo.ExitCode, result.StandardOutput, result.StandardError);
+    }
+
     public async Task UploadAsync(SshFileTransferRequest request, CancellationToken cancellationToken = default)
     {
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
