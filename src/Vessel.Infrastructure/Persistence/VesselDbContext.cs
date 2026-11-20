@@ -43,6 +43,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ServiceResourceRepository = new EfRepository<ServiceResource, ServiceResourceId>(this);
         BackupScheduleRepository = new EfRepository<BackupSchedule, BackupScheduleId>(this);
         BackupExecutionRepository = new EfRepository<BackupExecution, BackupExecutionId>(this);
+        DatabaseRestoreRepository = new EfRepository<DatabaseRestore, DatabaseRestoreId>(this);
         DeploymentRepository = new EfRepository<Deployment, DeploymentId>(this);
         TerminalSessionRepository = new EfRepository<TerminalSession, TerminalSessionId>(this);
         SecretReferenceRepository = new EfRepository<SecretReference, SecretReferenceId>(this);
@@ -92,6 +93,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public DbSet<BackupSchedule> BackupScheduleSet => Set<BackupSchedule>();
 
     public DbSet<BackupExecution> BackupExecutionSet => Set<BackupExecution>();
+
+    public DbSet<DatabaseRestore> DatabaseRestoreSet => Set<DatabaseRestore>();
 
     public DbSet<Deployment> DeploymentSet => Set<Deployment>();
 
@@ -160,6 +163,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<BackupExecution> BackupExecutions => BackupExecutionSet;
 
+    public IQueryable<DatabaseRestore> DatabaseRestores => DatabaseRestoreSet;
+
     public IQueryable<Deployment> Deployments => DeploymentSet;
 
     public IQueryable<TerminalSession> TerminalSessions => TerminalSessionSet;
@@ -222,6 +227,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public IRepository<BackupSchedule, BackupScheduleId> BackupScheduleRepository { get; }
 
     public IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; }
+
+    public IRepository<DatabaseRestore, DatabaseRestoreId> DatabaseRestoreRepository { get; }
 
     public IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
@@ -734,6 +741,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasMaxLength(120).IsRequired();
             builder.Property(schedule => schedule.CronExpression).HasMaxLength(120).IsRequired();
             builder.Property(schedule => schedule.StorageKind).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(schedule => schedule.TimeoutSeconds).HasDefaultValue(BackupSchedule.DefaultTimeoutSeconds)
+                .IsRequired();
             builder.Property(schedule => schedule.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(schedule => schedule.DomainEvents);
             builder.HasIndex(schedule => new { schedule.TeamId, schedule.DatabaseResourceId, schedule.Name })
@@ -767,6 +776,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(execution => execution.LastRestoreFailureReason).HasMaxLength(1000);
             builder.Property(execution => execution.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(execution => execution.DomainEvents);
+            builder.Ignore(execution => execution.HasRestorableArtifact);
             builder.HasIndex(execution => new { execution.TeamId, execution.DatabaseResourceId, execution.CreatedAt });
             builder.HasOne<Team>()
                 .WithMany()
@@ -779,6 +789,44 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.HasOne<BackupSchedule>()
                 .WithMany()
                 .HasForeignKey(execution => execution.ScheduleId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<DatabaseRestore>(builder =>
+        {
+            builder.ToTable("database_restores");
+            builder.HasKey(restore => restore.Id);
+            builder.Property(restore => restore.Id).HasDatabaseRestoreIdConversion();
+            builder.Property(restore => restore.TeamId).HasTeamIdConversion();
+            builder.Property(restore => restore.BackupExecutionId).HasBackupExecutionIdConversion();
+            builder.Property(restore => restore.TargetDatabaseResourceId).HasDatabaseResourceIdConversion();
+            builder.Property(restore => restore.RequestedByUserId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new UserId(value.Value) : null);
+            builder.Property(restore => restore.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(restore => restore.DetectedFormat).HasMaxLength(64);
+            builder.Property(restore => restore.Log).HasMaxLength(DatabaseRestore.MaxLogLength).IsRequired();
+            builder.Property(restore => restore.FailureReason).HasMaxLength(DatabaseRestore.MaxFailureReasonLength);
+            builder.Property(restore => restore.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(restore => restore.DomainEvents);
+            builder.Ignore(restore => restore.IsActive);
+            builder.HasIndex(restore => new { restore.TeamId, restore.TargetDatabaseResourceId, restore.CreatedAt });
+            builder.HasIndex(restore => new { restore.TargetDatabaseResourceId, restore.Status });
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(restore => restore.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<BackupExecution>()
+                .WithMany()
+                .HasForeignKey(restore => restore.BackupExecutionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<DatabaseResource>()
+                .WithMany()
+                .HasForeignKey(restore => restore.TargetDatabaseResourceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(restore => restore.RequestedByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
     }

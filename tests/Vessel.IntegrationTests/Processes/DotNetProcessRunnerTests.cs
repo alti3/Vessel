@@ -128,6 +128,83 @@ public sealed class DotNetProcessRunnerTests
         Assert.True(process.HasExited);
     }
 
+    [Fact]
+    public async Task RunStreamingAsync_StreamsOutputLargerThanTheTextLimitWithoutBuffering()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        await using var output = new MemoryStream();
+
+        ProcessResult result = await _runner.RunStreamingAsync(
+            Shell("head -c 12582912 /dev/zero", outputMode: ProcessOutputMode.Stream) with
+            {
+                MaxOutputBytes = 1024
+            },
+            new ProcessStreams(StandardOutput: output),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(12L * 1024 * 1024, output.Length);
+        Assert.Empty(result.StandardOutput);
+    }
+
+    [Fact]
+    public async Task RunStreamingAsync_PipesInputAndCapturesBoundedRedactedStandardError()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes("payload-bytes"));
+        await using var output = new MemoryStream();
+
+        ProcessResult result = await _runner.RunStreamingAsync(
+            Shell("cat; echo top-secret-value 1>&2", new ProcessRedactionProfile(["top-secret-value"], []),
+                ProcessOutputMode.Stream),
+            new ProcessStreams(input, output),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("payload-bytes", Encoding.UTF8.GetString(output.ToArray()));
+        Assert.DoesNotContain("top-secret-value", result.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunStreamingAsync_TruncatesStandardErrorInsteadOfFailing()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        ProcessResult result = await _runner.RunStreamingAsync(
+            Shell("head -c 100000 /dev/zero | tr '\\0' x 1>&2", outputMode: ProcessOutputMode.Stream) with
+            {
+                MaxOutputBytes = 100
+            },
+            new ProcessStreams(),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("[output truncated]", result.StandardError, StringComparison.Ordinal);
+        Assert.True(result.StandardError.Length < 200);
+    }
+
+    [Fact]
+    public async Task RunStreamingAsync_ReportsTimeoutAndStopsTheProcess()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        await using var output = new MemoryStream();
+
+        ProcessResult result = await _runner.RunStreamingAsync(
+            Shell("sleep 5", outputMode: ProcessOutputMode.Stream, timeout: TimeSpan.FromMilliseconds(200)),
+            new ProcessStreams(StandardOutput: output),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.ExitInfo.TimedOut);
+        Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task RunStreamingAsync_RejectsOtherOutputModes()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _runner.RunStreamingAsync(
+            Shell("echo nope"), new ProcessStreams(), TestContext.Current.CancellationToken));
+    }
+
     private static ProcessCommand Shell(
         string command,
         ProcessRedactionProfile? redaction = null,

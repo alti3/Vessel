@@ -46,6 +46,10 @@
                     <InputNumber @bind-Value="Schedule.RetentionCount" name="retention"/>
                     <ValidationMessage For="() => Schedule.RetentionCount"/>
                 </label>
+                <label>Timeout (seconds)
+                    <InputNumber @bind-Value="Schedule.TimeoutSeconds" name="timeout"/>
+                    <ValidationMessage For="() => Schedule.TimeoutSeconds"/>
+                </label>
                 <button class="button button-primary" type="submit">Create schedule</button>
             </div>
         </EditForm>
@@ -105,7 +109,7 @@
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         var schedule = await ManagedDatabases.CreateBackupScheduleAsync(user.GetUserId(), user.GetTeamId(),
             new CreateBackupScheduleRequest(Id, Schedule.Name, Schedule.CronExpression, Schedule.RetentionCount,
-                BackupStorageKind.ObjectStorage));
+                BackupStorageKind.ObjectStorage, Schedule.TimeoutSeconds));
         Message = $"Backup schedule created: {schedule.Name}";
     }
 
@@ -121,6 +125,9 @@
 
         [Range(1, 365)]
         public int RetentionCount { get; set; } = 7;
+
+        [Range(BackupSchedule.MinTimeoutSeconds, BackupSchedule.MaxTimeoutSeconds)]
+        public int TimeoutSeconds { get; set; } = BackupSchedule.DefaultTimeoutSeconds;
     }
 
 }

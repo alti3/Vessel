@@ -31,6 +31,9 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<BackupExecutionId, Guid> BackupExecutionId =
         new(id => id.Value, value => new BackupExecutionId(value));
 
+    public static readonly ValueConverter<DatabaseRestoreId, Guid> DatabaseRestoreId =
+        new(id => id.Value, value => new DatabaseRestoreId(value));
+
     public static readonly ValueConverter<DeploymentId, Guid> DeploymentId = new(id => id.Value,
         value => new DeploymentId(value));
 
@@ -144,6 +147,12 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<BackupExecutionId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(BackupExecutionId);
+    }
+
+    public static PropertyBuilder<DatabaseRestoreId> HasDatabaseRestoreIdConversion(
+        this PropertyBuilder<DatabaseRestoreId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(DatabaseRestoreId);
     }
 
     public static PropertyBuilder<DeploymentId> HasDeploymentIdConversion(

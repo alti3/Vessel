@@ -54,6 +54,8 @@ public static class AuditActions
     public const string BackupPruned = "backup.pruned";
     public const string RestoreValidated = "backup.restore_validated";
     public const string RestoreCompleted = "backup.restore_completed";
+    public const string RestoreQueued = "backup.restore_queued";
+    public const string RestoreFailed = "backup.restore_failed";
     public const string EnvironmentVariableCreated = "environment_variable.created";
     public const string SecretStored = "secret.stored";
     public const string SecretRevealed = "secret.revealed";

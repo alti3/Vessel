@@ -196,6 +196,24 @@ public sealed class VesselDbContextModelTests
         Assert.Equal(1000, execution?.FindProperty(nameof(BackupExecution.LastRestoreFailureReason))?.GetMaxLength());
     }
 
+    [Fact]
+    public void Model_MapsDatabaseRestoresAndBackupTimeout()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? schedule = context.Model.FindEntityType(typeof(BackupSchedule));
+        IEntityType? restore = context.Model.FindEntityType(typeof(DatabaseRestore));
+
+        Assert.Equal(BackupSchedule.DefaultTimeoutSeconds,
+            schedule?.FindProperty(nameof(BackupSchedule.TimeoutSeconds))?.GetDefaultValue());
+        Assert.Equal("database_restores", restore?.GetTableName());
+        Assert.Equal(32, restore?.FindProperty(nameof(DatabaseRestore.Status))?.GetMaxLength());
+        Assert.Equal(DatabaseRestore.MaxLogLength, restore?.FindProperty(nameof(DatabaseRestore.Log))?.GetMaxLength());
+        Assert.Null(restore?.FindProperty(nameof(DatabaseRestore.IsActive)));
+        Assert.Null(context.Model.FindEntityType(typeof(BackupExecution))
+            ?.FindProperty(nameof(BackupExecution.HasRestorableArtifact)));
+    }
+
     private static VesselDbContext CreateContext()
     {
         DbContextOptions<VesselDbContext> options = new DbContextOptionsBuilder<VesselDbContext>()

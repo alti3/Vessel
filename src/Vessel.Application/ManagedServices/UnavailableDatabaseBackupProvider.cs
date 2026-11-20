@@ -1,22 +1,16 @@
-using Vessel.Domain.Databases;
-
 namespace Vessel.Application.ManagedServices;
 
 public sealed class UnavailableDatabaseBackupProvider : IDatabaseBackupProvider
 {
-    public Task<BackupArtifact> BackupAsync(
-        DatabaseResource database,
-        string credentials,
+    public Task<BackupArtifactFile> BackupAsync(
+        DatabaseBackupRequest request,
         CancellationToken cancellationToken = default)
     {
         throw new InvalidOperationException("Database backup provider is not configured.");
     }
 
-    public Task<string> RestoreAsync(
-        DatabaseResource target,
-        string credentials,
-        Stream artifact,
-        bool dryRun,
+    public Task<DatabaseRestoreOutcome> RestoreAsync(
+        DatabaseRestoreRequest request,
         CancellationToken cancellationToken = default)
     {
         throw new InvalidOperationException("Database backup provider is not configured.");

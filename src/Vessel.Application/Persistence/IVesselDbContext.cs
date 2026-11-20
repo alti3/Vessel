@@ -52,6 +52,8 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<BackupExecution> BackupExecutions { get; }
 
+    IQueryable<DatabaseRestore> DatabaseRestores => Enumerable.Empty<DatabaseRestore>().AsQueryable();
+
     IQueryable<Deployment> Deployments { get; }
 
     IQueryable<SecretReference> SecretReferences { get; }
@@ -115,6 +117,9 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<BackupSchedule, BackupScheduleId> BackupScheduleRepository { get; }
 
     IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; }
+
+    IRepository<DatabaseRestore, DatabaseRestoreId> DatabaseRestoreRepository =>
+        throw new InvalidOperationException("Database restore persistence is not available.");
 
     IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
