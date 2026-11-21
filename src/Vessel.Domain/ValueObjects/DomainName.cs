@@ -22,6 +22,9 @@ public readonly partial record struct DomainName
         return Value;
     }
 
-    [GeneratedRegex(@"^(?!-)([a-z0-9-]{1,63}\.)+[a-z]{2,63}$")]
+    // At least two labels; labels may contain underscores (upstream v4.2.0 #10663); the TLD is alphabetic or punycode
+    // (IDN TLDs such as xn--p1ai). Single-label names are rejected.
+    [GeneratedRegex(@"^(?=.{1,253}$)([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?\.)+([a-z]{2,63}|xn--[a-z0-9-]{1,59})$",
+        RegexOptions.CultureInvariant)]
     private static partial Regex DomainNamePattern();
 }

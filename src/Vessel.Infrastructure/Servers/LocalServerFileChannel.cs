@@ -114,6 +114,37 @@ public sealed class LocalServerFileChannel(IOptions<ServerFilesOptions> options,
         return await File.ReadAllTextAsync(path, Utf8NoBom, cancellationToken);
     }
 
+    public Task<IReadOnlyList<string>> ListFilesAsync(
+        ServerExecutionTarget target,
+        string relativeDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var path = ResolveHostPath(target, relativeDirectory);
+        if (!Directory.Exists(path))
+            return Task.FromResult<IReadOnlyList<string>>([]);
+        IEnumerable<string> names = new DirectoryInfo(path).EnumerateFiles()
+            .Where(file => (file.Attributes & FileAttributes.ReparsePoint) == 0)
+            .Select(file => file.Name);
+        return Task.FromResult(ServerFileNames.Filter(names));
+    }
+
+    public Task<bool> DeleteFileAsync(
+        ServerExecutionTarget target,
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var path = ResolveHostPath(target, relativePath);
+        if (Directory.Exists(path))
+            throw new InvalidOperationException($"'{relativePath}' is a directory.");
+        var info = new FileInfo(path);
+        if (!info.Exists && info.LinkTarget is null)
+            return Task.FromResult(false);
+        File.Delete(path);
+        return Task.FromResult(true);
+    }
+
     private void EnsureSupported(ServerExecutionTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);

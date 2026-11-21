@@ -48,6 +48,17 @@ public static class AuditActions
     public const string ServerProxyStopped = "server_proxy.stopped";
     public const string ServerProxyRestarted = "server_proxy.restarted";
     public const string CertificateIssuanceQueued = "certificate.issuance_queued";
+    public const string DomainConflictOverridden = "domain_route.conflict_overridden";
+    public const string ServiceDomainConfigured = "service_domain.configured";
+    public const string ServiceDomainRemoved = "service_domain.removed";
+    public const string ProxyConfigurationRestored = "proxy_configuration.restored";
+    public const string ProxyConfigurationRevealed = "proxy_configuration.revealed";
+    public const string ProxyConfigurationPruned = "proxy_configuration.pruned";
+    public const string ProxyDynamicConfigurationSaved = "proxy_dynamic_configuration.saved";
+    public const string ProxyDynamicConfigurationRemoved = "proxy_dynamic_configuration.removed";
+    public const string CertificateDeleted = "certificate.deleted";
+    public const string AcmeBackupRestored = "certificate.acme_backup_restored";
+    public const string AcmeBackupDeleted = "certificate.acme_backup_deleted";
     public const string DatabaseCreated = "database.created";
     public const string DatabaseLifecycleActionQueued = "database.lifecycle_action_queued";
     public const string DatabaseLifecycleActionCompleted = "database.lifecycle_action_completed";

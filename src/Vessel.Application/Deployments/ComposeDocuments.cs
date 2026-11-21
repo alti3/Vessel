@@ -18,6 +18,13 @@ public interface IComposeDocumentBuilder
     /// </summary>
     /// <exception cref="ComposeValidationException">The document is invalid or violates the path policy.</exception>
     ComposeNormalizationResult NormalizeRepositoryCompose(string yaml, RepositoryComposeSpec spec);
+
+    /// <summary>
+    ///     Joins the named services of a (Vessel-generated) compose document to the external server network under the
+    ///     given upstream aliases, so the server proxy can route to them. Used for service-template resources.
+    /// </summary>
+    /// <exception cref="ComposeValidationException">A named service does not exist or cannot join the network.</exception>
+    string AttachServicesToNetwork(string yaml, string networkName, IReadOnlyDictionary<string, string> aliasesByService);
 }
 
 /// <summary>

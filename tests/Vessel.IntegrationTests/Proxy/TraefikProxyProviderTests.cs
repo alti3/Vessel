@@ -16,7 +16,7 @@ public sealed class TraefikProxyProviderTests
         var serverId = ServerId.New();
         ProxyRoute[] routes =
         [
-            new(AppId.New(), serverId, "vessel-app", "app.example.com", 8080, true, true, false)
+            Route(AppId.New(), serverId, "vessel-app", "app.example.com", 8080, true, true, false)
         ];
 
         ProxyConfigurationDocument first = provider.Generate(serverId, routes);
@@ -37,8 +37,8 @@ public sealed class TraefikProxyProviderTests
 
         ProxyConfigurationDocument document = provider.Generate(serverId,
         [
-            new ProxyRoute(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false),
-            new ProxyRoute(applicationId, serverId, "vessel-app", "www.example.com", 9090, false, false, true)
+            Route(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false),
+            Route(applicationId, serverId, "vessel-app", "www.example.com", 9090, false, false, true)
         ]);
 
         Assert.Contains("Host(`app.example.com`)", document.Contents, StringComparison.Ordinal);
@@ -60,8 +60,8 @@ public sealed class TraefikProxyProviderTests
 
         ProxyConfigurationDocument document = provider.Generate(serverId,
         [
-            new ProxyRoute(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false),
-            new ProxyRoute(applicationId, serverId, "vessel-app", "www.example.com", 8080, true, false, true)
+            Route(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false),
+            Route(applicationId, serverId, "vessel-app", "www.example.com", 8080, true, false, true)
         ]);
 
         var yaml = new YamlStream();
@@ -88,7 +88,7 @@ public sealed class TraefikProxyProviderTests
 
         ProxyConfigurationDocument document = provider.Generate(serverId,
         [
-            new ProxyRoute(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false)
+            Route(applicationId, serverId, "vessel-app", "app.example.com", 8080, true, true, false)
         ]);
 
         var key = ProxyNaming.RouterKey(applicationId, "app.example.com");
@@ -127,7 +127,7 @@ public sealed class TraefikProxyProviderTests
 
         Assert.Throws<InvalidOperationException>(() => provider.Generate(serverId,
         [
-            new ProxyRoute(AppId.New(), serverId, "vessel-app", "www.example.com", 8080, true, false, true)
+            Route(AppId.New(), serverId, "vessel-app", "www.example.com", 8080, true, false, true)
         ]));
     }
 
@@ -136,13 +136,13 @@ public sealed class TraefikProxyProviderTests
     {
         TraefikProxyProvider provider = CreateProvider();
         var serverId = ServerId.New();
-        var good = new ProxyRoute(AppId.New(), serverId, "vessel-app-a", "good.example.com", 8080, true, true, false);
-        var badHost = new ProxyRoute(AppId.New(), serverId, "vessel-app-b", "-bad.example.com", 8080, true, true,
+        var good = Route(AppId.New(), serverId, "vessel-app-a", "good.example.com", 8080, true, true, false);
+        var badHost = Route(AppId.New(), serverId, "vessel-app-b", "-bad.example.com", 8080, true, true,
             false);
-        var dangling = new ProxyRoute(AppId.New(), serverId, "vessel-app-c", "www.other.com", 8080, true, false, true);
-        var claimOne = new ProxyRoute(AppId.New(), serverId, "vessel-app-d", "shared.example.com", 8080, true, true,
+        var dangling = Route(AppId.New(), serverId, "vessel-app-c", "www.other.com", 8080, true, false, true);
+        var claimOne = Route(AppId.New(), serverId, "vessel-app-d", "shared.example.com", 8080, true, true,
             false);
-        var claimTwo = new ProxyRoute(AppId.New(), serverId, "vessel-app-e", "shared.example.com", 8080, true, true,
+        var claimTwo = Route(AppId.New(), serverId, "vessel-app-e", "shared.example.com", 8080, true, true,
             false);
 
         IReadOnlyList<ProxyRouteRejection> rejections =
@@ -161,8 +161,8 @@ public sealed class TraefikProxyProviderTests
         var serverId = ServerId.New();
         ProxyRoute[] routes =
         [
-            new(AppId.New(), serverId, "app-one", "app.example.com", 8080, true, true, false),
-            new(AppId.New(), serverId, "app-two", "app.example.com", 8081, true, false, false)
+            Route(AppId.New(), serverId, "app-one", "app.example.com", 8080, true, true, false),
+            Route(AppId.New(), serverId, "app-two", "app.example.com", 8081, true, false, false)
         ];
         ProxyConfigurationDocument document = provider.Generate(serverId, routes) with
         {
@@ -206,8 +206,8 @@ public sealed class TraefikProxyProviderTests
             "http:\n  routers: {}\n  services: {}\n",
             "hash",
             [
-                new ProxyRoute(AppId.New(), serverId, "app", "-bad.example.com", 8080, true, false, false),
-                new ProxyRoute(AppId.New(), serverId, "app", "bad.example.com", 70000, true, false, false)
+                Route(AppId.New(), serverId, "app", "-bad.example.com", 8080, true, false, false),
+                Route(AppId.New(), serverId, "app", "bad.example.com", 70000, true, false, false)
             ]);
 
         ProxyValidationResult result = provider.Validate(document);
@@ -222,5 +222,22 @@ public sealed class TraefikProxyProviderTests
     private static TraefikProxyProvider CreateProvider()
     {
         return new TraefikProxyProvider();
+    }
+
+    private static ProxyRoute Route(
+        AppId applicationId,
+        ServerId serverId,
+        string upstream,
+        string host,
+        int port,
+        bool tls,
+        bool canonical,
+        bool redirectToCanonical,
+        RoutePolicy? policy = null,
+        string path = "",
+        ProxyBasicAuthCredentials? credentials = null)
+    {
+        return new ProxyRoute(new RoutableEndpoint(RouteOwnerKind.Application, applicationId.Value, upstream, port),
+            serverId, host, path, tls, canonical, redirectToCanonical, policy, credentials);
     }
 }

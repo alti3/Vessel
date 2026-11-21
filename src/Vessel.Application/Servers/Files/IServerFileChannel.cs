@@ -30,6 +30,27 @@ public interface IServerFileChannel
         ServerExecutionTarget target,
         string relativePath,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Names of the regular, non-hidden files directly inside <paramref name="relativeDirectory" /> (empty when the
+    ///     directory does not exist). Names are returned only when they are valid path segments.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListFilesAsync(
+        ServerExecutionTarget target,
+        string relativeDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This server file channel cannot list files.");
+    }
+
+    /// <summary>Deletes a regular file. Returns <see langword="false" /> when it did not exist.</summary>
+    Task<bool> DeleteFileAsync(
+        ServerExecutionTarget target,
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This server file channel cannot delete files.");
+    }
 }
 
 /// <summary>A file to deliver. With <c>CreateOnly</c> an existing destination is kept (for example ACME storage).</summary>

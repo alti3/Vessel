@@ -5,6 +5,7 @@ using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Webhooks;
@@ -151,22 +152,25 @@ public static class DeploymentPlanBuilder
     }
 
     /// <summary>
-    ///     Preview host derived from the application's canonical (or first) domain using Coolify's default preview
-    ///     template <c>{{pr_id}}.{{domain}}</c>. Returns null when the application has no domain to derive from.
+    ///     Preview host derived from the application's canonical (or first) DNS domain using Coolify's default preview
+    ///     template <c>{{pr_id}}.{{domain}}</c>. The preview keeps the source route's path prefix, TLS and route policy.
+    ///     Returns null when the application has no DNS domain to derive from (wildcard and IP hosts cannot be prefixed).
     /// </summary>
     public static PreviewRoute? PreviewRoute(IEnumerable<ApplicationDomain> domains, int pullRequestNumber,
         int defaultPort)
     {
         ApplicationDomain? domain = domains
+            .Where(item => item.HostKind == RouteHostKind.Dns)
             .OrderByDescending(item => item.Canonical)
-            .ThenBy(item => item.DomainName.Value, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Host, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.PathPrefix, StringComparer.Ordinal)
             .FirstOrDefault();
         if (domain is null) return null;
 
         DomainName host;
         try
         {
-            host = new DomainName($"{pullRequestNumber.ToString(CultureInfo.InvariantCulture)}.{domain.DomainName.Value}");
+            host = new DomainName($"{pullRequestNumber.ToString(CultureInfo.InvariantCulture)}.{domain.Host}");
         }
         catch (DomainException)
         {
@@ -174,8 +178,8 @@ public static class DeploymentPlanBuilder
         }
 
         var scheme = domain.TlsEnabled ? "https" : "http";
-        return new PreviewRoute(host.Value, $"{scheme}://{host.Value}", domain.TargetPort ?? defaultPort,
-            domain.TlsEnabled);
+        return new PreviewRoute(host.Value, $"{scheme}://{host.Value}{domain.PathPrefix}",
+            domain.TargetPort ?? defaultPort, domain.TlsEnabled, domain.PathPrefix, domain.Policy);
     }
 
     /// <summary>
@@ -220,4 +224,10 @@ public static class DeploymentPlanBuilder
 }
 
 /// <summary>Routing record of one preview: its own host and URL, never a production host.</summary>
-public sealed record PreviewRoute(string Host, string Url, int TargetPort, bool TlsEnabled);
+public sealed record PreviewRoute(
+    string Host,
+    string Url,
+    int TargetPort,
+    bool TlsEnabled,
+    string PathPrefix = "",
+    RoutePolicy? Policy = null);

@@ -2,6 +2,8 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
+using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Security;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
@@ -277,7 +279,14 @@ public sealed class ResourceManagementService(
         application.UpdateSettings(application.Name, ToDescription(request.Description), application.GitSource,
             application.BuildConfiguration, RuntimeConfig(request.ExposedPort), DeploymentSettings.Default, now);
         foreach (var domain in request.Domains.Where(domain => !string.IsNullOrWhiteSpace(domain)))
-            application.AddDomain(new DomainName(domain), now);
+        {
+            // Same rules as the domains API: URL/host forms, and no silent claim of a route another resource uses.
+            RouteAddress address = RouteAddress.Parse(domain);
+            IReadOnlyList<DomainConflict> conflicts = DomainConflicts.Find(dbContext, teamId, address.WithoutPort(),
+                RouteOwnerKind.Application, application.Id.Value);
+            if (conflicts.Count > 0) throw new DomainException(DomainConflicts.Describe(conflicts));
+            application.AddDomain(address, now);
+        }
 
         await dbContext.ApplicationRepository.AddAsync(application, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -591,7 +600,7 @@ public sealed class ResourceManagementService(
             application.Description == null ? null : application.Description.Value.Value, projectId.Value,
             application.EnvironmentId.Value, application.ServerId.Value, application.GitSource.RepositoryUrl.Value,
             application.GitSource.Branch, application.BuildConfiguration.BuildPack,
-            application.Domains.Select(domain => domain.DomainName.Value).ToArray());
+            application.Domains.Select(domain => domain.Host + domain.PathPrefix).ToArray());
     }
 
     private DatabaseSummary ToSummary(DatabaseResource database)

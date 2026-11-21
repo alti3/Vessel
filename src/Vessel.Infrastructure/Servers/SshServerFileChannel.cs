@@ -95,6 +95,39 @@ public sealed class SshServerFileChannel(IOptions<ServerFilesOptions> options, S
         return result.StandardOutput;
     }
 
+    public async Task<IReadOnlyList<string>> ListFilesAsync(
+        ServerExecutionTarget target,
+        string relativeDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        var path = ResolveHostPath(target, relativeDirectory);
+        ServerCommandResult result = await executor.RunAsync(target, ["sh", "-c", ListScript, "vessel", path],
+            Timeout, null, cancellationToken);
+        ThrowIfFailed(result, $"list '{relativeDirectory}'");
+        return ServerFileNames.Filter(result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    public async Task<bool> DeleteFileAsync(
+        ServerExecutionTarget target,
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        var path = ResolveHostPath(target, relativePath);
+        ServerCommandResult result = await executor.RunAsync(target, ["sh", "-c", DeleteScript, "vessel", path],
+            Timeout, null, cancellationToken);
+        ThrowIfFailed(result, $"delete '{relativePath}'");
+        return result.StandardOutput.Contains("vessel:deleted", StringComparison.Ordinal);
+    }
+
+    /// <summary>Regular, non-symlink files directly inside <c>$1</c>; nothing (exit 0) when the directory is missing.</summary>
+    public const string ListScript =
+        "dir=$1; [ -d \"$dir\" ] || exit 0; for f in \"$dir\"/*; do " +
+        "if [ -f \"$f\" ] && [ ! -L \"$f\" ]; then printf '%s\\n' \"${f##*/}\"; fi; done; exit 0";
+
+    /// <summary>Removes <c>$1</c> when it is a file or symlink (never a directory).</summary>
+    public const string DeleteScript =
+        "if [ -f \"$1\" ] || [ -L \"$1\" ]; then rm -f -- \"$1\" && echo vessel:deleted; else echo vessel:absent; fi";
+
     private void EnsureSupported(ServerExecutionTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);

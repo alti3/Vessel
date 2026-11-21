@@ -12,4 +12,16 @@ public static class ProxyLayout
     public const string DynamicConfigurationFile = "proxy/dynamic/vessel-routes.yml";
     public const string AcmeDirectory = "proxy/acme";
     public const string AcmeStorageFile = "proxy/acme/acme.json";
+
+    /// <summary>
+    ///     Backups of <see cref="AcmeStorageFile" /> taken before every write (owner-only). Outside the ACME directory so
+    ///     they are not bind-mounted into the proxy container.
+    /// </summary>
+    public const string AcmeBackupDirectory = "proxy/acme-backups";
+
+    /// <summary>Relative path of a user dynamic configuration file (name validated by the domain rule).</summary>
+    public static string DynamicFile(string fileName)
+    {
+        return $"{DynamicDirectory}/{fileName}";
+    }
 }

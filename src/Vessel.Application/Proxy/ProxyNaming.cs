@@ -46,12 +46,45 @@ public static class ProxyNaming
     }
 
     /// <summary>
+    ///     Network alias of one Compose service of a service-template resource. The Compose service name is hashed so the
+    ///     alias stays a valid, bounded DNS label whatever the template calls its services.
+    /// </summary>
+    public static string ServiceUpstreamAlias(Vessel.Domain.ServiceResourceId serviceId, string composeService)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(composeService);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(composeService.Trim())))
+            .ToLowerInvariant()[..8];
+        return $"vessel-svc-{serviceId.Value:N}-{hash}";
+    }
+
+    /// <summary>
+    ///     Router/service key for any routable endpoint. Application routes at the root path keep the key of
+    ///     <see cref="RouterKey(AppId,string)" /> so existing router names are stable across versions; paths and
+    ///     service components are part of the hashed identity.
+    /// </summary>
+    public static string RouterKey(RoutableEndpoint endpoint, string host, string pathPrefix)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        var owner = endpoint.Component is null
+            ? endpoint.OwnerId.ToString("N")
+            : $"{endpoint.OwnerId:N}:{endpoint.Component}";
+        return Key(owner, host.Trim().ToLowerInvariant() + (pathPrefix ?? string.Empty),
+            host.Trim().ToLowerInvariant() + (pathPrefix ?? string.Empty));
+    }
+
+    /// <summary>
     ///     Router/service key: readable host slug plus a hash of (application, host) so hosts that differ only by
     ///     punctuation or beyond the truncation point never collide. Keys are stable across configuration versions.
     /// </summary>
     public static string RouterKey(AppId applicationId, string host)
     {
         var normalizedHost = host.Trim().ToLowerInvariant();
+        return Key(applicationId.Value.ToString("N"), normalizedHost, normalizedHost);
+    }
+
+    private static string Key(string owner, string slugSource, string identity)
+    {
+        var normalizedHost = slugSource.ToLowerInvariant();
         string slug = new(normalizedHost.Select(character => char.IsAsciiLetterOrDigit(character) ? character : '-')
             .ToArray());
         slug = slug.Trim('-');
@@ -61,7 +94,7 @@ public static class ProxyNaming
             slug = "host";
 
         var hash = Convert.ToHexString(SHA256.HashData(
-                Encoding.UTF8.GetBytes($"{applicationId.Value:N}|{normalizedHost}")))
+                Encoding.UTF8.GetBytes($"{owner}|{identity}")))
             .ToLowerInvariant()[..10];
         return $"vessel-{slug}-{hash}";
     }

@@ -16,4 +16,10 @@ public interface IProxyProvider
     ProxyConfigurationDocument Generate(ServerId serverId, IReadOnlyList<ProxyRoute> routes);
 
     ProxyValidationResult Validate(ProxyConfigurationDocument document);
+
+    /// <summary>
+    ///     Validates a user-managed dynamic configuration file: it must parse as a single YAML mapping of provider
+    ///     sections and must not carry private key material.
+    /// </summary>
+    ProxyValidationResult ValidateUserDynamicConfiguration(string contents);
 }
