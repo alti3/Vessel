@@ -275,6 +275,19 @@ public readonly record struct EnvironmentVariableId(Guid Value) : IStronglyTyped
     }
 }
 
+public readonly record struct SshKeyId(Guid Value) : IStronglyTypedId
+{
+    public static SshKeyId New()
+    {
+        return new SshKeyId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct RegistryCredentialId(Guid Value) : IStronglyTypedId
 {
     public static RegistryCredentialId New()

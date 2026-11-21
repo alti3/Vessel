@@ -63,7 +63,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
             services.Children.Count == 0)
             throw new ComposeValidationException("Compose file must define at least one service under 'services'.");
 
-        var context = new PathContext(repository, composeDirectory);
+        var context = new PathContext(repository, composeDirectory, spec.HostRepositoryDirectory);
         var serviceNames = new List<string>();
         foreach (var (keyNode, valueNode) in services.Children)
         {
@@ -288,7 +288,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
         if (TryGet(service, "extends", out YamlNode? extends) && extends is YamlMappingNode extendsMap &&
             TryGetScalar(extendsMap, "file", out var extendsFile))
             extendsMap.Children[Key("file")] =
-                Str(context.Resolve(context.ComposeDirectory, extendsFile,
+                Str(context.ResolveForHost(context.ComposeDirectory, extendsFile,
                     $"service '{name}' extends file"));
     }
 
@@ -298,7 +298,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
         {
             service.Children[Key("build")] = IsRemoteContext(scalar.Value)
                 ? scalar
-                : Str(context.Resolve(context.ComposeDirectory, scalar.Value,
+                : Str(context.ResolveForHost(context.ComposeDirectory, scalar.Value,
                     $"service '{name}' build context"));
             return;
         }
@@ -311,7 +311,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
 
         var resolvedContext = context.Resolve(context.ComposeDirectory, contextValue,
             $"service '{name}' build context");
-        buildMap.Children[Key("context")] = Str(resolvedContext);
+        buildMap.Children[Key("context")] = Str(context.ToHost(resolvedContext));
         if (TryGetScalar(buildMap, "dockerfile", out var dockerfile))
             context.Resolve(resolvedContext, dockerfile, $"service '{name}' dockerfile");
 
@@ -319,7 +319,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
             foreach (YamlNode key in extra.Children.Keys.ToArray())
                 if (extra.Children[key] is YamlScalarNode { Value: not null } value && !IsRemoteContext(value.Value) &&
                     !value.Value.Contains(':', StringComparison.Ordinal))
-                    extra.Children[key] = Str(context.Resolve(context.ComposeDirectory, value.Value,
+                    extra.Children[key] = Str(context.ResolveForHost(context.ComposeDirectory, value.Value,
                         $"service '{name}' additional build context"));
     }
 
@@ -327,7 +327,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
     {
         string Resolve(string path)
         {
-            return context.Resolve(context.ComposeDirectory, path, $"service '{name}' env_file");
+            return context.ResolveForHost(context.ComposeDirectory, path, $"service '{name}' env_file");
         }
 
         switch (envFile)
@@ -361,7 +361,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
                 return scalar; // named volume
             var resolved = context.Resolve(context.ComposeDirectory, source,
                 $"service '{name}' bind mount source");
-            return Str(resolved + value[separator..]);
+            return Str(context.ToHost(resolved) + value[separator..]);
         }
 
         if (volume is YamlMappingNode mapping)
@@ -372,7 +372,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
                          (type is null && IsHostPathSource(source));
             if (!isBind) return mapping;
             return WithValue(mapping, "source",
-                Str(context.Resolve(context.ComposeDirectory, source,
+                Str(context.ResolveForHost(context.ComposeDirectory, source,
                     $"service '{name}' bind mount source")));
         }
 
@@ -384,7 +384,7 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
         if (!TryGet(root, section, out YamlNode? node) || node is not YamlMappingNode entries) return;
         foreach (var (key, value) in entries.Children)
             if (value is YamlMappingNode entry && TryGetScalar(entry, "file", out var file))
-                entry.Children[Key("file")] = Str(context.Resolve(context.ComposeDirectory, file,
+                entry.Children[Key("file")] = Str(context.ResolveForHost(context.ComposeDirectory, file,
                     $"{section} '{key}' file"));
     }
 
@@ -593,8 +593,25 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
     [GeneratedRegex("^[a-zA-Z0-9][a-zA-Z0-9_.-]*$", RegexOptions.CultureInvariant)]
     private static partial Regex ServiceNamePattern();
 
-    private sealed class PathContext(string repository, string composeDirectory)
+    private sealed class PathContext(string repository, string composeDirectory, string? hostRepository = null)
     {
+        /// <summary>
+        ///     Maps a validated local path to the path the runtime host sees: unchanged locally, or under the uploaded
+        ///     repository directory of an SSH server (POSIX separators).
+        /// </summary>
+        public string ToHost(string localPath)
+        {
+            if (string.IsNullOrEmpty(hostRepository)) return localPath;
+            var relative = localPath.Length == Repository.Length ? string.Empty : localPath[(Repository.Length + 1)..];
+            relative = relative.Replace('\\', '/');
+            return relative.Length == 0 ? hostRepository : $"{hostRepository.TrimEnd('/')}/{relative}";
+        }
+
+        public string ResolveForHost(string baseDirectory, string rawPath, string field)
+        {
+            return ToHost(Resolve(baseDirectory, rawPath, field));
+        }
+
         public string Repository { get; } = repository;
 
         public string ComposeDirectory { get; } = composeDirectory;

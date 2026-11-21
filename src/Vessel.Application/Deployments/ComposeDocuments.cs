@@ -44,7 +44,8 @@ public sealed record DockerfileStackSpec(
 /// <summary>
 ///     Repository compose input. <see cref="RepositoryDirectory" /> is the absolute checkout path and the path containment
 ///     root; <see cref="ComposeFilePath" /> is relative to it; <see cref="PreviewSuffix" /> is null for production and
-///     <c>pr-{n}</c> for previews.
+///     <c>pr-{n}</c> for previews. <see cref="HostRepositoryDirectory" /> is set for SSH servers: paths are validated
+///     against the local checkout and written relative to the repository's uploaded copy on the server.
 /// </summary>
 public sealed record RepositoryComposeSpec(
     string RepositoryDirectory,
@@ -53,7 +54,8 @@ public sealed record RepositoryComposeSpec(
     string UpstreamAlias,
     int ExposedPort,
     IReadOnlyDictionary<string, string> Labels,
-    string? PreviewSuffix);
+    string? PreviewSuffix,
+    string? HostRepositoryDirectory = null);
 
 /// <summary>
 ///     Normalized compose document, the primary service (attached to the server network and targeted by the proxy) and

@@ -18,9 +18,15 @@ public sealed class TerminalSession : Entity<TerminalSessionId>
         string command,
         int columns,
         int rows,
-        DateTimeOffset startedAt)
+        DateTimeOffset startedAt,
+        TerminalMode mode,
+        TerminalResourceKind? resourceKind,
+        Guid? resourceId)
         : base(id, startedAt)
     {
+        Mode = mode;
+        ResourceKind = resourceKind;
+        ResourceId = resourceId;
         TeamId = teamId;
         OwnerUserId = ownerUserId;
         ServerId = serverId;
@@ -43,6 +49,13 @@ public sealed class TerminalSession : Entity<TerminalSessionId>
     public TerminalTargetType TargetType { get; private set; }
 
     public string? ContainerName { get; private set; }
+
+    public TerminalMode Mode { get; private set; } = TerminalMode.Shell;
+
+    /// <summary>For container terminals: the Vessel resource that owns the container (re-authorized during the session).</summary>
+    public TerminalResourceKind? ResourceKind { get; private set; }
+
+    public Guid? ResourceId { get; private set; }
 
     public string Command { get; private set; } = string.Empty;
 
@@ -69,12 +82,19 @@ public sealed class TerminalSession : Entity<TerminalSessionId>
         string command,
         int columns,
         int rows,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        TerminalMode mode = TerminalMode.Shell,
+        TerminalResourceKind? resourceKind = null,
+        Guid? resourceId = null)
     {
         if (targetType == TerminalTargetType.Container && string.IsNullOrWhiteSpace(containerName))
             throw new DomainException("Container terminal sessions require a container name.");
         if (columns is < 20 or > 300) throw new DomainException("Terminal columns must be between 20 and 300.");
         if (rows is < 5 or > 120) throw new DomainException("Terminal rows must be between 5 and 120.");
+        if (targetType == TerminalTargetType.Container && (resourceKind is null || resourceId is null))
+            throw new DomainException("Container terminal sessions require the owning resource.");
+        if (targetType == TerminalTargetType.Server && mode != TerminalMode.Shell)
+            throw new DomainException("Server terminal sessions only support shell mode.");
 
         string safeCommand = DomainValidation.Required(command, nameof(Command), 240);
         string? safeContainer = DomainValidation.Optional(containerName, nameof(ContainerName), 255);
@@ -89,7 +109,10 @@ public sealed class TerminalSession : Entity<TerminalSessionId>
             safeCommand,
             columns,
             rows,
-            now);
+            now,
+            mode,
+            targetType == TerminalTargetType.Container ? resourceKind : null,
+            targetType == TerminalTargetType.Container ? resourceId : null);
     }
 
     public void MarkConnected(DateTimeOffset now)

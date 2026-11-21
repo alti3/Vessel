@@ -70,6 +70,9 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<RegistryCredentialId, Guid> RegistryCredentialId =
         new(id => id.Value, value => new RegistryCredentialId(value));
 
+    public static readonly ValueConverter<SshKeyId, Guid> SshKeyId =
+        new(id => id.Value, value => new SshKeyId(value));
+
     public static readonly ValueConverter<ServerStatusSnapshotId, Guid> ServerStatusSnapshotId =
         new(id => id.Value, value => new ServerStatusSnapshotId(value));
 
@@ -222,6 +225,11 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<EnvironmentVariableId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(EnvironmentVariableId);
+    }
+
+    public static PropertyBuilder<SshKeyId> HasSshKeyIdConversion(this PropertyBuilder<SshKeyId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(SshKeyId);
     }
 
     public static PropertyBuilder<RegistryCredentialId> HasRegistryCredentialIdConversion(

@@ -5,6 +5,9 @@ namespace Vessel.Domain.Servers;
 public sealed record ServerCreatedEvent(ServerId ServerId, TeamId TeamId, DateTimeOffset OccurredAt)
     : DomainEvent(OccurredAt);
 
+public sealed record ServerHostKeyChangedEvent(ServerId ServerId, TeamId TeamId, DateTimeOffset OccurredAt)
+    : DomainEvent(OccurredAt);
+
 public sealed record ServerStatusChangedEvent(
     ServerId ServerId,
     ServerStatus PreviousStatus,

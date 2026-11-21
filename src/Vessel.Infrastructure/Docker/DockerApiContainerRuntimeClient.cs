@@ -14,6 +14,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
     public async Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.GetInfoAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         SystemInfoResponse info = await client.System.GetSystemInfoAsync(cancellationToken);
         VersionResponse version = await client.System.GetVersionAsync(cancellationToken);
@@ -30,6 +31,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         bool all,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListContainersAsync(target, all, cancellationToken);
         using DockerClient client = CreateClient(target);
         IList<ContainerListResponse> containers = await client.Containers.ListContainersAsync(
             new ContainersListParameters { All = all },
@@ -49,6 +51,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         string containerId,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.InspectContainerAsync(target, containerId, cancellationToken);
         using DockerClient client = CreateClient(target);
         ContainerInspectResponse container =
             await client.Containers.InspectContainerAsync(containerId, cancellationToken);
@@ -59,6 +62,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListImagesAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         IList<ImagesListResponse> images = await client.Images.ListImagesAsync(
             new ImagesListParameters { All = true },
@@ -74,6 +78,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListNetworksAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         IList<NetworkResponse> networks = await client.Networks.ListNetworksAsync(cancellationToken: cancellationToken);
         return networks.Select(network => new NetworkSummary(
@@ -87,6 +92,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListVolumesAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         VolumesListResponse volumes = await client.Volumes.ListAsync(cancellationToken);
         return volumes.Volumes.Select(volume => new VolumeSummary(
@@ -117,6 +123,13 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote)
+        {
+            await foreach (ContainerEvent remoteEvent in cliFallback.StreamEventsAsync(target, cancellationToken))
+                yield return remoteEvent;
+            yield break;
+        }
+
         using DockerClient client = CreateClient(target);
         var progress = new DockerEventProgress();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

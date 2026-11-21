@@ -37,6 +37,11 @@ using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Resources;
 using Vessel.Application.Security;
+using Vessel.Application.Servers;
+using Vessel.Application.Servers.Validation;
+using Vessel.Application.Ssh;
+using Vessel.Application.Ssh.Keys;
+
 using Vessel.Application.Security.ApiAbuse;
 using Vessel.Application.Storage;
 using Vessel.Application.Terminals;
@@ -132,6 +137,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<RollbackService>();
         services.AddScoped<DeploymentSettingsService>();
         services.AddScoped<TerminalSessionManager>();
+        services.TryAddSingleton<TerminalAttachTokens>();
+        services.TryAddSingleton<SshHostKeyScanThrottle>();
+        services.AddScoped<ServerSshConnectionService>();
+        services.AddScoped<SshKeyService>();
+        services.AddScoped<SshKeyRotationService>();
+        services.AddScoped<RotateSshKeyJob>();
+        services.AddScoped<ServerManagementService>();
+        services.AddScoped<ServerValidationService>();
+        services.AddScoped<ValidateServerJob>();
         services.AddScoped<ServerHealthPollingService>();
         services.AddScoped<ServerHealthPollingJob>();
         services.AddScoped<ManagedDatabaseService>();

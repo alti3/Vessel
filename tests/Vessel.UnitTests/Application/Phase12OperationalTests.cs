@@ -141,6 +141,11 @@ public sealed class Phase12OperationalTests
             scenario.Team.Id,
             new OpenTerminalSessionRequest(scenario.Server.Id.Value),
             cancellationToken: TestContext.Current.CancellationToken);
+        // The process starts only when the single-use attach token is redeemed.
+        Assert.Equal(0, bridge.OpenCount);
+        Assert.NotNull(details.AttachToken);
+        await manager.AttachAsync(scenario.User.Id, scenario.Team.Id, new TerminalSessionId(details.Id),
+            details.AttachToken, TestContext.Current.CancellationToken);
         await manager.SendInputAsync(
             scenario.User.Id,
             scenario.Team.Id,
@@ -184,8 +189,7 @@ public sealed class Phase12OperationalTests
             realtime,
             new TestAuditWriter(),
             TimeProvider.System,
-            new RecordingNotificationEventPublisher(),
-            new TestSshClient());
+            new RecordingNotificationEventPublisher());
 
         ServerHealthPollingResult result =
             await service.PollAsync(scenario.Server.Id, TestContext.Current.CancellationToken);
@@ -226,8 +230,7 @@ public sealed class Phase12OperationalTests
             new TestRealtimeNotifier(),
             new TestAuditWriter(),
             TimeProvider.System,
-            notifications,
-            new TestSshClient());
+            notifications);
         CancellationToken token = TestContext.Current.CancellationToken;
 
         await service.PollAsync(scenario.Server.Id, token); // Unknown -> Reachable: no alert.

@@ -3,9 +3,12 @@ using Vessel.Application.ManagedServices;
 using Vessel.Application.Authorization;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
+using Microsoft.Extensions.Options;
+
 using Vessel.Application.Proxy;
 using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Security;
+using Vessel.Application.Ssh;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
@@ -28,7 +31,8 @@ public sealed class ResourceManagementService(
     ISecretVault secretVault,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
-    ServerHealthPollingService serverHealth)
+    ServerHealthPollingService serverHealth,
+    IOptions<SshOptions>? sshOptions = null)
 {
     public IReadOnlyList<ProjectSummary> ListProjects(UserId actorUserId, TeamId teamId)
     {
@@ -220,6 +224,24 @@ public sealed class ResourceManagementService(
             request.ConnectionType, request.Runtime, now, ToDescription(request.Description));
         server.UpdateSettings(server.Name, server.Description, server.Address, request.ConnectionType, request.Runtime,
             request.Labels, now);
+        if (request.ConnectionType == ServerConnectionType.Ssh)
+        {
+            if (!SshTargetValidator.IsSafeHost(request.Host) ||
+                (!string.IsNullOrWhiteSpace(request.User) && !SshTargetValidator.IsSafeUser(request.User)))
+                throw new DomainException("Server address or user contains characters that are not allowed for SSH.");
+            // New servers start at the instance host key checking mode (enforce by default).
+            server.SetHostKeyChecking(sshOptions?.Value.ResolveInstanceMode() ?? SshHostKeyCheckingMode.Enforce, now);
+        }
+
+        if (request.SshKeyId.HasValue)
+        {
+            var keyId = new SshKeyId(request.SshKeyId.Value);
+            // Only keys of the same team can be selected; another team's key looks like a missing key.
+            if (!dbContext.SshKeys.Any(key => key.Id == keyId && key.TeamId == teamId))
+                throw new DomainException("SSH key was not found.");
+            server.AssignSshKey(keyId, now);
+        }
+
         await dbContext.ServerRepository.AddAsync(server, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.ServerCreated, "server", server.Id.Value, cancellationToken);

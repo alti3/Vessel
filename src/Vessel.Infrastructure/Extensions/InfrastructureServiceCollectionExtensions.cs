@@ -22,6 +22,7 @@ using Vessel.Application.Proxy;
 using Vessel.Application.Proxy.Certificates;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
+using Vessel.Application.Servers;
 using Vessel.Application.Servers.Files;
 using Vessel.Application.Ssh;
 using Vessel.Application.Storage;
@@ -124,6 +125,8 @@ public static class InfrastructureServiceCollectionExtensions
                 provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<ISettingsCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<IServerHealthQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
+            // SRV-06: ends terminal sessions whose user lost access (needs persistence).
+            services.AddHostedService<TerminalSessionRevalidationService>();
         }
 
         services.TryAddSingleton<IPasswordHasher, Argon2PasswordHasher>();
@@ -136,14 +139,25 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IComposeDocumentBuilder, YamlComposeDocumentBuilder>();
         services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
-        services.AddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();
+        if (OperatingSystem.IsLinux())
+            services.AddSingleton<ITerminalProcessBridge, PtyTerminalBridge>();
+        else
+            services.AddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();
         services.TryAddSingleton<ISshClient, SshProcessClient>();
+        services.AddOptions<SshOptions>().Bind(configuration.GetSection(SshOptions.SectionName));
+        services.TryAddSingleton<SshRuntimeFiles>();
+        services.TryAddSingleton<SshHostKeyScanThrottle>();
+        services.TryAddSingleton<ISshHostKeyScanner, SshHostKeyScanner>();
+        services.TryAddSingleton<ISshKeyTool, SshKeygenTool>();
+        services.TryAddSingleton<IServerSshConnectionFactory, ServerSshConnectionFactory>();
         services.TryAddSingleton<IProxyProvider, TraefikProxyProvider>();
         services.AddOptions<ServerFilesOptions>().Bind(configuration.GetSection(ServerFilesOptions.SectionName));
         services.TryAddSingleton<ServerCommandExecutor>();
+        services.TryAddSingleton<IServerCommandRunner>(provider => provider.GetRequiredService<ServerCommandExecutor>());
+        services.TryAddSingleton<IServerDirectoryTransfer, SshServerDirectoryTransfer>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IServerFileChannel, LocalServerFileChannel>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IServerFileChannel, SshServerFileChannel>());
         services.TryAddSingleton<IProxyContainerRuntime, DockerProxyContainerRuntime>();
