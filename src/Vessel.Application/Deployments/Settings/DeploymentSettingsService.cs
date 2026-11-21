@@ -19,7 +19,8 @@ public sealed record ApplicationDeploymentSettingsDto(
     bool AutoCancelQueuedDeployments,
     bool AutoCancelBuildingDeployments,
     bool RedactAllEnvValuesInLogs,
-    int ImagesToKeep);
+    int ImagesToKeep,
+    bool IncludeDefaultVariables = true);
 
 /// <summary>Partial update: null fields keep their current value.</summary>
 public sealed record UpdateApplicationDeploymentSettingsRequest(
@@ -31,7 +32,8 @@ public sealed record UpdateApplicationDeploymentSettingsRequest(
     bool? AutoCancelQueuedDeployments = null,
     bool? AutoCancelBuildingDeployments = null,
     bool? RedactAllEnvValuesInLogs = null,
-    int? ImagesToKeep = null);
+    int? ImagesToKeep = null,
+    bool? IncludeDefaultVariables = null);
 
 public sealed record ServerDeploymentLimitsDto(int ConcurrentBuilds, int DeploymentQueueLimit);
 
@@ -75,7 +77,8 @@ public sealed class DeploymentSettingsService(
             AutoCancelBuildingDeployments =
             request.AutoCancelBuildingDeployments ?? before.AutoCancelBuildingDeployments,
             RedactAllEnvValuesInLogs = request.RedactAllEnvValuesInLogs ?? before.RedactAllEnvValuesInLogs,
-            ImagesToKeep = request.ImagesToKeep ?? before.ImagesToKeep
+            ImagesToKeep = request.ImagesToKeep ?? before.ImagesToKeep,
+            IncludeDefaultVariables = request.IncludeDefaultVariables ?? before.IncludeDefaultVariables
         };
 
         application.UpdateDeploymentSettings(after, timeProvider.GetUtcNow());
@@ -132,6 +135,6 @@ public sealed class DeploymentSettingsService(
         return new ApplicationDeploymentSettingsDto(settings.AutoDeployEnabled, settings.PreviewDeploymentsEnabled,
             settings.PublicPreviewsEnabled, settings.ForceRebuild, settings.WatchPaths,
             settings.AutoCancelQueuedDeployments, settings.AutoCancelBuildingDeployments,
-            settings.RedactAllEnvValuesInLogs, settings.ImagesToKeep);
+            settings.RedactAllEnvValuesInLogs, settings.ImagesToKeep, settings.IncludeDefaultVariables);
     }
 }

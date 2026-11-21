@@ -145,7 +145,8 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
         EnsureLifecycleState(
             [DatabaseLifecycleState.Provisioning, DatabaseLifecycleState.Restarting],
             DatabaseLifecycleState.Running);
-        ContainerName = DomainValidation.Required(containerName, nameof(containerName), 160);
+        // SEC-10: the name is passed to `docker exec` and backup commands; it must be a valid container name.
+        ContainerName = Vessel.Domain.ValueObjects.ContainerName.Parse(containerName).Value;
         ComposeSnapshotReference = DomainValidation.Required(composeSnapshotReference, nameof(composeSnapshotReference),
             512);
         LifecycleState = DatabaseLifecycleState.Running;

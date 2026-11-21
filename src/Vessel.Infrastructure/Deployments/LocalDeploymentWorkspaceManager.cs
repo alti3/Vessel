@@ -55,6 +55,15 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
         return path;
     }
 
+    public string EnsureDirectory(string rootDirectory, string relativePath)
+    {
+        var root = paths.EnsureOwnedPath(_root, rootDirectory);
+        var path = paths.EnsureNoSymlinks(root, relativePath);
+        if (!Directory.Exists(path))
+            throw new DirectoryNotFoundException($"Directory {relativePath} was not found in the repository.");
+        return path;
+    }
+
     public Task CleanupAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)
     {
         var root = paths.EnsureOwnedPath(_root, Path.Combine(_root, deploymentId.Value.ToString("D")));

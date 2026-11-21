@@ -80,12 +80,108 @@ public sealed record ComposeCommand(
     TimeSpan? Timeout = null,
     ProcessRedactionProfile? Redaction = null);
 
-/// <summary>An image build. Build argument values are always redacted, plus anything in <paramref name="Redaction" />.</summary>
+/// <summary>
+///     An image build. <paramref name="BuildArguments" /> become <c>--build-arg KEY</c> (name only); their values reach
+///     the CLI through its environment locally or through <paramref name="BuildArgumentsFile" /> (a
+///     <see cref="BuildEnvironment" /> shell file) on SSH servers, so values never appear on a command line. Values are
+///     always redacted from the output, plus anything in <paramref name="Redaction" />.
+/// </summary>
 public sealed record DockerBuildCommand(
     string WorkingDirectory,
     string DockerfilePath,
     string ImageName,
     IReadOnlyDictionary<string, string> Labels,
     IReadOnlyDictionary<string, string> BuildArguments,
+    TimeSpan? Timeout = null,
+    ProcessRedactionProfile? Redaction = null,
+    string? BuildArgumentsFile = null,
+    bool NoCache = false);
+
+/// <summary>
+///     Build values handed to the runtime CLI without putting them on a command line (DEP-09): locally they are set in
+///     the CLI's process environment; on an SSH server they are read from <paramref name="ShellFilePath" />, a
+///     <c>KEY='value'</c> file inside the uploaded deployment workspace that a fixed wrapper sources before it executes
+///     the CLI. Keys are shell names that are not reserved for the container runtime client.
+/// </summary>
+public sealed record BuildEnvironment(
+    IReadOnlyList<KeyValuePair<string, string>> Values,
+    string? ShellFilePath = null)
+{
+    public static BuildEnvironment Empty { get; } = new([]);
+
+    public bool IsEmpty => Values.Count == 0;
+}
+
+/// <summary>
+///     <c>railpack prepare</c> in the pinned Railpack CLI image: the context is mounted read-only at <c>/app</c>, the
+///     plan is written to <paramref name="OutputDirectory" />/<paramref name="PlanFileName" />. Build values reach the
+///     tool through <paramref name="Environment" /> (<c>docker run -e KEY</c>, never <c>KEY=value</c>);
+///     <paramref name="ControlVariables" /> (<c>RAILPACK_*</c>) are configuration and passed inline.
+/// </summary>
+public sealed record RailpackPrepareCommand(
+    string ContextDirectory,
+    string OutputDirectory,
+    string PlanFileName,
+    string CliImage,
+    IReadOnlyList<KeyValuePair<string, string>> ControlVariables,
+    BuildEnvironment Environment,
+    string? BuildCommand = null,
+    string? StartCommand = null,
+    TimeSpan? Timeout = null,
+    ProcessRedactionProfile? Redaction = null);
+
+/// <summary>
+///     <c>docker buildx build</c> with the pinned Railpack BuildKit frontend on a dedicated <c>docker-container</c>
+///     builder (pinned BuildKit image). Build values are BuildKit secrets (<c>--secret id=KEY,env=KEY</c>) read from
+///     <paramref name="Environment" />. The builder is stopped after the build so an idle BuildKit daemon does not keep
+///     memory (upstream v4.5.0 #12097).
+/// </summary>
+public sealed record RailpackBuildCommand(
+    string ContextDirectory,
+    string PlanFile,
+    string ImageName,
+    string FrontendImage,
+    string BuildKitImage,
+    string BuilderName,
+    IReadOnlyDictionary<string, string> Labels,
+    BuildEnvironment Environment,
+    string CacheKey,
+    bool NoCache = false,
+    TimeSpan? Timeout = null,
+    ProcessRedactionProfile? Redaction = null);
+
+/// <summary>
+///     <c>nixpacks build --out</c> (deprecated build pack): generates <c>.nixpacks/Dockerfile</c> inside the context
+///     without building; the image is then built with <see cref="DockerBuildCommand" /> and the same build values.
+///     Needs the <c>nixpacks</c> CLI on the runtime host.
+/// </summary>
+public sealed record NixpacksGenerateCommand(
+    string ContextDirectory,
+    string ImageName,
+    BuildEnvironment Environment,
+    string? InstallCommand = null,
+    string? BuildCommand = null,
+    string? StartCommand = null,
+    TimeSpan? Timeout = null,
+    ProcessRedactionProfile? Redaction = null);
+
+/// <summary>Registry credentials resolved for one push or pull; the password is sent on standard input only.</summary>
+public sealed record RegistryAuth(string Registry, string Username, string Password)
+{
+    public override string ToString()
+    {
+        return $"RegistryAuth {{ Registry = {Registry}, Username = {Username}, Password = *** }}";
+    }
+}
+
+/// <summary>
+///     A registry push or pull. With <paramref name="Auth" />, the client logs in with an isolated client configuration
+///     in <paramref name="ConfigDirectory" /> (never the daemon user's <c>~/.docker</c>), so credentials do not outlive
+///     the deployment workspace.
+/// </summary>
+public sealed record RegistryImageCommand(
+    string ImageReference,
+    RegistryAuth? Auth,
+    string ConfigDirectory,
     TimeSpan? Timeout = null,
     ProcessRedactionProfile? Redaction = null);

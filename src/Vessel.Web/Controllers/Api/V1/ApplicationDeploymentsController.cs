@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Vessel.Application.Authorization;
 using Vessel.Application.Deployments;
+using Vessel.Application.Deployments.BuildPacks;
 using Vessel.Application.Deployments.Previews;
 using Vessel.Application.Deployments.Rollback;
 using Vessel.Application.Deployments.Settings;
@@ -24,8 +25,26 @@ namespace Vessel.Web.Controllers.Api.V1;
 public sealed class ApplicationDeploymentsController(
     DeploymentSettingsService settings,
     RollbackService rollbacks,
-    PreviewLifecycleService previews) : ControllerBase
+    PreviewLifecycleService previews,
+    BuildSettingsService buildSettings) : ControllerBase
 {
+    [HttpGet("build-settings")]
+    public ActionResult<ApplicationBuildSettingsDto> GetBuildSettings(Guid applicationId)
+    {
+        return Ok(buildSettings.Get(User.GetUserId(), User.GetTeamId(), new AppId(applicationId)));
+    }
+
+    [HttpPatch("build-settings")]
+    [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
+    public async Task<ActionResult<ApplicationBuildSettingsDto>> UpdateBuildSettings(
+        Guid applicationId,
+        UpdateApplicationBuildSettingsRequest request,
+        CancellationToken cancellationToken)
+    {
+        return Ok(await buildSettings.UpdateAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId),
+            request, cancellationToken));
+    }
+
     [HttpGet("deployment-settings")]
     public ActionResult<ApplicationDeploymentSettingsDto> GetSettings(Guid applicationId)
     {

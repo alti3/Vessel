@@ -28,7 +28,7 @@ public sealed class Application : Entity<ApplicationId>
         ServerId = serverId;
         Name = name;
         GitSource = gitSource;
-        BuildConfiguration = buildConfiguration;
+        BuildConfiguration = buildConfiguration.Validated();
         RuntimeConfiguration = runtimeConfiguration;
         DeploymentSettings = deploymentSettings;
     }
@@ -148,6 +148,13 @@ public sealed class Application : Entity<ApplicationId>
         return true;
     }
 
+    /// <summary>Replaces the build configuration (validated: build pack, relative paths, registry image).</summary>
+    public void UpdateBuildConfiguration(BuildConfiguration buildConfiguration, DateTimeOffset now)
+    {
+        BuildConfiguration = buildConfiguration.Validated();
+        Touch(now);
+    }
+
     public void UpdateDeploymentSettings(DeploymentSettings deploymentSettings, DateTimeOffset now)
     {
         DeploymentSettings = deploymentSettings.Validated();
@@ -166,7 +173,7 @@ public sealed class Application : Entity<ApplicationId>
         Name = name;
         Description = description;
         GitSource = gitSource;
-        BuildConfiguration = buildConfiguration;
+        BuildConfiguration = buildConfiguration.Validated();
         RuntimeConfiguration = runtimeConfiguration;
         DeploymentSettings = deploymentSettings;
         Touch(now);

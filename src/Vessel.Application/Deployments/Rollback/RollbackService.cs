@@ -31,7 +31,8 @@ public sealed record RollbackRequest(Guid? DeploymentId = null, string? Image = 
 ///     application's own image repository (newest first) plus the images of the most recent successful production
 ///     deployments. A rollback is accepted only to a listed image or to the commit of a successful, non-preview,
 ///     non-rollback deployment: when the image is gone the commit is rebuilt, so any other commit is refused.
-///     Rollbacks are never auto-cancelled. Registry images are not listed: Vessel builds and keeps images locally.
+///     Rollbacks are never auto-cancelled. When the application pushes to a registry, images of listed deployments that
+///     are no longer local are pulled again from the registry before the rebuild fallback (upstream v4.5.0).
 /// </summary>
 public sealed class RollbackService(
     IVesselDbContext dbContext,
@@ -117,7 +118,7 @@ public sealed class RollbackService(
     private async Task<IReadOnlyList<RollbackTarget>> ListAsync(AppEntity application, Server server,
         bool probeRuntime, CancellationToken cancellationToken)
     {
-        var repository = DeploymentPlanBuilder.ImageRepository(application.Id) + ":";
+        IReadOnlyList<string> repositories = DeploymentPlanBuilder.ImageRepositories(application);
         AppId applicationId = application.Id;
         Deployment[] succeeded = dbContext.Deployments
             .Where(item => item.ApplicationId == applicationId && item.PreviewId == null && !item.IsRollback &&
@@ -138,8 +139,8 @@ public sealed class RollbackService(
                 ? []
                 : await runtime.ListImagesAsync(Target(server), cancellationToken);
             local = images.SelectMany(image => image.RepoTags)
-                .Where(tag => tag.StartsWith(repository, StringComparison.Ordinal) &&
-                              !tag[repository.Length..].StartsWith("pr-", StringComparison.Ordinal))
+                .Where(tag => RepositoryOf(repositories, tag) is { } repository &&
+                              !tag[(repository.Length + 1)..].StartsWith("pr-", StringComparison.Ordinal))
                 .ToHashSet(StringComparer.Ordinal);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -163,12 +164,17 @@ public sealed class RollbackService(
         // their tag is the commit they were built from.
         foreach (var image in local.Where(image => targets.All(target => target.Image != image)).Order())
         {
-            var tag = image[repository.Length..];
+            var tag = image[(RepositoryOf(repositories, image)!.Length + 1)..];
             targets.Add(new RollbackTarget(image, tag, GitRef.IsCommitShaValue(tag) ? tag : null, null, null, true,
                 current?.ArtifactReference == image));
         }
 
         return targets;
+    }
+
+    private static string? RepositoryOf(IReadOnlyList<string> repositories, string tag)
+    {
+        return repositories.FirstOrDefault(repository => tag.StartsWith(repository + ":", StringComparison.Ordinal));
     }
 
     private (AppEntity Application, Server Server) Context(AppId applicationId)

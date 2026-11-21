@@ -582,7 +582,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(application => application.GitSource).HasConversion(ValueObjectConversions.GitSource)
                 .HasMaxLength(2600).IsRequired();
             builder.Property(application => application.BuildConfiguration)
-                .HasConversion(ValueObjectConversions.BuildConfiguration).HasMaxLength(2048).IsRequired();
+                .HasConversion(ValueObjectConversions.BuildConfiguration).HasMaxLength(8192).IsRequired();
             builder.Property(application => application.RuntimeConfiguration)
                 .HasConversion(ValueObjectConversions.RuntimeConfiguration).HasMaxLength(1024).IsRequired();
             builder.Property(application => application.DeploymentSettings)
@@ -1116,6 +1116,10 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new SecretReferenceId(value.Value) : null);
             builder.Property(variable => variable.Comment).HasMaxLength(1000);
+            // DEP-10: new variables use exact values; the migration sets existing rows to true (legacy escaping).
+            builder.Property(variable => variable.UsesLegacyEscaping).HasDefaultValue(false);
+            builder.Property(variable => variable.PreserveComposeNull).HasDefaultValue(false);
+            builder.Property(variable => variable.SortOrder).HasDefaultValue(0);
             builder.Property(variable => variable.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(variable => variable.DomainEvents);
             builder.HasIndex(variable => new

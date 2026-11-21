@@ -165,6 +165,42 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         return cliFallback.RemoveImageAsync(target, imageReference, cancellationToken);
     }
 
+    public IAsyncEnumerable<ProcessOutputLine> PrepareRailpackPlanAsync(ContainerRuntimeTarget target,
+        RailpackPrepareCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PrepareRailpackPlanAsync(target, command, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> BuildRailpackImageAsync(ContainerRuntimeTarget target,
+        RailpackBuildCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.BuildRailpackImageAsync(target, command, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> GenerateNixpacksBuildAsync(ContainerRuntimeTarget target,
+        NixpacksGenerateCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.GenerateNixpacksBuildAsync(target, command, cancellationToken);
+    }
+
+    public Task<bool> TagImageAsync(ContainerRuntimeTarget target, string source, string destination,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.TagImageAsync(target, source, destination, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> PushImageAsync(ContainerRuntimeTarget target,
+        RegistryImageCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PushImageAsync(target, command, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> PullImageAsync(ContainerRuntimeTarget target,
+        RegistryImageCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PullImageAsync(target, command, cancellationToken);
+    }
+
     private static DockerClient CreateClient(ContainerRuntimeTarget target)
     {
         Uri endpoint = target.ApiEndpoint ?? DefaultDockerEndpoint();

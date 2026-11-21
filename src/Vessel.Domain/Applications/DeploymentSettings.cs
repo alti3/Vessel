@@ -29,6 +29,10 @@ namespace Vessel.Domain.Applications;
 ///     Coolify <c>docker_images_to_keep</c>: how many images of earlier successful production deployments are kept
 ///     locally as rollback targets.
 /// </param>
+/// <param name="IncludeDefaultVariables">
+///     Coolify <c>include_coolify_default_variables</c> (default true): deployments add the <c>VESSEL_*</c> and
+///     <c>SOURCE_COMMIT</c> variables. <c>PORT</c> and <c>HOST</c> defaults are added either way unless defined.
+/// </param>
 public readonly record struct DeploymentSettings(
     bool AutoDeployEnabled,
     bool PreviewDeploymentsEnabled,
@@ -38,7 +42,8 @@ public readonly record struct DeploymentSettings(
     bool AutoCancelQueuedDeployments = true,
     bool AutoCancelBuildingDeployments = false,
     bool RedactAllEnvValuesInLogs = true,
-    int ImagesToKeep = DeploymentSettings.DefaultImagesToKeep)
+    int ImagesToKeep = DeploymentSettings.DefaultImagesToKeep,
+    bool IncludeDefaultVariables = true)
 {
     public const int DefaultImagesToKeep = 2;
     public const int MaxImagesToKeep = 50;

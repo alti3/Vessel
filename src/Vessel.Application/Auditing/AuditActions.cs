@@ -61,6 +61,9 @@ public static class AuditActions
     public const string PreviewStopped = "preview.stopped";
     public const string PreviewCleanedUp = "preview.cleaned_up";
     public const string DeploymentRollbackQueued = "deployment.rollback_queued";
+    public const string DeploymentImagePushed = "deployment.image_pushed";
+    public const string DeploymentComposeElevated = "deployment.compose_elevated";
+    public const string ApplicationBuildSettingsUpdated = "application.build_settings_updated";
     public const string ApplicationDeploymentSettingsUpdated = "application.deployment_settings_updated";
     public const string ServerDeploymentLimitsUpdated = "server.deployment_limits_updated";
     public const string DomainRouteConfigured = "domain_route.configured";

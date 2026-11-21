@@ -118,5 +118,12 @@ public interface IDeploymentWorkspaceManager
     /// <exception cref="FileNotFoundException">The file does not exist.</exception>
     string EnsureRegularFile(string rootDirectory, string relativePath);
 
+    /// <summary>
+    ///     Verifies that <paramref name="relativePath" /> names a directory inside <paramref name="rootDirectory" />
+    ///     with no symbolic links on its path (a build context must never redirect to host directories).
+    /// </summary>
+    /// <exception cref="DirectoryNotFoundException">The directory does not exist.</exception>
+    string EnsureDirectory(string rootDirectory, string relativePath);
+
     Task CleanupAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default);
 }

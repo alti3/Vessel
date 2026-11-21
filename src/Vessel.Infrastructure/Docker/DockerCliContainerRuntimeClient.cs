@@ -1,8 +1,13 @@
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Vessel.Application.Docker;
 using Vessel.Application.Processes;
 using Vessel.Application.Servers;
+using Vessel.Domain.EnvironmentVariables;
+using Vessel.Domain.ValueObjects;
 
 namespace Vessel.Infrastructure.Docker;
 
@@ -11,11 +16,19 @@ namespace Vessel.Infrastructure.Docker;
 ///     targets (<see cref="ContainerRuntimeTarget.Remote" />, SSH servers) run the same structured CLI arguments on the
 ///     server over SSH through <see cref="IServerCommandRunner" /> (no <c>DOCKER_HOST=ssh://</c>, so the hardened SSH
 ///     options, pinned host key and team key apply to every runtime command).
+///     Names, image references and paths are validated before they reach the CLI (SEC-10); build values are passed by
+///     name and read from the CLI environment, never from the command line (DEP-09).
 /// </summary>
-public sealed class DockerCliContainerRuntimeClient(
+public sealed partial class DockerCliContainerRuntimeClient(
     IProcessRunner processRunner,
     IServerCommandRunner? serverCommands = null) : IContainerRuntimeClient
 {
+    /// <summary>
+    ///     Sources the build values file given as <c>$1</c> (exported), then executes the remaining arguments. The file
+    ///     holds <c>KEY='value'</c> lines only, so sourcing expands nothing.
+    /// </summary>
+    public const string SourceBuildEnvironmentScript = "set -a; . \"$1\" || exit 1; set +a; shift; exec \"$@\"";
+
     public async Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
@@ -98,7 +111,9 @@ public sealed class DockerCliContainerRuntimeClient(
     public async Task<string> InspectContainerAsync(ContainerRuntimeTarget target, string containerId,
         CancellationToken cancellationToken = default)
     {
-        ProcessResult result = await RunDockerAsync(target, ["inspect", containerId], cancellationToken);
+        if (!ContainerName.IsValid(containerId))
+            throw new ArgumentException("Container name or id is invalid.", nameof(containerId));
+        ProcessResult result = await RunDockerAsync(target, ["inspect", "--", containerId], cancellationToken);
         ThrowIfFailed(result);
         return result.StandardOutput;
     }
@@ -165,12 +180,14 @@ public sealed class DockerCliContainerRuntimeClient(
         IReadOnlyDictionary<string, string> labels,
         CancellationToken cancellationToken = default)
     {
-        ProcessResult inspect = await RunDockerAsync(target, ["network", "inspect", name], cancellationToken);
+        name = ContainerNetworkName.Parse(name).Value;
+        ProcessResult inspect = await RunDockerAsync(target, ["network", "inspect", "--", name], cancellationToken);
         if (inspect.Succeeded) return;
 
         var args = new List<string> { "network", "create" };
         foreach (var (key, value) in labels)
-            args.AddRange(["--label", $"{key}={value}"]);
+            args.AddRange(["--label", Label(key, value)]);
+        args.Add("--");
         args.Add(name);
 
         ProcessResult create = await RunDockerAsync(target, args, cancellationToken);
@@ -182,29 +199,228 @@ public sealed class DockerCliContainerRuntimeClient(
         DockerBuildCommand command,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var args = new List<string>
-        {
-            "build",
-            "--pull",
-            "--file",
-            command.DockerfilePath,
-            "--tag",
-            command.ImageName
-        };
+        var image = ImageReference.Parse(command.ImageName).Value;
+        if (command.DockerfilePath.StartsWith('-') || command.DockerfilePath.Any(char.IsControl))
+            throw new ArgumentException("Dockerfile path is invalid.", nameof(command));
+        var args = new List<string> { "build", "--pull", "--file", command.DockerfilePath, "--tag", image };
+        if (command.NoCache) args.Add("--no-cache");
         foreach (var (key, value) in command.Labels)
-            args.AddRange(["--label", $"{key}={value}"]);
-        foreach (var (key, value) in command.BuildArguments)
-            args.AddRange(["--build-arg", $"{key}={value}"]);
+            args.AddRange(["--label", Label(key, value)]);
+        // Build arguments by name only: the values come from the CLI environment (DEP-09), never the command line.
+        BuildEnvironment environment = Environment(command.BuildArguments.ToArray(), command.BuildArgumentsFile);
+        foreach (var (key, _) in environment.Values)
+            args.AddRange(["--build-arg", key]);
         args.Add(".");
 
         await foreach (ProcessOutputLine line in StreamDockerAsync(target, target.ResolveCliExecutable(), args,
                            command.WorkingDirectory, command.Timeout ?? TimeSpan.FromMinutes(30),
-                           new ProcessRedactionProfile(
-                               [.. command.BuildArguments.Values, .. command.Redaction?.SecretValues ?? []],
-                               command.Redaction?.PatternNames ?? [], command.Redaction?.KnownValues,
-                               command.Redaction?.IsLogOutput ?? false),
-                           cancellationToken))
+                           Redaction(command.Redaction, environment), cancellationToken, environment))
             yield return line;
+    }
+
+    public async IAsyncEnumerable<ProcessOutputLine> PrepareRailpackPlanAsync(
+        ContainerRuntimeTarget target,
+        RailpackPrepareCommand command,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        RequireDocker(target, "Railpack");
+        var image = ImageReference.Parse(command.CliImage).Value;
+        RequirePath(command.ContextDirectory);
+        RequirePath(command.OutputDirectory);
+        if (!PlanFilePattern().IsMatch(command.PlanFileName))
+            throw new ArgumentException("Railpack plan file name is invalid.", nameof(command));
+        var args = new List<string>
+        {
+            "run", "--rm", "--pull", "missing",
+            "--volume", $"{command.ContextDirectory}:/app:ro",
+            "--volume", $"{command.OutputDirectory}:/out"
+        };
+        // `docker run --env NAME` copies the value from the CLI environment into the tool container.
+        foreach (var (key, _) in command.Environment.Values) args.AddRange(["--env", ValidKey(key)]);
+        args.AddRange([image, "prepare", "/app", "--plan-out", "/out/" + command.PlanFileName]);
+        if (!string.IsNullOrWhiteSpace(command.BuildCommand)) args.AddRange(["--build-cmd", command.BuildCommand]);
+        if (!string.IsNullOrWhiteSpace(command.StartCommand)) args.AddRange(["--start-cmd", command.StartCommand]);
+        foreach (var (key, value) in command.ControlVariables) args.AddRange(["--env", $"{ValidKey(key)}={value}"]);
+        // Railpack reads `--env NAME` (without a value) from its own environment and records it as a build secret.
+        foreach (var (key, _) in command.Environment.Values)
+            if (command.ControlVariables.All(control => control.Key != key))
+                args.AddRange(["--env", key]);
+
+        await foreach (ProcessOutputLine line in StreamDockerAsync(target, target.ResolveCliExecutable(), args, null,
+                           command.Timeout ?? TimeSpan.FromMinutes(10),
+                           Redaction(command.Redaction, command.Environment), cancellationToken, command.Environment))
+            yield return line;
+    }
+
+    public async IAsyncEnumerable<ProcessOutputLine> BuildRailpackImageAsync(
+        ContainerRuntimeTarget target,
+        RailpackBuildCommand command,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        RequireDocker(target, "Railpack");
+        var image = ImageReference.Parse(command.ImageName).Value;
+        var frontend = ImageReference.Parse(command.FrontendImage).Value;
+        var buildKit = ImageReference.Parse(command.BuildKitImage).Value;
+        var builder = ContainerName.Parse(command.BuilderName, "buildx builder name").Value;
+        RequirePath(command.ContextDirectory);
+        RequirePath(command.PlanFile);
+        ProcessResult inspect = await RunDockerAsync(target, ["buildx", "inspect", builder], cancellationToken);
+        if (!inspect.Succeeded)
+        {
+            ProcessResult create = await RunDockerAsync(target,
+                ["buildx", "create", "--name", builder, "--driver", "docker-container", "--driver-opt",
+                    "image=" + buildKit], cancellationToken);
+            if (!create.Succeeded)
+                throw new InvalidOperationException(
+                    "Railpack builds require the Docker buildx plugin on the server; creating the BuildKit builder failed.");
+        }
+
+        var args = new List<string>
+        {
+            "buildx", "build", "--builder", builder, "--build-arg", "BUILDKIT_SYNTAX=" + frontend,
+            "--file", command.PlanFile, "--progress", "plain", "--load", "--tag", image
+        };
+        if (command.NoCache) args.Add("--no-cache");
+        else args.AddRange(["--build-arg", "cache-key=" + CacheKeyPattern().Replace(command.CacheKey, "_")]);
+        if (!command.Environment.IsEmpty)
+            args.AddRange(["--build-arg", "secrets-hash=" + SecretsHash(command.Environment)]);
+        foreach (var (key, _) in command.Environment.Values)
+            args.AddRange(["--secret", $"id={ValidKey(key)},env={key}"]);
+        foreach (var (key, value) in command.Labels) args.AddRange(["--label", Label(key, value)]);
+        args.Add(command.ContextDirectory);
+
+        try
+        {
+            await foreach (ProcessOutputLine line in StreamDockerAsync(target, target.ResolveCliExecutable(), args,
+                               null, command.Timeout ?? TimeSpan.FromMinutes(45),
+                               Redaction(command.Redaction, command.Environment), cancellationToken,
+                               command.Environment))
+                yield return line;
+        }
+        finally
+        {
+            // An idle BuildKit daemon keeps the memory of earlier builds (upstream v4.5.0 #12097). Callers serialize
+            // Railpack builds per server, so no other build uses the builder now.
+            await StopBuilderAsync(target, builder);
+        }
+    }
+
+    private async Task StopBuilderAsync(ContainerRuntimeTarget target, string builder)
+    {
+        try
+        {
+            await RunDockerAsync(target, ["buildx", "stop", builder], CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            // Best effort.
+        }
+    }
+
+    public async IAsyncEnumerable<ProcessOutputLine> GenerateNixpacksBuildAsync(
+        ContainerRuntimeTarget target,
+        NixpacksGenerateCommand command,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var image = ImageReference.Parse(command.ImageName).Value;
+        RequirePath(command.ContextDirectory);
+        var args = new List<string>
+            { "build", command.ContextDirectory, "--out", command.ContextDirectory, "--name", image };
+        if (!string.IsNullOrWhiteSpace(command.InstallCommand)) args.AddRange(["--install-cmd", command.InstallCommand]);
+        if (!string.IsNullOrWhiteSpace(command.BuildCommand)) args.AddRange(["--build-cmd", command.BuildCommand]);
+        if (!string.IsNullOrWhiteSpace(command.StartCommand)) args.AddRange(["--start-cmd", command.StartCommand]);
+        // `--env NAME` makes Nixpacks read the value from its environment.
+        foreach (var (key, _) in command.Environment.Values) args.AddRange(["--env", ValidKey(key)]);
+
+        await foreach (ProcessOutputLine line in StreamDockerAsync(target, "nixpacks", args, null,
+                           command.Timeout ?? TimeSpan.FromMinutes(10),
+                           Redaction(command.Redaction, command.Environment), cancellationToken, command.Environment))
+            yield return line;
+    }
+
+    public async Task<bool> TagImageAsync(ContainerRuntimeTarget target, string source, string destination,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await RunDockerAsync(target,
+            ["tag", ImageReference.Parse(source).Value, ImageReference.Parse(destination).Value], cancellationToken);
+        return result.Succeeded;
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> PushImageAsync(ContainerRuntimeTarget target,
+        RegistryImageCommand command, CancellationToken cancellationToken = default)
+    {
+        return RegistryAsync(target, "push", command, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> PullImageAsync(ContainerRuntimeTarget target,
+        RegistryImageCommand command, CancellationToken cancellationToken = default)
+    {
+        return RegistryAsync(target, "pull", command, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Registry arguments with an isolated client configuration: <c>docker --config DIR verb ...</c> or
+    ///     <c>podman verb --authfile DIR/auth.json ...</c>, so credentials never land in the daemon user's configuration.
+    /// </summary>
+    public static IReadOnlyList<string> RegistryArguments(ContainerRuntimeProvider provider, string configDirectory,
+        params string[] args)
+    {
+        if (provider == ContainerRuntimeProvider.Podman)
+            return [args[0], "--authfile", configDirectory.TrimEnd('/', '\\') + "/auth.json", .. args[1..]];
+        return ["--config", configDirectory, .. args];
+    }
+
+    /// <summary>
+    ///     Push or pull with an isolated client configuration: the password is sent on standard input to
+    ///     <c>login --password-stdin</c> and removed again with <c>logout</c>.
+    /// </summary>
+    private async IAsyncEnumerable<ProcessOutputLine> RegistryAsync(ContainerRuntimeTarget target, string verb,
+        RegistryImageCommand command, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var image = ImageReference.Parse(command.ImageReference).Value;
+        RequirePath(command.ConfigDirectory);
+        var secrets = new List<string>(command.Redaction?.SecretValues ?? []);
+        RegistryAuth? auth = command.Auth;
+        if (auth is not null)
+        {
+            if (!RegistryHostPattern().IsMatch(auth.Registry) || auth.Username.Length == 0 ||
+                auth.Username.StartsWith('-') || auth.Username.Any(char.IsControl))
+                throw new ArgumentException("Registry credentials are invalid.", nameof(command));
+            secrets.Add(auth.Password);
+            ProcessResult login = await RunDockerAsync(target,
+                RegistryArguments(target.Provider, command.ConfigDirectory, "login", "--username", auth.Username,
+                    "--password-stdin", auth.Registry), cancellationToken, TimeSpan.FromMinutes(2), auth.Password);
+            if (!login.Succeeded)
+                throw new InvalidOperationException($"Registry login to {auth.Registry} failed.");
+        }
+
+        try
+        {
+            await foreach (ProcessOutputLine line in StreamDockerAsync(target, target.ResolveCliExecutable(),
+                               RegistryArguments(target.Provider, command.ConfigDirectory, verb, image), null,
+                               command.Timeout ?? TimeSpan.FromMinutes(30),
+                               new ProcessRedactionProfile(secrets, command.Redaction?.PatternNames ?? [],
+                                   command.Redaction?.KnownValues, command.Redaction?.IsLogOutput ?? false),
+                               cancellationToken))
+                yield return line;
+        }
+        finally
+        {
+            if (auth is not null) await LogoutAsync(target, command.ConfigDirectory, auth.Registry);
+        }
+    }
+
+    private async Task LogoutAsync(ContainerRuntimeTarget target, string configDirectory, string registry)
+    {
+        try
+        {
+            await RunDockerAsync(target, RegistryArguments(target.Provider, configDirectory, "logout", registry),
+                CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            // The isolated configuration is removed with the deployment workspace.
+        }
     }
 
     public async IAsyncEnumerable<ContainerEvent> StreamEventsAsync(
@@ -231,13 +447,16 @@ public sealed class DockerCliContainerRuntimeClient(
     {
         var args = new List<string> { "compose" };
         foreach (var file in command.ComposeFiles)
-            args.AddRange(["-f", file]);
+            args.AddRange(["-f", RequirePath(file)]);
         if (!string.IsNullOrWhiteSpace(command.EnvironmentFile))
-            args.AddRange(["--env-file", command.EnvironmentFile]);
+            args.AddRange(["--env-file", RequirePath(command.EnvironmentFile)]);
         args.AddRange(command.Arguments);
 
+        // Compose reads user content: locally it starts from the allowlisted environment, so `${VAR}` in a repository
+        // compose file never resolves against the control plane's process environment (SEC-10/SEC-11).
         await foreach (ProcessOutputLine line in StreamDockerAsync(target, target.CliExecutable ?? "docker", args,
-                           command.WorkingDirectory, command.Timeout, command.Redaction, cancellationToken))
+                           command.WorkingDirectory, command.Timeout, command.Redaction, cancellationToken,
+                           BuildEnvironment.Empty))
             yield return line;
     }
 
@@ -247,7 +466,7 @@ public sealed class DockerCliContainerRuntimeClient(
         bool removeVolumes,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(projectName);
+        projectName = ComposeProjectName.Validate(projectName);
         var args = new List<string> { "compose", "--project-name", projectName, "down", "--remove-orphans" };
         if (removeVolumes) args.Add("--volumes");
         ProcessResult result = await RunDockerAsync(target, args, cancellationToken, TimeSpan.FromMinutes(5));
@@ -260,25 +479,32 @@ public sealed class DockerCliContainerRuntimeClient(
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(imageReference);
-        if (imageReference.StartsWith('-'))
-            throw new ArgumentException("Image reference must not start with '-'.", nameof(imageReference));
-        ProcessResult result = await RunDockerAsync(target, ["image", "rm", imageReference], cancellationToken);
+        if (!ImageReference.TryParse(imageReference, out _) && !ImageIdPattern().IsMatch(imageReference))
+            throw new ArgumentException("Image reference is invalid.", nameof(imageReference));
+        ProcessResult result = await RunDockerAsync(target, ["image", "rm", "--", imageReference.Trim()],
+            cancellationToken);
         return result.Succeeded;
     }
 
     private async Task<ProcessResult> RunDockerAsync(ContainerRuntimeTarget target, IReadOnlyList<string> args,
-        CancellationToken cancellationToken, TimeSpan? commandTimeout = null)
+        CancellationToken cancellationToken, TimeSpan? commandTimeout = null, string? standardInput = null)
     {
         var timeout = commandTimeout ?? TimeSpan.FromMinutes(2);
         if (target.Remote is not { } remote)
-            return await processRunner.RunTextAsync(new ProcessCommand(target.ResolveCliExecutable(), args,
-                Timeout: timeout), cancellationToken);
+        {
+            var command = new ProcessCommand(target.ResolveCliExecutable(), args, Timeout: timeout);
+            if (standardInput is null) return await processRunner.RunTextAsync(command, cancellationToken);
+            await using var input = new MemoryStream(Encoding.UTF8.GetBytes(standardInput), false);
+            return await processRunner.RunTextWithInputAsync(
+                command with { Redaction = new ProcessRedactionProfile([standardInput], []) }, input,
+                cancellationToken);
+        }
 
         DateTimeOffset started = DateTimeOffset.UtcNow;
         ServerCommandResult result = await RemoteRunner().RunAsync(remote, [target.ResolveCliExecutable(), .. args],
-            timeout, null, cancellationToken);
-        var command = new ProcessCommand("ssh", [target.ResolveCliExecutable(), .. args], Timeout: timeout);
-        return new ProcessResult(command, new ProcessExitInfo(result.ExitCode, false, false, null), 0, started,
+            timeout, standardInput, cancellationToken);
+        var remoteCommand = new ProcessCommand("ssh", [target.ResolveCliExecutable(), .. args], Timeout: timeout);
+        return new ProcessResult(remoteCommand, new ProcessExitInfo(result.ExitCode, false, false, null), 0, started,
             DateTimeOffset.UtcNow, result.StandardOutput, result.StandardError);
     }
 
@@ -289,19 +515,88 @@ public sealed class DockerCliContainerRuntimeClient(
         string? workingDirectory,
         TimeSpan? timeout,
         ProcessRedactionProfile? redaction,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        BuildEnvironment? environment = null)
     {
         if (target.Remote is { } remote)
-            return RemoteRunner().StreamAsync(remote, [executable, .. args], workingDirectory,
+            return RemoteRunner().StreamAsync(remote, RemoteArguments(executable, args, environment), workingDirectory,
                 timeout ?? TimeSpan.FromHours(2), redaction?.SecretValues ?? [], cancellationToken);
 
+        // Commands that process user content (compose, builds) start from an allowlisted environment (SEC-10).
         return processRunner.StreamLinesAsync(new ProcessCommand(
             executable,
             args,
             workingDirectory,
-            Timeout: timeout,
-            OutputMode: ProcessOutputMode.Lines,
-            Redaction: redaction), cancellationToken);
+            environment is null ? null : DockerCliEnvironment.Build(environment),
+            timeout,
+            ProcessOutputMode.Lines,
+            Redaction: redaction,
+            InheritEnvironment: environment is null), cancellationToken);
+    }
+
+    /// <summary>
+    ///     The argument vector run on an SSH server: with build values, a fixed wrapper sources the uploaded
+    ///     <c>KEY='value'</c> file first, so values never appear on the remote command line.
+    /// </summary>
+    public static IReadOnlyList<string> RemoteArguments(string executable, IReadOnlyList<string> args,
+        BuildEnvironment? environment)
+    {
+        if (environment is null || environment.IsEmpty) return [executable, .. args];
+        var file = environment.ShellFilePath ?? throw new InvalidOperationException(
+            "Build values for an SSH server need the uploaded build values file.");
+        if (!file.StartsWith('/') || file.Any(char.IsControl))
+            throw new InvalidOperationException("The build values file path must be absolute.");
+        return ["sh", "-c", SourceBuildEnvironmentScript, "vessel-build-env", file, executable, .. args];
+    }
+
+    private static BuildEnvironment Environment(IReadOnlyList<KeyValuePair<string, string>> values, string? file)
+    {
+        foreach (var (key, _) in values) ValidKey(key);
+        return new BuildEnvironment(values, file);
+    }
+
+    private static ProcessRedactionProfile Redaction(ProcessRedactionProfile? redaction, BuildEnvironment environment)
+    {
+        return new ProcessRedactionProfile(
+            [.. environment.Values.Select(pair => pair.Value).Where(value => value.Length > 0), .. redaction?.SecretValues ?? []],
+            redaction?.PatternNames ?? [], redaction?.KnownValues, redaction?.IsLogOutput ?? false);
+    }
+
+    private static string SecretsHash(BuildEnvironment environment)
+    {
+        var builder = new StringBuilder();
+        foreach (var (key, value) in environment.Values.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+            builder.Append(key).Append('=').Append(value).Append('\0');
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())))[..16]
+            .ToLowerInvariant();
+    }
+
+    private static string ValidKey(string key)
+    {
+        if (!EnvironmentVariableKey.IsShellName(key))
+            throw new ArgumentException($"'{key}' is not a valid build variable name.", nameof(key));
+        return key;
+    }
+
+    private static string Label(string key, string value)
+    {
+        if (!LabelKeyPattern().IsMatch(key) || value.Any(char.IsControl))
+            throw new ArgumentException("Container label is invalid.", nameof(key));
+        return $"{key}={value}";
+    }
+
+    private static string RequirePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.StartsWith('-') || path.Any(char.IsControl))
+            throw new ArgumentException("Path is invalid for a container runtime command.", nameof(path));
+        return path;
+    }
+
+    private static void RequireDocker(ContainerRuntimeTarget target, string builder)
+    {
+        if (target.Provider != ContainerRuntimeProvider.Docker)
+            throw new InvalidOperationException(
+                $"{builder} builds need Docker with buildx; this server runs {target.Provider}. Use the Dockerfile build pack.");
     }
 
     private IServerCommandRunner RemoteRunner()
@@ -314,4 +609,19 @@ public sealed class DockerCliContainerRuntimeClient(
     {
         if (!result.Succeeded) throw new ProcessExecutionException(result);
     }
+
+    [GeneratedRegex("^[a-zA-Z0-9][a-zA-Z0-9._/-]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex LabelKeyPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.CultureInvariant)]
+    private static partial Regex PlanFilePattern();
+
+    [GeneratedRegex("^(sha256:)?[a-f0-9]{12,64}$", RegexOptions.CultureInvariant)]
+    private static partial Regex ImageIdPattern();
+
+    [GeneratedRegex("[^A-Za-z0-9_.-]", RegexOptions.CultureInvariant)]
+    private static partial Regex CacheKeyPattern();
+
+    [GeneratedRegex(@"^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:[0-9]{1,5})?$", RegexOptions.CultureInvariant)]
+    private static partial Regex RegistryHostPattern();
 }

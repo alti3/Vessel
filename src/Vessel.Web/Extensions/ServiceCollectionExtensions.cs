@@ -135,6 +135,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CleanupPreviewJob>();
         services.AddScoped<RollbackService>();
         services.AddScoped<DeploymentSettingsService>();
+        services.AddScoped<Vessel.Application.Deployments.BuildPacks.BuildSettingsService>();
         services.AddScoped<TerminalSessionManager>();
         services.TryAddSingleton<TerminalAttachTokens>();
         services.TryAddSingleton<SshHostKeyScanThrottle>();
