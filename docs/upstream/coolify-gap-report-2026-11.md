@@ -179,7 +179,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | DEP-05 | Auto-cancel superseded deployments (v4.7.0 breaking default) | P1 | M | New items in Phase 8/9 rework (8.20 extension). | Done |
 | DEP-06 | Rollback (local and registry images, restricted targets) | P1 | M | New Phase 8 follow-up (or Phase 9b); 18.12. | Partial (local images; registry rollback needs registry push support) |
 | DEP-07 | Preview lifecycle: cleanup, stop, API and settings | P1 | M | 9.14 completion; Phase 10 for preview domains (cross-ref Proxy… | Done |
-| DEP-08 | Private Git sources (GitHub App, GitLab App, Gitea/Forgejo App, deploy keys, HTTPS credentials, SSH host-key pinning) | P1 | XL | 9.08 (marked done but only refs discovery exists) → new Phase 9b… | Open |
+| DEP-08 | Private Git sources (GitHub App, GitLab App, Gitea/Forgejo App, deploy keys, HTTPS credentials, SSH host-key pinning) | P1 | XL | 9.08 (marked done but only refs discovery exists) → new Phase 9b… | Partial (interactive OAuth app install flow, GitLab system hooks, source UI forms remain) |
 | DEP-09 | Build packs: Railpack (and Static) unimplemented, Nixpacks deprecated, build-time variables never passed | P1 | L | New Phase 8b "Build packs"; 17.06 import mapping. | Open |
 | DEP-10 | Environment variable value semantics (exact values, literal/multiline, empty values, order, preview copies, duplicates) | P1 | M | 7.13/8.09 rework; 17.07. | Open |
 | DEP-11 | Docker Compose build pack: parse and validate instead of raw passthrough | P1 | L | 8.08 rework; new Compose items; Phase 10 (routing) cross-ref. | Open |
@@ -212,7 +212,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SEC-07 | Manual webhook secret strength, failure throttling, and real client IP | P1 | S | 15.04, Phase 9 follow-up. | Done |
 | SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Done |
 | SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Done |
-| SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Open |
+| SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Partial (git boundary done; docker boundary in build-pack batch) |
 | SEC-11 | Git-based Docker Compose validation and host-path policy | P1 | M | 15.05/15.10, Phase 8 follow-up. | Open |
 | SEC-12 | SSH connection hardening foundation (host key pinning, fixed options, key lifecycle) | P1 | L | New items under Phase 15 (and the SSH runtime phase), 15.12. | Done |
 | SEC-13 | API abuse controls: failed-request throttle and rate-limit coverage | P1 | S | 15.04, Phase 13. | Done |
@@ -223,7 +223,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SRV-06 | Container terminal (PTY exec/attach), short-lived session tokens, and continuous re-authorization | P1 | M. | 12.07–12.10 (re-open the container PTY). | Done |
 | SRV-07 | Docker cleanup (scheduled, threshold-based, safe) and the server Images page | P1 | M. | New Phase 12b item; 16.04. | Open |
 | SRV-08 | Disk-usage and reachability alerts (event producers for server notifications) | P1 | S–M. | 13.x follow-up; 12.11. | Open |
-| TPL-01 | Service template format compatibility with the Coolify catalog | P1 | XL | 11.05–11.07 (reopen), 17.08, 17.12. | Open |
+| TPL-01 | Service template format compatibility with the Coolify catalog | P1 | XL | 11.05–11.07 (reopen), 17.08, 17.12. | Done |
 | API-02 | MCP server (83 tools, 2 prompts, 2 resources) with per-team toggle, IP allowlist and `is_mcp` deployments | P2 | L | New: Phase 19 "MCP server" (after Phase 6b). | Open |
 | DATA-15 | Non-S3 backup storage types (SFTP, FTPS, WebDAV) | P2 | L | New: Phase 11b | Open |
 | DATA-16 | Additional engines: MongoDB, KeyDB, Dragonfly, ClickHouse (with scheduled backups) and SQLite | P2 | L | 11.01-11.04 (extend) | Open |
