@@ -14,6 +14,7 @@ using Vessel.Application.Files;
 using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
@@ -37,6 +38,7 @@ using Vessel.Infrastructure.Git;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.ManagedServices;
+using Vessel.Infrastructure.ManagedServices.Templates;
 using Vessel.Infrastructure.Notifications;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
@@ -138,6 +140,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
         services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
         services.TryAddSingleton<IComposeDocumentBuilder, YamlComposeDocumentBuilder>();
+        services.TryAddSingleton<IServiceTemplateComposeProcessor, YamlServiceTemplateComposeProcessor>();
+        services.TryAddSingleton<IServiceTemplateSource, EmbeddedServiceTemplateSource>();
         services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
         if (OperatingSystem.IsLinux())

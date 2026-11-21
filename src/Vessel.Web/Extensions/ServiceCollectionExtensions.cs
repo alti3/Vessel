@@ -27,6 +27,7 @@ using Vessel.Application.Email;
 using Vessel.Application.Instance;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
@@ -160,7 +161,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BackupArtifactReader>();
         services.AddScoped<CheckMissingBackupsJob>();
         services.AddScoped<RevalidateBackupDestinationsJob>();
-        services.AddSingleton<ServiceTemplateCatalog>();
+        services.AddSingleton(provider => ServiceTemplateCatalog.Create(
+            provider.GetService<IServiceTemplateComposeProcessor>(), provider.GetService<IServiceTemplateSource>()));
         services.AddScoped<DomainRoutingService>();
         services.AddScoped<ProxyConfigurationService>();
         services.AddScoped<ProxyLifecycleService>();

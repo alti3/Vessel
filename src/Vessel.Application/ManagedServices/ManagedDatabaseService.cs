@@ -5,6 +5,7 @@ using Vessel.Application.Authorization;
 using Vessel.Application.Backups;
 using Vessel.Application.Docker;
 using Vessel.Application.Jobs;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
@@ -37,10 +38,19 @@ public sealed class ManagedDatabaseService(
     ServiceRoutingCoordinator serviceRouting,
     DatabaseHealthProbe healthProbe)
 {
+    private ServiceTemplateRuntimeResolver? _templateRuntime;
+
+    private ServiceTemplateRuntimeResolver TemplateRuntime =>
+        _templateRuntime ??= new ServiceTemplateRuntimeResolver(dbContext, secretVault, timeProvider);
 
     public IReadOnlyList<ServiceTemplateSummary> ListTemplates()
     {
         return templates.List();
+    }
+
+    public ServiceTemplateSummary GetTemplate(string key)
+    {
+        return templates.Describe(key);
     }
 
     public async Task<DatabaseLifecycleResult> QueueLifecycleActionAsync(
@@ -154,11 +164,19 @@ public sealed class ManagedDatabaseService(
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ProjectsWrite);
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
         ServiceTemplateDefinition template = templates.Get(request.TemplateKey);
+        IReadOnlyDictionary<string, string> requestInputs =
+            request.Inputs ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        // TPL-01: imported templates accept only their declared inputs; secret inputs go to the vault.
+        templates.ValidateInputs(template.Key, requestInputs);
+        (Dictionary<string, string> plainInputs, Dictionary<string, string> secretInputs) =
+            templates.SplitInputs(template.Key, requestInputs);
 
         var service = ServiceResource.Create(teamId, environmentId, serverId, new ResourceName(request.Name),
-            template.Key, template.Version, JsonSerializer.Serialize(request.Inputs), timeProvider.GetUtcNow());
+            template.Key, template.Version, JsonSerializer.Serialize(plainInputs), timeProvider.GetUtcNow());
         await dbContext.ServiceResourceRepository.AddAsync(service, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (secretInputs.Count > 0)
+            await TemplateRuntime.StoreSecretInputsAsync(service, secretInputs, cancellationToken);
         var jobId = jobs.Enqueue<ProvisionServiceTemplateJob>(job =>
             job.RunAsync(service.Id.Value, CancellationToken.None));
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.ServiceCreated,
@@ -176,8 +194,14 @@ public sealed class ManagedDatabaseService(
         Server server = dbContext.Servers.Single(item => item.Id == service.ServerId);
         Dictionary<string, string> inputs =
             JsonSerializer.Deserialize<Dictionary<string, string>>(service.ConfigurationJson) ?? [];
+        ServiceTemplateDefinition template = templates.Get(service.TemplateKey);
+        // TPL-01: magic variables of imported templates are generated once per instance (vault) and routed through
+        // the service's domains.
+        ServiceTemplateRuntimeValues? runtimeValues = template.Coolify is null
+            ? null
+            : await TemplateRuntime.ResolveAsync(service, template.Coolify, cancellationToken);
         ServiceProvisioningPlan plan = templates.CreatePlan(service.TemplateKey, service.Id.Value, service.Name.Value,
-            inputs);
+            inputs, runtimeValues);
         service.MarkProvisioning(timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
 

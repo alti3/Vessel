@@ -17,6 +17,23 @@ public sealed class ServiceTemplatesController(ManagedDatabaseService managedSer
         return Ok(managedServices.ListTemplates());
     }
 
+    /// <summary>
+    ///     One template with its metadata (source, documentation, tags, port, routed endpoints and import warnings such
+    ///     as major-version-only image tags). Imported Coolify templates use keys prefixed <c>coolify-</c>.
+    /// </summary>
+    [HttpGet("{key}")]
+    public ActionResult<ServiceTemplateSummary> Get(string key)
+    {
+        try
+        {
+            return Ok(managedServices.GetTemplate(key));
+        }
+        catch (Exception exception) when (ApiErrors.TryMap(this, exception, out ActionResult? result))
+        {
+            return result!;
+        }
+    }
+
     [HttpPost("resources")]
     [Authorize(Policy = VesselPermissions.ProjectsWrite)]
     public async Task<ActionResult<ServiceResourceSummary>> Create(
