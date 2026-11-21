@@ -234,4 +234,25 @@ public sealed class InstanceEmailSettings : Entity<InstanceEmailSettingsId>
         NotificationFromName = SmtpServerSettings.SenderName(notificationFromName);
         Touch(now);
     }
+
+    /// <summary>
+    ///     Replaces the protected SMTP passwords and Resend API key with the same secrets encrypted under a newer key
+    ///     (key rotation). Server names, hosts and every other setting stay as they are.
+    /// </summary>
+    public void RewrapSecrets(
+        Func<string, string> rewrapSmtpPassword,
+        Func<string, string> rewrapResendApiKey,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(rewrapSmtpPassword);
+        ArgumentNullException.ThrowIfNull(rewrapResendApiKey);
+        SmtpServers = SmtpServers
+            .Select(server => server.ProtectedPassword is null
+                ? server
+                : server with { ProtectedPassword = rewrapSmtpPassword(server.ProtectedPassword) })
+            .ToArray();
+        if (ProtectedResendApiKey is not null)
+            ProtectedResendApiKey = rewrapResendApiKey(ProtectedResendApiKey);
+        Touch(now);
+    }
 }

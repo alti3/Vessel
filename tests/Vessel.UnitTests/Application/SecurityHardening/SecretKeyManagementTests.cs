@@ -4,9 +4,13 @@ using Microsoft.Extensions.Options;
 using Vessel.Application.Auth;
 using Vessel.Application.Authorization;
 using Vessel.Application.Deployments;
+using Vessel.Application.Email;
+using Vessel.Application.Proxy;
 using Vessel.Application.Security;
 using Vessel.Domain;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.Secrets;
+using Vessel.Domain.Settings;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
 using Vessel.Domain.ValueObjects;
@@ -95,6 +99,65 @@ public sealed class SecretKeyManagementTests
             TestContext.Current.CancellationToken);
         Assert.Equal(0, second.SecretValuesUsingOldKey);
         Assert.Equal(0, second.TwoFactorSecretsReencrypted);
+    }
+
+    [Fact]
+    public async Task Reencryption_RewrapsProxyConfigurationsAndInstanceEmailSecrets()
+    {
+        User admin = AddUser(instanceAdmin: true);
+        var oldCipher = new FakeSecretCipher("v1");
+        var serverId = ServerId.New();
+        var oldProtector = new ProxyConfigurationProtector(oldCipher);
+
+        var version = ProxyConfigurationVersion.Create(serverId, ProxyProviderKind.Traefik, "v", new string('a', 64),
+            oldProtector.Protect(serverId, "http:\n  routers: {}\n"), null, _now);
+        // A row written before encryption at rest is plaintext and is encrypted on rotation as well.
+        var legacy = ProxyConfigurationVersion.Create(serverId, ProxyProviderKind.Traefik, "legacy",
+            new string('b', 64), "http:\n  services: {}\n", null, _now);
+        var file = ProxyDynamicConfiguration.Create(serverId, "custom.yml",
+            oldProtector.Protect(serverId, "http: {}\n"), new string('c', 64), _now);
+        var legacyPlaintext = legacy.Configuration;
+        _db.ProxyConfigurationVersionItems.AddRange([version, legacy]);
+        _db.ProxyDynamicConfigurationItems.Add(file);
+
+        var email = InstanceEmailSettings.Create(_now);
+        email.Update(EmailProvider.Smtp, "primary",
+        [
+            new SmtpServerSettings("primary", "smtp.example.com", 587, SmtpEncryption.StartTls, "mailer",
+                oldCipher.Protect("smtp-secret", InstanceEmailSender.SmtpPasswordPurpose), "ops@example.com", null,
+                null, 30)
+        ], oldCipher.Protect("re_key", InstanceEmailSender.ResendApiKeyPurpose), null, null, null, null, _now);
+        _db.InstanceEmailSettingsItems.Add(email);
+
+        var rotated = new FakeSecretCipher("v2", "v1");
+        SecretReencryptionService service = Reencryption(rotated);
+
+        SecretReencryptionResult dryRun = await service.ReencryptAsync(admin.Id, dryRun: true,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(5, dryRun.ProtectedEnvelopesNeedingUpgrade);
+        Assert.Equal(0, dryRun.ProtectedEnvelopesReencrypted);
+        Assert.Equal("v1", rotated.GetProtectedKeyVersion(version.Configuration));
+
+        SecretReencryptionResult result = await service.ReencryptAsync(admin.Id, dryRun: false,
+            TestContext.Current.CancellationToken);
+        Assert.True(result.Succeeded);
+        Assert.Equal(5, result.ProtectedEnvelopesReencrypted);
+
+        // Everything now decrypts with the new key alone, and the plaintext is unchanged.
+        var newOnly = new FakeSecretCipher("v2");
+        var newProtector = new ProxyConfigurationProtector(newOnly);
+        Assert.Equal("http:\n  routers: {}\n", newProtector.Reveal(serverId, version.Configuration));
+        Assert.True(newOnly.IsProtected(legacy.Configuration));
+        Assert.Equal(legacyPlaintext, newProtector.Reveal(serverId, legacy.Configuration));
+        Assert.Equal("http: {}\n", newProtector.Reveal(serverId, file.Content));
+        Assert.Equal("smtp-secret", newOnly.Unprotect(email.SmtpServers[0].ProtectedPassword!,
+            InstanceEmailSender.SmtpPasswordPurpose));
+        Assert.Equal("re_key", newOnly.Unprotect(email.ProtectedResendApiKey!,
+            InstanceEmailSender.ResendApiKeyPurpose));
+
+        SecretReencryptionResult second = await service.ReencryptAsync(admin.Id, dryRun: false,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(0, second.ProtectedEnvelopesNeedingUpgrade);
     }
 
     [Fact]

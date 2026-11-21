@@ -24,6 +24,20 @@ public sealed class ProxyConfigurationProtector(ISecretCipher cipher)
         return cipher.IsProtected(stored) ? cipher.Unprotect(stored, Purpose(serverId)) : stored;
     }
 
+    /// <summary>
+    ///     Re-encrypts <paramref name="stored" /> under the active key when it was protected with an older key, or was
+    ///     stored as plaintext before encryption at rest. Returns null when the value is already current.
+    /// </summary>
+    /// <exception cref="SecretDecryptionException">The stored value cannot be decrypted with the key ring.</exception>
+    public string? RewrapIfStale(ServerId serverId, string stored)
+    {
+        ArgumentNullException.ThrowIfNull(stored);
+        if (cipher.IsProtected(stored) &&
+            string.Equals(cipher.GetProtectedKeyVersion(stored), cipher.ActiveKeyVersion, StringComparison.Ordinal))
+            return null;
+        return Protect(serverId, Reveal(serverId, stored));
+    }
+
     public static string Hash(string plaintext)
     {
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(plaintext))).ToLowerInvariant();

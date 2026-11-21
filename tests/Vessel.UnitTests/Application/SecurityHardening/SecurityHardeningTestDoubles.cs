@@ -47,6 +47,9 @@ internal sealed class SecurityTestDbContext : IVesselDbContext
     public List<TerminalSession> TerminalSessionItems { get; } = [];
     public List<ServerStatusSnapshot> ServerStatusSnapshotItems { get; } = [];
     public List<SecretValue> SecretValueItems { get; } = [];
+    public List<ProxyConfigurationVersion> ProxyConfigurationVersionItems { get; } = [];
+    public List<ProxyDynamicConfiguration> ProxyDynamicConfigurationItems { get; } = [];
+    public List<InstanceEmailSettings> InstanceEmailSettingsItems { get; } = [];
     public int SaveCount { get; private set; }
 
     public IQueryable<User> Users => UserItems.AsQueryable();
@@ -78,7 +81,9 @@ internal sealed class SecurityTestDbContext : IVesselDbContext
     public IQueryable<WebhookEvent> WebhookEvents => Empty<WebhookEvent>();
     public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations => Empty<ApplicationWebhookConfiguration>();
     public IQueryable<ApplicationPreview> ApplicationPreviews => Empty<ApplicationPreview>();
-    public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => Empty<ProxyConfigurationVersion>();
+    public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => ProxyConfigurationVersionItems.AsQueryable();
+    public IQueryable<ProxyDynamicConfiguration> ProxyDynamicConfigurations => ProxyDynamicConfigurationItems.AsQueryable();
+    public IQueryable<InstanceEmailSettings> InstanceEmailSettings => InstanceEmailSettingsItems.AsQueryable();
     public IQueryable<Certificate> Certificates => Empty<Certificate>();
     public IQueryable<TerminalSession> TerminalSessions => TerminalSessionItems.AsQueryable();
     public IQueryable<ServerProxySettings> ServerProxySettings => Empty<ServerProxySettings>();

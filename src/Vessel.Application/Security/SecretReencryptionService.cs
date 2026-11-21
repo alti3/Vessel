@@ -1,7 +1,9 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Jobs;
+using Vessel.Application.Email;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
 using Vessel.Application.Redis;
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
@@ -17,7 +19,9 @@ public sealed record SecretReencryptionResult(
     int SecretValuesReencrypted,
     int TwoFactorSecretsNeedingUpgrade,
     int TwoFactorSecretsReencrypted,
-    int Undecryptable)
+    int Undecryptable,
+    int ProtectedEnvelopesNeedingUpgrade = 0,
+    int ProtectedEnvelopesReencrypted = 0)
 {
     public bool Succeeded => Undecryptable == 0;
 }
@@ -83,6 +87,8 @@ public sealed class SecretReencryptionService(
 
         await ReencryptSecretValuesAsync(active, dryRun, batchSize, counters, cancellationToken);
         await ReencryptTwoFactorSecretsAsync(dryRun, batchSize, counters, cancellationToken);
+        await ReencryptProxyConfigurationsAsync(dryRun, batchSize, counters, cancellationToken);
+        await ReencryptInstanceEmailSecretsAsync(dryRun, counters, cancellationToken);
 
         var result = new SecretReencryptionResult(
             active,
@@ -91,7 +97,9 @@ public sealed class SecretReencryptionService(
             counters.SecretValuesReencrypted,
             counters.TwoFactorNeedingUpgrade,
             counters.TwoFactorReencrypted,
-            counters.Undecryptable);
+            counters.Undecryptable,
+            counters.EnvelopesNeedingUpgrade,
+            counters.EnvelopesReencrypted);
 
         await auditWriter.RecordAsync(
             null,
@@ -107,6 +115,8 @@ public sealed class SecretReencryptionService(
                 ["secretValuesReencrypted"] = result.SecretValuesReencrypted,
                 ["twoFactorNeedingUpgrade"] = result.TwoFactorSecretsNeedingUpgrade,
                 ["twoFactorReencrypted"] = result.TwoFactorSecretsReencrypted,
+                ["protectedEnvelopesNeedingUpgrade"] = result.ProtectedEnvelopesNeedingUpgrade,
+                ["protectedEnvelopesReencrypted"] = result.ProtectedEnvelopesReencrypted,
                 ["undecryptable"] = result.Undecryptable
             },
             cancellationToken);
@@ -205,6 +215,135 @@ public sealed class SecretReencryptionService(
         }
     }
 
+    /// <summary>
+    ///     Stored proxy configuration versions and user dynamic files are protected per server (NET-07). Rows written
+    ///     before encryption at rest are plaintext and are encrypted here too.
+    /// </summary>
+    private async Task ReencryptProxyConfigurationsAsync(
+        bool dryRun,
+        int batchSize,
+        Counters counters,
+        CancellationToken cancellationToken)
+    {
+        var protector = new ProxyConfigurationProtector(cipher);
+
+        ProxyConfigurationVersionId[] versionIds = dbContext.ProxyConfigurationVersions
+            .Select(version => version.Id)
+            .ToArray();
+        foreach (ProxyConfigurationVersionId[] chunk in versionIds.Chunk(batchSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var changed = false;
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            foreach (var version in dbContext.ProxyConfigurationVersions.Where(item => chunk.Contains(item.Id))
+                         .ToArray())
+                if (TryRewrap(() => protector.RewrapIfStale(version.ServerId, version.Configuration), dryRun,
+                        counters, out var rewrapped))
+                {
+                    version.RewrapConfiguration(rewrapped, now);
+                    changed = true;
+                }
+
+            if (changed) await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        ProxyDynamicConfigurationId[] fileIds = dbContext.ProxyDynamicConfigurations
+            .Select(file => file.Id)
+            .ToArray();
+        foreach (ProxyDynamicConfigurationId[] chunk in fileIds.Chunk(batchSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var changed = false;
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            foreach (var file in dbContext.ProxyDynamicConfigurations.Where(item => chunk.Contains(item.Id))
+                         .ToArray())
+                if (TryRewrap(() => protector.RewrapIfStale(file.ServerId, file.Content), dryRun, counters,
+                        out var rewrapped))
+                {
+                    file.Replace(rewrapped, file.ContentHash, now);
+                    changed = true;
+                }
+
+            if (changed) await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>Instance SMTP passwords and the Resend API key (NTF-06).</summary>
+    private async Task ReencryptInstanceEmailSecretsAsync(
+        bool dryRun,
+        Counters counters,
+        CancellationToken cancellationToken)
+    {
+        var settings = dbContext.InstanceEmailSettings.FirstOrDefault();
+        if (settings is null) return;
+
+        var stale = new List<string>();
+        foreach (var server in settings.SmtpServers)
+            if (server.ProtectedPassword is not null && IsStale(server.ProtectedPassword))
+                stale.Add(server.ProtectedPassword);
+        var resendStale = settings.ProtectedResendApiKey is not null && IsStale(settings.ProtectedResendApiKey);
+        var needing = stale.Count + (resendStale ? 1 : 0);
+        if (needing == 0) return;
+        counters.EnvelopesNeedingUpgrade += needing;
+
+        try
+        {
+            // Decrypt everything first so a failure leaves the row untouched.
+            foreach (var value in stale)
+                _ = cipher.Unprotect(value, InstanceEmailSender.SmtpPasswordPurpose);
+            if (resendStale)
+                _ = cipher.Unprotect(settings.ProtectedResendApiKey!, InstanceEmailSender.ResendApiKeyPurpose);
+        }
+        catch (SecretDecryptionException)
+        {
+            counters.Undecryptable += needing;
+            return;
+        }
+
+        if (dryRun) return;
+
+        settings.RewrapSecrets(
+            value => IsStale(value)
+                ? cipher.Protect(cipher.Unprotect(value, InstanceEmailSender.SmtpPasswordPurpose),
+                    InstanceEmailSender.SmtpPasswordPurpose)
+                : value,
+            value => IsStale(value)
+                ? cipher.Protect(cipher.Unprotect(value, InstanceEmailSender.ResendApiKeyPurpose),
+                    InstanceEmailSender.ResendApiKeyPurpose)
+                : value,
+            timeProvider.GetUtcNow());
+        counters.EnvelopesReencrypted += needing;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private bool IsStale(string protectedValue)
+    {
+        return !string.Equals(cipher.GetProtectedKeyVersion(protectedValue), cipher.ActiveKeyVersion,
+            StringComparison.Ordinal);
+    }
+
+    private static bool TryRewrap(Func<string?> rewrap, bool dryRun, Counters counters, out string rewrapped)
+    {
+        rewrapped = string.Empty;
+        string? result;
+        try
+        {
+            result = rewrap();
+        }
+        catch (SecretDecryptionException)
+        {
+            counters.Undecryptable++;
+            return false;
+        }
+
+        if (result is null) return false;
+        counters.EnvelopesNeedingUpgrade++;
+        if (dryRun) return false;
+        counters.EnvelopesReencrypted++;
+        rewrapped = result;
+        return true;
+    }
+
     private sealed class Counters
     {
         public int SecretValuesUsingOldKey { get; set; }
@@ -212,6 +351,8 @@ public sealed class SecretReencryptionService(
         public int TwoFactorNeedingUpgrade { get; set; }
         public int TwoFactorReencrypted { get; set; }
         public int Undecryptable { get; set; }
+        public int EnvelopesNeedingUpgrade { get; set; }
+        public int EnvelopesReencrypted { get; set; }
     }
 }
 

@@ -58,6 +58,17 @@ public sealed class ProxyConfigurationVersion : Entity<ProxyConfigurationVersion
     /// <summary>Protected (encrypted) configuration text; see the Application-layer protector.</summary>
     public string Configuration { get; private set; } = string.Empty;
 
+    /// <summary>
+    ///     Replaces the protected configuration with the same plaintext encrypted under a newer key (key rotation).
+    ///     The configuration hash is unchanged because the plaintext is unchanged.
+    /// </summary>
+    public void RewrapConfiguration(string protectedConfiguration, DateTimeOffset now)
+    {
+        Configuration = DomainValidation.Required(protectedConfiguration, nameof(Configuration),
+            MaxConfigurationLength);
+        Touch(now);
+    }
+
     public ProxyConfigurationVersionId? PreviousVersionId { get; private set; }
 
     public ProxyConfigurationStatus Status { get; private set; }
