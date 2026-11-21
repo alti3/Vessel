@@ -330,6 +330,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         ConfigureWebhooks(modelBuilder);
         ConfigureProxy(modelBuilder);
         ConfigureRouting(modelBuilder);
+        ConfigureIdentity(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
@@ -1346,8 +1347,27 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
                 .IsRequired();
             builder.Property(audit => audit.CorrelationId).HasMaxLength(120);
             builder.Property(audit => audit.RedactedMetadataJson).HasColumnType("jsonb").IsRequired();
+            // IAM-08 context, classification and change set.
+            builder.Property(audit => audit.Source).HasMaxLength(32).IsRequired();
+            builder.Property(audit => audit.Level).HasConversion<string>().HasMaxLength(16).IsRequired();
+            builder.Property(audit => audit.ActorType).HasMaxLength(32).IsRequired();
+            builder.Property(audit => audit.ActorName).HasMaxLength(120);
+            builder.Property(audit => audit.ActorTokenId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new PersonalAccessTokenId(value.Value) : null);
+            builder.Property(audit => audit.ActorTokenName).HasMaxLength(255);
+            builder.Property(audit => audit.IpAddress).HasMaxLength(AuditLog.IpAddressMaxLength);
+            builder.Property(audit => audit.UserAgent).HasMaxLength(AuditLog.UserAgentMaxLength);
+            builder.Property(audit => audit.ResourceName).HasMaxLength(AuditLog.ResourceNameMaxLength);
+            builder.Property(audit => audit.Description).HasMaxLength(AuditLog.DescriptionMaxLength);
+            builder.Property(audit => audit.ChangesJson).HasColumnType("jsonb");
             builder.Ignore(audit => audit.DomainEvents);
-            builder.HasIndex(audit => new { audit.TeamId, audit.CreatedAt });
+            // Team audit queries page newest-first by (created_at, id); retention deletes by created_at.
+            builder.HasIndex(audit => new { audit.TeamId, audit.CreatedAt, audit.Id });
+            builder.HasIndex(audit => new { audit.TeamId, audit.Action, audit.CreatedAt });
+            builder.HasIndex(audit => new { audit.TeamId, audit.Source, audit.CreatedAt });
+            builder.HasIndex(audit => audit.CreatedAt);
+            builder.HasIndex(audit => audit.ActorUserId);
             builder.HasOne<Team>()
                 .WithMany()
                 .HasForeignKey(audit => audit.TeamId)

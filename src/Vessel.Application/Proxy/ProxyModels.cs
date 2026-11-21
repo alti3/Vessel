@@ -215,7 +215,8 @@ public sealed record CertificateSummary(
     CertificateStatus Status,
     DateTimeOffset? ExpiresAt,
     string? LastError,
-    Guid ServerId = default,
+    // No "= default": a struct default on a record parameter breaks OpenAPI schema generation (API-01).
+    Guid ServerId,
     IReadOnlyList<string>? SubjectAlternativeNames = null,
     string? Resolver = null,
     bool InUse = false,

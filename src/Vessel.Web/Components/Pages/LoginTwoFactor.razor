@@ -1,0 +1,28 @@
+@page "/login/two-factor"
+@attribute [AllowAnonymous]
+@layout AuthLayout
+
+<PageTitle>Two-factor sign-in | Vessel</PageTitle>
+
+<div class="auth-shell">
+    <section class="auth-panel">
+        <h1>Two-factor authentication</h1>
+        <p>Your provider confirmed your identity. Enter a code from your authenticator app or a recovery code.</p>
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="form-alert">The code was not accepted.</div>
+        }
+        <form class="form-stack" method="post" action="/auth/oauth/two-factor">
+            <label>Code<input name="Code" inputmode="numeric" autocomplete="one-time-code" required/></label>
+            <button class="button button-primary button-full" type="submit">Verify</button>
+        </form>
+        <div class="auth-links">
+            <a href="/login">Back to sign in</a>
+        </div>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+}

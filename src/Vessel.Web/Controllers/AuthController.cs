@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using Vessel.Application.Auditing;
 using Vessel.Application.Auth;
+using Vessel.Application.Auth.Sessions;
 using Vessel.Application.Instance;
+using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Web.Configuration;
 using Vessel.Web.Middleware;
@@ -21,13 +23,19 @@ public sealed class AuthController : ControllerBase
     private readonly AuthEmailService _authEmails;
     private readonly VesselAuthenticationService _authenticationService;
     private readonly VesselHostOptions _hostOptions;
+    private readonly VesselSessionManager _sessionManager;
+    private readonly UserSessionService _sessions;
 
     public AuthController(
         VesselAuthenticationService authenticationService,
         IAuditWriter auditWriter,
         IConfiguration configuration,
-        AuthEmailService authEmails)
+        AuthEmailService authEmails,
+        VesselSessionManager sessionManager,
+        UserSessionService sessions)
     {
+        _sessionManager = sessionManager;
+        _sessions = sessions;
         _authEmails = authEmails;
         _authenticationService = authenticationService;
         _auditWriter = auditWriter;
@@ -56,7 +64,7 @@ public sealed class AuthController : ControllerBase
             return Problem(exception.Message, statusCode: StatusCodes.Status403Forbidden);
         }
 
-        await SignInAsync(user);
+        await SignInAsync(user, "password");
         return Ok(AuthResponse.From(user));
     }
 
@@ -74,7 +82,7 @@ public sealed class AuthController : ControllerBase
         if (user is null) return Unauthorized();
         if (user.TwoFactorRequired) return StatusCode(StatusCodes.Status202Accepted, AuthResponse.From(user));
 
-        await SignInAsync(user);
+        await SignInAsync(user, string.IsNullOrWhiteSpace(request.TwoFactorCode) ? "password" : "password+2fa");
         return Ok(AuthResponse.From(user));
     }
 
@@ -95,7 +103,7 @@ public sealed class AuthController : ControllerBase
             return Redirect(
                 $"/login?error=invalid&returnUrl={Uri.EscapeDataString(request.ReturnUrl ?? string.Empty)}");
 
-        await SignInAsync(user);
+        await SignInAsync(user, string.IsNullOrWhiteSpace(request.TwoFactorCode) ? "password" : "password+2fa");
         return LocalRedirect(NormalizeReturnUrl(request.ReturnUrl));
     }
 
@@ -120,7 +128,7 @@ public sealed class AuthController : ControllerBase
             return Redirect("/register?error=closed");
         }
 
-        await SignInAsync(user);
+        await SignInAsync(user, "password");
         return LocalRedirect("/");
     }
 
@@ -128,6 +136,14 @@ public sealed class AuthController : ControllerBase
     [HttpPost("logout")]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
+        // IAM-09: signing out revokes the server-side session, so a copied cookie stops working too.
+        if (User.GetSessionId() is { } sessionId)
+        {
+            await _sessions.RevokeAsync(User.GetUserId(), sessionId, UserSessionService.ReasonSignedOut,
+                CorrelationIdMiddleware.GetCorrelationId(HttpContext), cancellationToken);
+            _sessionManager.Forget(sessionId);
+        }
+
         await _auditWriter.RecordAsync(
             User.GetTeamId(),
             User.GetUserId(),
@@ -266,6 +282,7 @@ public sealed class AuthController : ControllerBase
         TwoFactorRecoveryCodes? result = await _authenticationService.ConfirmTwoFactorAsync(
             User.GetUserId(),
             request.Code,
+            User.GetSessionId(),
             CorrelationIdMiddleware.GetCorrelationId(HttpContext),
             cancellationToken);
 
@@ -284,6 +301,7 @@ public sealed class AuthController : ControllerBase
             User.GetUserId(),
             request?.CurrentPassword,
             request?.Code,
+            User.GetSessionId(),
             CorrelationIdMiddleware.GetCorrelationId(HttpContext),
             cancellationToken);
         return disabled
@@ -292,11 +310,40 @@ public sealed class AuthController : ControllerBase
                 statusCode: StatusCodes.Status403Forbidden);
     }
 
-    private async Task SignInAsync(AuthenticatedUser user)
+    /// <summary>The caller's active sessions (IAM-09); the current one is flagged.</summary>
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
+    [HttpGet("sessions")]
+    public ActionResult<IReadOnlyList<SessionResponse>> Sessions()
     {
-        await HttpContext.SignInAsync(
-            VesselAuthenticationSchemes.Cookie,
-            VesselSessionPrincipal.Create(user.UserId, user.Name, user.Email, user.TeamId));
+        return Ok(_sessions.List(User.GetUserId(), User.GetSessionId()).Select(SessionResponse.From).ToArray());
+    }
+
+    /// <summary>Revokes one of the caller's sessions.</summary>
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
+    [HttpDelete("sessions/{sessionId:guid}")]
+    public async Task<IActionResult> RevokeSession(Guid sessionId, CancellationToken cancellationToken)
+    {
+        var id = new UserSessionId(sessionId);
+        var revoked = await _sessions.RevokeAsync(User.GetUserId(), id, UserSessionService.ReasonRevokedByUser,
+            CorrelationIdMiddleware.GetCorrelationId(HttpContext), cancellationToken);
+        _sessionManager.Forget(id);
+        return revoked ? NoContent() : NotFound();
+    }
+
+    /// <summary>"Sign out everywhere else": revokes every other session of the caller.</summary>
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
+    [HttpPost("sessions/revoke-others")]
+    public async Task<ActionResult<RevokedSessionsResponse>> RevokeOtherSessions(CancellationToken cancellationToken)
+    {
+        if (User.GetSessionId() is not { } current) return Forbid();
+        var revoked = await _sessions.RevokeOthersAsync(User.GetUserId(), current,
+            CorrelationIdMiddleware.GetCorrelationId(HttpContext), cancellationToken);
+        return Ok(new RevokedSessionsResponse(revoked));
+    }
+
+    private Task SignInAsync(AuthenticatedUser user, string method)
+    {
+        return _sessionManager.SignInAsync(HttpContext, user, method);
     }
 
     private static string NormalizeReturnUrl(string? returnUrl)
@@ -337,3 +384,23 @@ public sealed record AuthResponse(Guid UserId, Guid TeamId, string Name, string 
             user.TwoFactorRequired);
     }
 }
+
+public sealed record SessionResponse(
+    Guid Id,
+    string AuthenticationMethod,
+    string? IpAddress,
+    string? UserAgent,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastSeenAt,
+    DateTimeOffset ExpiresAt,
+    bool Current)
+{
+    public static SessionResponse From(UserSessionSummary session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return new SessionResponse(session.Id.Value, session.AuthenticationMethod, session.IpAddress,
+            session.UserAgent, session.CreatedAt, session.LastSeenAt, session.ExpiresAt, session.IsCurrent);
+    }
+}
+
+public sealed record RevokedSessionsResponse(int Revoked);

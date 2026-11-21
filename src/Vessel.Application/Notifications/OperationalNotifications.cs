@@ -35,6 +35,7 @@ public static class NotificationEventTypes
     public const string ScheduledTaskSucceeded = NotificationEventCatalog.ScheduledTaskSucceeded;
     public const string ScheduledTaskFailed = NotificationEventCatalog.ScheduledTaskFailed;
     public const string ApiTokenFailing = NotificationEventCatalog.ApiTokenFailing;
+    public const string ApiTokenExpiring = NotificationEventCatalog.ApiTokenExpiring;
 
     /// <summary>A target was disabled after repeated configuration failures (always delivered, never by email).</summary>
     public const string ChannelDisabled = NotificationEventCatalog.ChannelDisabled;

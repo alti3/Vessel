@@ -1,3 +1,6 @@
+using Vessel.Application.OutboundRequests;
+using Vessel.Infrastructure.OutboundRequests;
+using Vessel.Application.Auth.External;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
@@ -117,6 +120,8 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddScoped<IVesselDbContext>(provider => provider.GetRequiredService<VesselDbContext>());
             services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<VesselDbContext>());
             services.AddScoped<IAuditWriter, EfAuditWriter>();
+            // IAM-08: the Web host registers the per-request accessor first; background hosts fall back to "system".
+            services.TryAddScoped<IAuditContextAccessor, SystemAuditContextAccessor>();
             services.AddScoped<EfDashboardQueries>();
             services.AddScoped<IDashboardOverviewQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
             services.AddScoped<IProjectCatalogQuery>(provider => provider.GetRequiredService<EfDashboardQueries>());
@@ -170,6 +175,14 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ITraefikAcmeStore, TraefikAcmeStore>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddVesselNotificationInfrastructure(configuration);
+        // IAM-07: external sign-in protocol client over the SSRF-guarded handler (no default request logging).
+        services.AddHttpClient(OAuthProviderClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(15))
+            .RemoveAllLoggers()
+            .AddHttpMessageHandler<OutboundUrlGuardHandler>()
+            .ConfigurePrimaryHttpMessageHandler(provider => GuardedOutboundHttpHandler.Create(
+                provider.GetRequiredService<IOutboundUrlPolicy>(),
+                provider.GetRequiredService<IHostAddressResolver>()));
+        services.TryAddScoped<IOAuthProviderClient, OAuthProviderClient>();
         services.AddVesselGitSourceInfrastructure();
         services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));
         services.AddSingleton<IBackupStorageProvider, BackupStorageProvider>();

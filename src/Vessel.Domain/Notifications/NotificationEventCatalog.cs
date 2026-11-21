@@ -101,6 +101,7 @@ public static class NotificationEventCatalog
     public const string ScheduledTaskSucceeded = "scheduled_task.succeeded";
     public const string ScheduledTaskFailed = "scheduled_task.failed";
     public const string ApiTokenFailing = "api_token.failing";
+    public const string ApiTokenExpiring = "api_token.expiring";
     public const string ChannelDisabled = "notification.channel_disabled";
     public const string Test = "notification.test";
 
@@ -166,6 +167,9 @@ public static class NotificationEventCatalog
             NotificationThrottlePolicy.Every(Daily)),
         new(ApiTokenFailing, "api_token_failing", NotificationEventCategory.Security, true, true, true,
             NotificationThrottlePolicy.Every(Daily)),
+        // IAM-04: raised once per token by the expiry-warning job (the token records that it was warned).
+        new(ApiTokenExpiring, "api_token_expiring", NotificationEventCategory.Security, true, false, true,
+            NotificationThrottlePolicy.None),
         // Upstream "general" notice: other channels only, never email (admins get a separate email).
         new(ChannelDisabled, "general", NotificationEventCategory.System, true, true, false,
             NotificationThrottlePolicy.None),

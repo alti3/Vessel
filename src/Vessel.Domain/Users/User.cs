@@ -24,7 +24,17 @@ public sealed class User : Entity<UserId>
 
     public DateTimeOffset? EmailVerifiedAt { get; private set; }
 
+    /// <summary>
+    ///     Deprecated (IAM-07): a single subject cannot identify the provider or issuer. External identities live in
+    ///     <c>OauthIdentity</c>; this column is kept only so existing rows still load.
+    /// </summary>
     public string? ExternalSubject { get; private set; }
+
+    /// <summary>
+    ///     The team the user last worked in (IAM-09). Login restores it when the user is still a member; otherwise
+    ///     the personal team is used. It is a preference, not an authorization input.
+    /// </summary>
+    public TeamId? CurrentTeamId { get; private set; }
 
     public string? PasswordHash { get; private set; }
 
@@ -66,6 +76,22 @@ public sealed class User : Entity<UserId>
         Touch(now);
     }
 
+    /// <summary>
+    ///     Remembers the active team for the next login. It deliberately does not rotate the concurrency stamp, so a
+    ///     team switch never conflicts with another switch (last writer wins).
+    /// </summary>
+    public void SetCurrentTeam(TeamId teamId)
+    {
+        CurrentTeamId = teamId;
+    }
+
+    /// <summary>Forgets the stored team when it is the given one (for example after the member was removed).</summary>
+    public void ClearCurrentTeam(TeamId teamId)
+    {
+        if (CurrentTeamId == teamId) CurrentTeamId = null;
+    }
+
+    [Obsolete("Use OauthIdentity (IAM-07); ExternalSubject cannot hold the provider or issuer.")]
     public void LinkExternalSubject(string externalSubject, DateTimeOffset now)
     {
         ExternalSubject = DomainValidation.Required(externalSubject, nameof(ExternalSubject), 255);

@@ -19,6 +19,14 @@ internal static class ClaimsPrincipalExtensions
         return new TeamId(Guid.Parse(value));
     }
 
+    /// <summary>The server-side session id of an interactive session, or <c>null</c>.</summary>
+    public static UserSessionId? GetSessionId(this ClaimsPrincipal principal)
+    {
+        return Guid.TryParse(principal.FindFirstValue(VesselClaimTypes.SessionId), out Guid value)
+            ? new UserSessionId(value)
+            : null;
+    }
+
     /// <summary>True when the principal was authenticated by the bearer (API token) handler.</summary>
     public static bool IsBearerTokenPrincipal(this ClaimsPrincipal principal)
     {

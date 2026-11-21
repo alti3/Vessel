@@ -126,6 +126,7 @@ Vessel is licensed under the [MIT License](./LICENSE).
 For detailed product and architecture requirements, see [PROJECT_REQUIREMENTS.md](./PROJECT_REQUIREMENTS.md).
 For local configuration and health endpoint details, see [docs/development/configuration.md](./docs/development/configuration.md).
 For domain and persistence model details, see [docs/development/domain-persistence.md](./docs/development/domain-persistence.md).
+For the REST API contract (OpenAPI at `/openapi/v1.json`), versioning, deprecation and Coolify endpoint mapping, see [docs/api/compatibility-policy.md](./docs/api/compatibility-policy.md).
 For coding-agent guidance, see [AGENTS.md](./AGENTS.md).
 For the implementation roadmap, see [ROADMAP.md](./ROADMAP.md).
 For contribution expectations, see [CONTRIBUTING.md](./CONTRIBUTING.md).

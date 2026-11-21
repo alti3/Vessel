@@ -45,6 +45,9 @@ public static class VesselPermissions
     public const string NotificationsWrite = "notifications.write";
     public const string InstanceManage = "instance.manage";
 
+    /// <summary>Team audit log (IAM-08): owners and admins only, like Coolify's <c>GET /audit-events</c>.</summary>
+    public const string AuditRead = "audit.read";
+
     /// <summary>
     ///     The permission catalog. Destructive commands need <see cref="AccessLevel.Delete" />; deploy, cancel and
     ///     start/stop/restart need <see cref="AccessLevel.Deploy" />; secrets need
@@ -72,7 +75,8 @@ public static class VesselPermissions
             [TeamsManage] = new(AccessLevel.Root, PermissionReach.TeamAdmin),
             [NotificationsRead] = new(AccessLevel.Read, PermissionReach.TeamWide),
             [NotificationsWrite] = new(AccessLevel.Write, PermissionReach.TeamWide),
-            [InstanceManage] = new(AccessLevel.Root, PermissionReach.InstanceAdmin)
+            [InstanceManage] = new(AccessLevel.Root, PermissionReach.InstanceAdmin),
+            [AuditRead] = new(AccessLevel.Read, PermissionReach.TeamAdmin)
         };
 
     public static readonly IReadOnlySet<string> All = Rules.Keys.ToHashSet(StringComparer.Ordinal);

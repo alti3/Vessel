@@ -59,6 +59,8 @@ public static class WebApplicationExtensions
             DatabaseRecurringJobs.Register(scheduler);
             BackupRecurringJobs.Register(scheduler);
             NotificationRecurringJobs.Register(scheduler);
+            Vessel.Application.Auditing.AuditRecurringJobs.Register(scheduler);
+            Vessel.Application.Auth.AuthRecurringJobs.Register(scheduler);
             // Deployments that were running when the previous control-plane process stopped have no worker any
             // more: fail them and restart the queues.
             DeploymentQueueRecurringJobs.EnqueueStartupRecovery(

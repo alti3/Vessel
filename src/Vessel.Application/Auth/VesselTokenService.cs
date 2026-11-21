@@ -88,10 +88,9 @@ public sealed class VesselTokenService
             accessGrants);
 
         await _unitOfWork.PersonalAccessTokenRepository.AddAsync(token, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
         await AuditAsync(token, userId, AuditActions.TokenCreated, correlationId, cancellationToken,
             ("scopes", serializedScopes), ("access", VesselTeamService.DescribeAccess(token.AccessGrants)));
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new CreatedToken(token.Id, $"{token.Id.Value:N}|{plainTextToken}");
     }
@@ -132,9 +131,9 @@ public sealed class VesselTokenService
             throw new InvalidOperationException(exception.Message, exception);
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
         await AuditAsync(token, userId, AuditActions.TokenUpdated, correlationId, cancellationToken,
             ("scopes", serializedScopes), ("access", VesselTeamService.DescribeAccess(token.AccessGrants)));
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return ToSummary(token);
     }
 
@@ -173,8 +172,8 @@ public sealed class VesselTokenService
             throw new InvalidOperationException(exception.Message, exception);
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
         await AuditAsync(token, userId, AuditActions.TokenRolled, correlationId, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return new CreatedToken(token.Id, $"{token.Id.Value:N}|{plainTextToken}");
     }
 
@@ -190,9 +189,8 @@ public sealed class VesselTokenService
         if (token is null || token.UserId != userId) return false;
 
         token.Revoke(DateTimeOffset.UtcNow);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
         await AuditAsync(token, userId, AuditActions.TokenRevoked, correlationId, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return true;
     }
 
@@ -320,8 +318,8 @@ public sealed class VesselTokenService
             throw new InvalidOperationException(exception.Message, exception);
         }
 
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
         await AuditAsync(token, userId, auditAction, correlationId, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return ToSummary(token);
     }
 
@@ -347,14 +345,14 @@ public sealed class VesselTokenService
         var metadata = new Dictionary<string, object?> { ["name"] = token.Name };
         foreach ((var key, var value) in details) metadata[key] = value;
 
-        return _auditWriter.RecordAsync(
-            token.TeamId,
-            actorUserId,
-            action,
-            new AuditTarget("personal_access_token", token.Id.ToString()),
-            correlationId,
-            metadata,
-            cancellationToken);
+        // IAM-08: staged, so the token change and its audit row commit in the caller's save.
+        return _auditWriter.StageAsync(new AuditEntry(token.TeamId, actorUserId, action,
+            new AuditTarget("personal_access_token", token.Id.ToString()))
+        {
+            CorrelationId = correlationId,
+            ResourceName = token.Name,
+            Metadata = metadata
+        }, cancellationToken);
     }
 
     private static TokenSummary ToSummary(PersonalAccessToken token)

@@ -133,21 +133,19 @@ public sealed class VesselTeamService
             accessGrants);
 
         await _unitOfWork.TeamInvitationRepository.AddAsync(invitation, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditWriter.RecordAsync(
-            teamId,
-            actorUserId,
-            AuditActions.TeamInvitationCreated,
-            new AuditTarget("team_invitation", invitation.Id.ToString()),
-            correlationId,
-            new Dictionary<string, object?>
+        // IAM-08: staged so the invitation and its audit row commit together; the address is masked on write.
+        await _auditWriter.StageAsync(new AuditEntry(teamId, actorUserId, AuditActions.TeamInvitationCreated,
+            new AuditTarget("team_invitation", invitation.Id.ToString()))
+        {
+            CorrelationId = correlationId,
+            Metadata = new Dictionary<string, object?>
             {
                 ["email"] = invitation.Email.Value,
                 ["role"] = invitation.Role.ToString(),
                 ["access"] = DescribeAccess(invitation.AccessGrants)
-            },
-            cancellationToken);
+            }
+        }, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         var presentedToken = $"{invitation.Id.Value:N}|{plainTextToken}";
         if (_authEmails is not null)
@@ -186,16 +184,10 @@ public sealed class VesselTeamService
         if (!team.Memberships.Any(membership => membership.UserId == userId))
             team.AddMember(userId, invitation.Role, DateTimeOffset.UtcNow, invitation.AccessGrants);
         invitation.Accept(DateTimeOffset.UtcNow);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditWriter.RecordAsync(
-            team.Id,
-            userId,
-            AuditActions.TeamInvitationAccepted,
-            new AuditTarget("team_invitation", invitation.Id.ToString()),
-            correlationId,
-            new Dictionary<string, object?>(),
+        await _auditWriter.StageAsync(new AuditEntry(team.Id, userId, AuditActions.TeamInvitationAccepted,
+            new AuditTarget("team_invitation", invitation.Id.ToString())) { CorrelationId = correlationId },
             cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return true;
     }
@@ -219,21 +211,19 @@ public sealed class VesselTeamService
         // A demotion revokes the member's tokens for this team in the same save; a promotion keeps them (the API
         // checks abilities against the current role on every request).
         var revoked = TeamRolePolicy.IsDemotion(currentRole, role) ? RevokeTeamTokens(memberUserId, teamId, now) : 0;
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditWriter.RecordAsync(
-            teamId,
-            actorUserId,
-            AuditActions.TeamMemberRoleChanged,
-            new AuditTarget("user", memberUserId.ToString()),
-            correlationId,
-            new Dictionary<string, object?>
+        await _auditWriter.StageAsync(new AuditEntry(teamId, actorUserId, AuditActions.TeamMemberRoleChanged,
+            new AuditTarget("user", memberUserId.ToString()))
+        {
+            CorrelationId = correlationId,
+            Changes = [new AuditFieldChange("role", currentRole.ToString(), role.ToString())],
+            Metadata = new Dictionary<string, object?>
             {
                 ["role"] = role.ToString(),
                 ["previousRole"] = currentRole.ToString(),
                 ["revokedApiCredentials"] = revoked
-            },
-            cancellationToken);
+            }
+        }, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task RemoveMemberAsync(
@@ -254,16 +244,18 @@ public sealed class VesselTeamService
         // A removed member's tokens for this team are revoked so they cannot be revived by a later re-invitation.
         // Token validation also re-checks membership on every request.
         var revoked = RevokeTeamTokens(memberUserId, teamId, now);
+        // IAM-09: a removed member's remembered team is cleared; their sessions in this team move to their home team
+        // on the next request (session validation re-checks membership).
+        User? member = await _unitOfWork.UserRepository.GetByIdAsync(memberUserId, cancellationToken);
+        member?.ClearCurrentTeam(teamId);
+        await _auditWriter.StageAsync(new AuditEntry(teamId, actorUserId, AuditActions.TeamMemberRemoved,
+            new AuditTarget("user", memberUserId.ToString()))
+        {
+            CorrelationId = correlationId,
+            ResourceName = member?.Name.Value,
+            Metadata = new Dictionary<string, object?> { ["revokedApiCredentials"] = revoked }
+        }, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditWriter.RecordAsync(
-            teamId,
-            actorUserId,
-            AuditActions.TeamMemberRemoved,
-            new AuditTarget("user", memberUserId.ToString()),
-            correlationId,
-            new Dictionary<string, object?> { ["revokedApiCredentials"] = revoked },
-            cancellationToken);
     }
 
     public bool IsTeamMember(UserId userId, TeamId teamId)
@@ -290,17 +282,17 @@ public sealed class VesselTeamService
             throw new UnauthorizedAccessException("Access grants can only be edited for members.");
         EnsureGrantTargetsExist(teamId, accessGrants);
 
+        var previousAccess = DescribeAccess(team.Memberships.Single(membership => membership.UserId == memberUserId)
+            .AccessGrants);
         team.SetMemberAccess(memberUserId, accessGrants, DateTimeOffset.UtcNow);
+        await _auditWriter.StageAsync(new AuditEntry(teamId, actorUserId, AuditActions.TeamMemberAccessChanged,
+            new AuditTarget("user", memberUserId.ToString()))
+        {
+            CorrelationId = correlationId,
+            Changes = [new AuditFieldChange("access", previousAccess, DescribeAccess(accessGrants))],
+            Metadata = new Dictionary<string, object?> { ["access"] = DescribeAccess(accessGrants) }
+        }, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        await _auditWriter.RecordAsync(
-            teamId,
-            actorUserId,
-            AuditActions.TeamMemberAccessChanged,
-            new AuditTarget("user", memberUserId.ToString()),
-            correlationId,
-            new Dictionary<string, object?> { ["access"] = DescribeAccess(accessGrants) },
-            cancellationToken);
     }
 
     internal static string DescribeAccess(IReadOnlyList<AccessGrant>? grants)
