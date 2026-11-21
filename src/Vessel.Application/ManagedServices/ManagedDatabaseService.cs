@@ -346,12 +346,18 @@ public sealed class ProvisionServiceTemplateJob(ManagedDatabaseService service)
     }
 }
 
-/// <summary>Hangfire entry point for a schedule's recurring backup (type name kept for queued jobs).</summary>
+/// <summary>
+///     Legacy Hangfire recurring entry point of a schedule (type name kept for already registered recurring jobs).
+///     Backups are now dispatched by the scheduled job ledger, so a remaining legacy job only removes itself and never
+///     runs a backup (which would duplicate the ledger's run).
+/// </summary>
+[JobRetryPolicy(0)]
 public sealed class RunBackupJob(DatabaseBackupService service)
 {
     public Task RunAsync(Guid scheduleId, CancellationToken cancellationToken = default)
     {
-        return service.RunScheduledBackupAsync(new BackupScheduleId(scheduleId), cancellationToken);
+        service.RemoveLegacyRecurringJob(new BackupScheduleId(scheduleId));
+        return Task.CompletedTask;
     }
 }
 

@@ -204,6 +204,8 @@ public static class InfrastructureServiceCollectionExtensions
             .Get<HangfireStorageOptions>() ?? new HangfireStorageOptions();
         if (hangfireOptions.Enabled && !string.IsNullOrWhiteSpace(hangfireOptions.ConnectionString))
         {
+            // NTF-08: per-job retry policy (scheduled occurrences and tasks are never retried into duplicates).
+            VesselRetryPolicyFilter.Install(GlobalJobFilters.Filters);
             services.AddHangfire(config => config
                 .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
                 .UseSimpleAssemblyNameTypeSerializer()

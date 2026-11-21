@@ -1,4 +1,5 @@
 using Vessel.Application.Jobs;
+using Vessel.Application.Operations.Draining;
 using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
@@ -101,6 +102,8 @@ public sealed class DeploymentQueueService(
     public async Task<DeploymentAdmission> AdmitAsync(DeploymentAdmissionRequest request,
         CancellationToken cancellationToken = default)
     {
+        // OPS-02: while the control plane drains for an upgrade, no new deployment is admitted (any trigger).
+        ControlPlaneDrainGate.ThrowIfDraining(dbContext);
         AppEntity application = request.Application;
         ServerId serverId = application.ServerId;
         var dispatch = new List<Deployment>();
