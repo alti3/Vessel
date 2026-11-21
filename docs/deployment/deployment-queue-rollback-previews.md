@@ -94,8 +94,9 @@ implemented.
 ## Log redaction (DEP-03, SEC-09)
 
 - Every deployment log line, build output and compose output is redacted with the deployment's own context: all secret
-  values always; every other resolved environment value when `RedactAllEnvValuesInLogs` is on (opt-in; Vessel's
-  default keeps plain values visible, Coolify defaults to hiding all values). `VESSEL_*` identifiers stay visible.
+  values always; every other resolved environment value when `RedactAllEnvValuesInLogs` is on (default on, matching
+  Coolify's `redact_all_env_values_in_logs`; existing applications also default to on). `VESSEL_*` identifiers stay
+  visible.
 - The context also reaches the process layer (`ComposeCommand.Redaction`, `DockerBuildCommand.Redaction`).
 - Multiline secrets are matched line by line, and a PEM private key streamed over several lines is hidden from its
   BEGIN line through its END line.

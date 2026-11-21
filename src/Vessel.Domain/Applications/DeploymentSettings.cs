@@ -22,8 +22,8 @@ namespace Vessel.Domain.Applications;
 ///     are still building, never one that already started replacing containers.
 /// </param>
 /// <param name="RedactAllEnvValuesInLogs">
-///     Coolify <c>redact_all_env_values_in_logs</c>. Secret values are always hidden in deployment logs; when true,
-///     every resolved environment value (plain values too) is hidden as well.
+///     Coolify <c>redact_all_env_values_in_logs</c> (default true, as upstream). Secret values are always hidden in
+///     deployment logs; when true, every resolved environment value (plain values too) is hidden as well.
 /// </param>
 /// <param name="ImagesToKeep">
 ///     Coolify <c>docker_images_to_keep</c>: how many images of earlier successful production deployments are kept
@@ -37,7 +37,7 @@ public readonly record struct DeploymentSettings(
     bool PublicPreviewsEnabled = false,
     bool AutoCancelQueuedDeployments = true,
     bool AutoCancelBuildingDeployments = false,
-    bool RedactAllEnvValuesInLogs = false,
+    bool RedactAllEnvValuesInLogs = true,
     int ImagesToKeep = DeploymentSettings.DefaultImagesToKeep)
 {
     public const int DefaultImagesToKeep = 2;

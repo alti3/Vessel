@@ -174,16 +174,16 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | DATA-12 | Application and service persistent storage model (volumes and file mounts) | P1 | XL | 7.x/8.11 (extend); New: Phase 11b or a dedicated storage phase | Open |
 | DATA-13 | Backup the control-plane database before self-update, and instance backup settings | P1 | M | 14.11-14.15, 14.20, 16.12 | Open |
 | DATA-14 | Backup API contract (list, update, delete, executions, downloads) and sensitivity rules | P1 | M | 6.x API, 11.14 | Open |
-| DEP-03 | Deployment log streaming redacts only known patterns, not environment values (`redact_all_env_values_in_logs`) | P1 | S | 15.07; 8.14. | Open |
-| DEP-04 | Deployment queue admission: queue instead of reject, dedupe, limits, trigger source, stuck recovery | P1 | M | 8.02/8.04 rework; 16.05/16.06. | Open |
-| DEP-05 | Auto-cancel superseded deployments (v4.7.0 breaking default) | P1 | M | New items in Phase 8/9 rework (8.20 extension). | Open |
-| DEP-06 | Rollback (local and registry images, restricted targets) | P1 | M | New Phase 8 follow-up (or Phase 9b); 18.12. | Open |
-| DEP-07 | Preview lifecycle: cleanup, stop, API and settings | P1 | M | 9.14 completion; Phase 10 for preview domains (cross-ref Proxy… | Open |
+| DEP-03 | Deployment log streaming redacts only known patterns, not environment values (`redact_all_env_values_in_logs`) | P1 | S | 15.07; 8.14. | Done |
+| DEP-04 | Deployment queue admission: queue instead of reject, dedupe, limits, trigger source, stuck recovery | P1 | M | 8.02/8.04 rework; 16.05/16.06. | Done |
+| DEP-05 | Auto-cancel superseded deployments (v4.7.0 breaking default) | P1 | M | New items in Phase 8/9 rework (8.20 extension). | Done |
+| DEP-06 | Rollback (local and registry images, restricted targets) | P1 | M | New Phase 8 follow-up (or Phase 9b); 18.12. | Partial (local images; registry rollback needs registry push support) |
+| DEP-07 | Preview lifecycle: cleanup, stop, API and settings | P1 | M | 9.14 completion; Phase 10 for preview domains (cross-ref Proxy… | Done |
 | DEP-08 | Private Git sources (GitHub App, GitLab App, Gitea/Forgejo App, deploy keys, HTTPS credentials, SSH host-key pinning) | P1 | XL | 9.08 (marked done but only refs discovery exists) → new Phase 9b… | Open |
 | DEP-09 | Build packs: Railpack (and Static) unimplemented, Nixpacks deprecated, build-time variables never passed | P1 | L | New Phase 8b "Build packs"; 17.06 import mapping. | Open |
 | DEP-10 | Environment variable value semantics (exact values, literal/multiline, empty values, order, preview copies, duplicates) | P1 | M | 7.13/8.09 rework; 17.07. | Open |
 | DEP-11 | Docker Compose build pack: parse and validate instead of raw passthrough | P1 | L | 8.08 rework; new Compose items; Phase 10 (routing) cross-ref. | Open |
-| DEP-12 | Webhook fan-out and repository matching correctness | P1 | S–M | 9.10 fix. | Partial (exact repo match and per-app fan-out done in SEC-01) |
+| DEP-12 | Webhook fan-out and repository matching correctness | P1 | S–M | 9.10 fix. | Done |
 | IAM-03 | Member role is read-only upstream; Vessel members can still deploy and cancel, and role hierarchy is not enforced | P1 | S–M | 4.08/4.09/4.16 (reopen). | Open |
 | IAM-04 | Token ability model is behind (no `delete`, wrong hierarchy, no pause/roll/edit, no sensitive-response policy) | P1 | M | 4.06/4.07 (reopen). | Open |
 | IAM-05 | Fine-grained access grants (team, project, environment and resource scopes) for members, invitations and tokens | P1 | XL | New: Phase 4b "Fine-grained access" (before Phase 15). | Open |
@@ -191,16 +191,16 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | IAM-07 | OIDC/OAuth sign-in with provider identities and registration policy (ROADMAP 4.04/4.05) | P1 | L | 4.04, 4.05. | Open |
 | IAM-08 | Audit log falls short of upstream's team audit events (context, transactional writes, retention, query API/UI) | P1 | M–L | 4.13–4.15 (reopen); 15.09; 16.01. | Open |
 | IAM-09 | Sessions and the active team: no revocation, no persisted current team, and login lands in an invited team the user is not a member of | P1 | M | 4.02/4.08 (reopen). | Open |
-| IAM-10 | Transactional auth emails are not delivered (password reset, invitations, verification) | P1 | M | 4.02 (reopen); 13.x. | Open |
+| IAM-10 | Transactional auth emails are not delivered (password reset, invitations, verification) | P1 | M | 4.02 (reopen); 13.x. | Done |
 | NET-03 | Domain identity, validation and conflicts | P1 | M | Phase 10 (10.07) and 15.05. | Open |
 | NET-04 | TLS certificate truth from Traefik `acme.json` (inventory, delete/unused, backup/restore) | P1 | M | Phase 10 (10.08–10.10 rework); new task, Phase 10 follow-up. | Open |
 | NET-05 | Per-route HTTP features: force HTTPS, permanent redirects, www modes, compression, basic auth, noindex | P1 | M | Phase 10 (10.07/10.12 extension) | Open |
 | NET-06 | Routing coverage for service-template resources and preview deployments | P1 | L | Phase 9 (9.12) and Phase 11 (11.05) follow-ups; Phase 10 | Open |
 | NET-07 | Proxy configuration history semantics and custom dynamic configs | P1 | M | Phase 10 (10.06) | Open |
-| NTF-03 | Channel delivery-failure tracking, auto-disable, and response classification | P1 | S | 13.08 (extend). | Open |
-| NTF-04 | Notification throttling and dedupe | P1 | M | New: 13.13–13.14 (or Phase 16 reliability). | Open |
-| NTF-05 | Granular event catalog and per-event routing | P1 | M | 13.09 (extend), 17.10. | Open |
-| NTF-06 | Email provider parity: instance transactional email, named SMTP servers, Resend, sender split, TLS modes, EHLO | P1 | L | 13.03 (reopen); auth Phase 4 password reset. | Open |
+| NTF-03 | Channel delivery-failure tracking, auto-disable, and response classification | P1 | S | 13.08 (extend). | Done |
+| NTF-04 | Notification throttling and dedupe | P1 | M | New: 13.13–13.14 (or Phase 16 reliability). | Partial (delayed resource-stopped recheck needs SRV-04 producer) |
+| NTF-05 | Granular event catalog and per-event routing | P1 | M | 13.09 (extend), 17.10. | Done |
+| NTF-06 | Email provider parity: instance transactional email, named SMTP servers, Resend, sender split, TLS modes, EHLO | P1 | L | 13.03 (reopen); auth Phase 4 password reset. | Done |
 | NTF-07 | User-defined scheduled tasks (cron commands in application/service containers) | P1 | L | New (suggest Phase 11/12 follow-up, "11.16–11.20 Scheduled… | Open |
 | NTF-08 | Scheduled-job runtime semantics (durable runs, missed runs, retries, timezone) | P1 | L | 11.10 (reopen), 5.25 (jobs foundation), 16.x reliability. | Open |
 | OPS-01 | Update channels, version manifest, and automatic-update policy for Phase 14 | P1 | M | 14.11–14.15 (extend), new 14.23 "update channels & auto-update… | Open |
@@ -208,10 +208,10 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | PLT-03 | YAML handling through a real parser/emitter | P1 | S | Phase 5 / 15.05 | Done |
 | PLT-05 | CI supply-chain hardening | P1 | S | 15.14, 15.15, 18.06 | Done |
 | PLT-06 | Ecosystem image pins for runtime components Vessel deploys | P1 | S–M | 10.x, 11.x, 15.14 | Open |
-| SEC-06 | Preview deployments from forks run untrusted code without an opt-in | P1 | S | Phase 9 follow-up, 15.05. | Partial (default-deny fork previews done; API/UI toggle with DEP-07) |
+| SEC-06 | Preview deployments from forks run untrusted code without an opt-in | P1 | S | Phase 9 follow-up, 15.05. | Done |
 | SEC-07 | Manual webhook secret strength, failure throttling, and real client IP | P1 | S | 15.04, Phase 9 follow-up. | Open |
-| SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Partial (notification SSRF guard via NTF-02; SMTP pinning remains) |
-| SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Open |
+| SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Done |
+| SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Done |
 | SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Open |
 | SEC-11 | Git-based Docker Compose validation and host-path policy | P1 | M | 15.05/15.10, Phase 8 follow-up. | Open |
 | SEC-12 | SSH connection hardening foundation (host key pinning, fixed options, key lifecycle) | P1 | L | New items under Phase 15 (and the SSH runtime phase), 15.12. | Open |

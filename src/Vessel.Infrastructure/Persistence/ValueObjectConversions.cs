@@ -211,13 +211,13 @@ internal static class ValueObjectConversions
     {
         var parts = SplitEscaped(value);
         // Older rows have fewer parts; missing settings take their defaults (same-repository-only previews, auto-cancel
-        // of queued webhook deployments on, building off, plain env values not redacted, two images kept).
+        // of queued webhook deployments on, building off, all env values redacted (upstream default), two images kept).
         return new DeploymentSettings(bool.Parse(parts[0]), bool.Parse(parts[1]), bool.Parse(parts[2]),
             EmptyToNull(parts[3]),
             parts.Length > 4 && bool.Parse(parts[4]),
             parts.Length <= 5 || bool.Parse(parts[5]),
             parts.Length > 6 && bool.Parse(parts[6]),
-            parts.Length > 7 && bool.Parse(parts[7]),
+            parts.Length <= 7 || bool.Parse(parts[7]),
             parts.Length > 8
                 ? int.Parse(parts[8], CultureInfo.InvariantCulture)
                 : Vessel.Domain.Applications.DeploymentSettings.DefaultImagesToKeep);

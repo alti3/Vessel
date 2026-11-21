@@ -119,7 +119,7 @@ public sealed class RollbackAndSettingsTests
         Assert.True(updated.PreviewDeploymentsEnabled);
         Assert.True(updated.AutoCancelQueuedDeployments);
         Assert.True(updated.AutoCancelBuildingDeployments);
-        Assert.False(updated.RedactAllEnvValuesInLogs);
+        Assert.True(updated.RedactAllEnvValuesInLogs);
         Assert.Equal(5, updated.ImagesToKeep);
         Assert.Equal(AuditActions.ApplicationDeploymentSettingsUpdated, Assert.Single(audit.Actions));
         await Assert.ThrowsAsync<DomainException>(() => service.UpdateAsync(fixture.Actor.Id, fixture.TeamA.Id,
