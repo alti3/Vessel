@@ -127,7 +127,10 @@ public static class WebhookPayloadReader
             return branch is null || repo is null
                 ? null
                 : ParsedWebhook.Push(provider, repo, branch, commit ?? "HEAD", CommitMessages(payload, "commits"),
-                    ChangedFiles(payload, "commits"));
+                    ChangedFiles(payload, "commits")) with
+                {
+                    RepositoryWebUrl = Text(payload, "repository.html_url") ?? Text(payload, "repository.clone_url")
+                };
         }
 
         if (string.Equals(eventType, "pull_request", StringComparison.OrdinalIgnoreCase))
@@ -141,7 +144,12 @@ public static class WebhookPayloadReader
             return repo is null || source is null || target is null || !int.TryParse(number, out var pr)
                 ? null
                 : ParsedWebhook.PullRequest(provider, repo, action ?? "unknown", pr, source, target, commit,
-                    Text(payload, "pull_request.html_url"), Text(payload, "pull_request.title"));
+                    Text(payload, "pull_request.html_url"), Text(payload, "pull_request.title")) with
+                {
+                    RepositoryWebUrl = Text(payload, "repository.html_url") ?? Text(payload, "repository.clone_url"),
+                    SourceRepository = Text(payload, "pull_request.head.repo.full_name"),
+                    TargetRepository = Text(payload, "pull_request.base.repo.full_name")
+                };
         }
 
         return null;
@@ -157,7 +165,10 @@ public static class WebhookPayloadReader
             return branch is null || repo is null
                 ? null
                 : ParsedWebhook.Push(WebhookProvider.GitLab, repo, branch, commit ?? "HEAD",
-                    CommitMessages(payload, "commits"), ChangedFiles(payload, "commits"));
+                    CommitMessages(payload, "commits"), ChangedFiles(payload, "commits")) with
+                {
+                    RepositoryWebUrl = Text(payload, "project.web_url")
+                };
         }
 
         if (string.Equals(eventType, "merge_request", StringComparison.OrdinalIgnoreCase))
@@ -171,7 +182,12 @@ public static class WebhookPayloadReader
                 ? null
                 : ParsedWebhook.PullRequest(WebhookProvider.GitLab, repo,
                     Text(payload, "object_attributes.action") ?? "unknown", pr, source, target, commit,
-                    Text(payload, "object_attributes.url"), Text(payload, "object_attributes.title"));
+                    Text(payload, "object_attributes.url"), Text(payload, "object_attributes.title")) with
+                {
+                    RepositoryWebUrl = Text(payload, "project.web_url"),
+                    SourceRepository = Text(payload, "object_attributes.source.path_with_namespace"),
+                    TargetRepository = Text(payload, "object_attributes.target.path_with_namespace")
+                };
         }
 
         return null;
@@ -187,7 +203,10 @@ public static class WebhookPayloadReader
             return branch is null || repo is null
                 ? null
                 : ParsedWebhook.Push(WebhookProvider.Bitbucket, repo, branch, commit ?? "HEAD",
-                    CommitMessages(payload, "push.changes.0.commits"), []);
+                    CommitMessages(payload, "push.changes.0.commits"), []) with
+                {
+                    RepositoryWebUrl = Text(payload, "repository.links.html.href")
+                };
         }
 
         if (eventType.StartsWith("pullrequest:", StringComparison.OrdinalIgnoreCase))
@@ -200,7 +219,12 @@ public static class WebhookPayloadReader
             return repo is null || source is null || target is null || !int.TryParse(number, out var pr)
                 ? null
                 : ParsedWebhook.PullRequest(WebhookProvider.Bitbucket, repo, eventType, pr, source, target, commit,
-                    Text(payload, "pullrequest.links.html.href"), Text(payload, "pullrequest.title"));
+                    Text(payload, "pullrequest.links.html.href"), Text(payload, "pullrequest.title")) with
+                {
+                    RepositoryWebUrl = Text(payload, "repository.links.html.href"),
+                    SourceRepository = Text(payload, "pullrequest.source.repository.full_name"),
+                    TargetRepository = Text(payload, "pullrequest.destination.repository.full_name")
+                };
         }
 
         return null;
@@ -235,11 +259,37 @@ public static class WebhookPayloadReader
     {
         JsonElement? commits = ArrayElement(payload, path);
         if (!commits.HasValue) return [];
-        return commits.Value.EnumerateArray()
-            .SelectMany(commit =>
-                Files(commit, "added").Concat(Files(commit, "modified")).Concat(Files(commit, "removed")))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        return NetChangedFiles(commits.Value.EnumerateArray()
+            .Select(commit => (Files(commit, "added"), Files(commit, "modified"), Files(commit, "removed"))));
+    }
+
+    /// <summary>
+    ///     The push's net file change (Coolify v4.5.0 uses the net change of a push for watch paths): a file added and
+    ///     removed again within the same push is not a change; any other touched file is.
+    /// </summary>
+    public static IReadOnlyList<string> NetChangedFiles(
+        IEnumerable<(IReadOnlyList<string> Added, IReadOnlyList<string> Modified, IReadOnlyList<string> Removed)> commits)
+    {
+        var state = new Dictionary<string, char>(StringComparer.Ordinal);
+        var order = new List<string>();
+        void Set(string file, char value)
+        {
+            if (!state.ContainsKey(file)) order.Add(file);
+            state[file] = value;
+        }
+
+        foreach (var (added, modified, removed) in commits)
+        {
+            foreach (var file in added)
+                Set(file, state.TryGetValue(file, out var previous) && previous == 'R' ? 'M' : 'A');
+            foreach (var file in modified)
+                Set(file, state.TryGetValue(file, out var previous) && previous == 'A' ? 'A' : 'M');
+            foreach (var file in removed)
+                if (state.TryGetValue(file, out var previous) && previous == 'A') state[file] = 'N';
+                else Set(file, 'R');
+        }
+
+        return order.Where(file => state[file] != 'N').ToArray();
     }
 
     private static IReadOnlyList<string> Files(JsonElement element, string property)
@@ -286,6 +336,35 @@ public sealed record ParsedWebhook(
     IReadOnlyList<string> CommitMessages,
     IReadOnlyList<string> ChangedFiles)
 {
+    /// <summary>Web or clone URL of the webhook repository, used for host-aware repository matching.</summary>
+    public string? RepositoryWebUrl { get; init; }
+
+    /// <summary>Full name of the pull request head (source) repository; differs from the target for forks.</summary>
+    public string? SourceRepository { get; init; }
+
+    /// <summary>Full name of the pull request base (target) repository.</summary>
+    public string? TargetRepository { get; init; }
+
+    /// <summary>
+    ///     Coolify <c>isPreviewDeploymentRepositoryTrusted</c>: the target must be the webhook repository, and the source
+    ///     must equal the target unless public (fork) previews are enabled. Missing identities are never trusted.
+    /// </summary>
+    public bool IsPreviewRepositoryTrusted(bool publicPreviewsEnabled)
+    {
+        var source = SourceRepository?.Trim();
+        var target = TargetRepository?.Trim();
+        var webhook = Repository?.Trim();
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target) || string.IsNullOrEmpty(webhook))
+            return false;
+        if (!string.Equals(target, webhook, StringComparison.Ordinal)) return false;
+        return string.Equals(source, target, StringComparison.Ordinal) || publicPreviewsEnabled;
+    }
+
+    /// <summary>True only when the pull request branch lives in the target repository itself.</summary>
+    public bool IsSameRepositoryPullRequest =>
+        !string.IsNullOrWhiteSpace(TargetRepository) && !string.IsNullOrWhiteSpace(SourceRepository) &&
+        string.Equals(TargetRepository.Trim(), SourceRepository.Trim(), StringComparison.Ordinal);
+
     public static ParsedWebhook Push(WebhookProvider provider, string repository, string branch, string commitSha,
         IReadOnlyList<string> messages, IReadOnlyList<string> changedFiles)
     {

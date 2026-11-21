@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Vessel.Web.Components;
 using Vessel.Web.Hubs;
+using Vessel.Web.OpenApi;
 
 namespace Vessel.Web.Extensions;
 
@@ -16,9 +17,12 @@ public static class EndpointRouteBuilderExtensions
             .AddInteractiveServerRenderMode();
 
         endpoints.MapControllers();
+        // API-01: OpenAPI contract for authenticated callers (docs/api/compatibility-policy.md).
+        endpoints.MapVesselOpenApi();
         endpoints.MapHub<DeploymentLogHub>("/hubs/deployment-logs");
         endpoints.MapHub<TerminalHub>("/hubs/terminal");
         endpoints.MapHub<ServerStatusHub>("/hubs/server-status");
+        endpoints.MapHub<RuntimeLogHub>("/hubs/runtime-logs");
         endpoints.MapHub<NotificationHub>("/hubs/notifications");
 
         endpoints.MapHealthChecks("/live", new HealthCheckOptions

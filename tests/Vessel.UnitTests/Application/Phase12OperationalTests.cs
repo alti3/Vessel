@@ -6,8 +6,11 @@ using Vessel.Application.Deployments;
 using Vessel.Application.Docker;
 using Vessel.Application.Jobs;
 using Vessel.Application.Monitoring;
+using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
+using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Terminals;
 using Vessel.Domain;
@@ -138,6 +141,11 @@ public sealed class Phase12OperationalTests
             scenario.Team.Id,
             new OpenTerminalSessionRequest(scenario.Server.Id.Value),
             cancellationToken: TestContext.Current.CancellationToken);
+        // The process starts only when the single-use attach token is redeemed.
+        Assert.Equal(0, bridge.OpenCount);
+        Assert.NotNull(details.AttachToken);
+        await manager.AttachAsync(scenario.User.Id, scenario.Team.Id, new TerminalSessionId(details.Id),
+            details.AttachToken, TestContext.Current.CancellationToken);
         await manager.SendInputAsync(
             scenario.User.Id,
             scenario.Team.Id,
@@ -172,21 +180,234 @@ public sealed class Phase12OperationalTests
         Scenario scenario = Scenario.Create();
         var runtime = new TestContainerRuntime();
         var realtime = new TestRealtimeNotifier();
+        var proxyStatus = new TestProxyStatusProbe { Healthy = false };
         var service = new ServerHealthPollingService(
             scenario.Db,
             new VesselAuthorizationService(scenario.Db),
             runtime,
+            proxyStatus,
             realtime,
             new TestAuditWriter(),
-            TimeProvider.System);
+            TimeProvider.System,
+            new RecordingNotificationEventPublisher());
 
         ServerHealthPollingResult result =
             await service.PollAsync(scenario.Server.Id, TestContext.Current.CancellationToken);
 
         Assert.True(result.RuntimeReachable);
         Assert.Equal(ServerStatus.Reachable, scenario.Server.Status);
-        Assert.Single(scenario.Db.ServerStatusSnapshotItems);
+        ServerStatusSnapshot snapshot = Assert.Single(scenario.Db.ServerStatusSnapshotItems);
+        // Proxy health comes from the real container probe, not from proxy configuration history.
+        Assert.False(snapshot.ProxyHealthy);
+        Assert.Equal(1, proxyStatus.Calls);
         Assert.Contains(realtime.Messages, message => message.Message.Type == "server.health");
+    }
+
+    private sealed class TestProxyStatusProbe : IProxyStatusProbe
+    {
+        public bool Healthy { get; init; }
+
+        public int Calls { get; private set; }
+
+        public Task<bool> IsHealthyAsync(Server server, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(Healthy);
+        }
+    }
+
+    [Fact]
+    public async Task ServerHealthPolling_NotifiesOnlyOnReachabilityTransitions()
+    {
+        Scenario scenario = Scenario.Create();
+        var runtime = new TestContainerRuntime();
+        var notifications = new RecordingNotificationEventPublisher();
+        var service = new ServerHealthPollingService(
+            scenario.Db,
+            new VesselAuthorizationService(scenario.Db),
+            runtime,
+            new TestProxyStatusProbe(),
+            new TestRealtimeNotifier(),
+            new TestAuditWriter(),
+            TimeProvider.System,
+            notifications);
+        CancellationToken token = TestContext.Current.CancellationToken;
+
+        await service.PollAsync(scenario.Server.Id, token); // Unknown -> Reachable: no alert.
+        Assert.Empty(notifications.Published);
+
+        runtime.Fail = true;
+        await service.PollAsync(scenario.Server.Id, token); // Reachable -> Unreachable: alert.
+        await service.PollAsync(scenario.Server.Id, token); // still Unreachable: de-duplicated.
+        TeamNotification down = Assert.Single(notifications.Published);
+        Assert.Equal(NotificationEventTypes.ServerUnreachable, down.Notification.EventType);
+        Assert.Equal(scenario.Team.Id, down.TeamId);
+        Assert.Equal(NotificationSeverity.Critical, down.Notification.Severity);
+
+        runtime.Fail = false;
+        await service.PollAsync(scenario.Server.Id, token); // Unreachable -> Reachable: recovery alert.
+        await service.PollAsync(scenario.Server.Id, token);
+        Assert.Equal(2, notifications.Published.Count);
+        Assert.Equal(NotificationEventTypes.ServerReachable, notifications.Published[1].Notification.EventType);
+    }
+
+    [Fact]
+    public async Task DeploymentRunnerNotifiesFailedDeploymentAfterTerminalState()
+    {
+        Scenario scenario = Scenario.Create();
+        scenario.Server.ChangeStatus(ServerStatus.Unreachable, scenario.Now);
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            "0123456789abcdef0123", scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+        var notifications = new RecordingNotificationEventPublisher();
+        DeploymentRunner runner = CreateRunner(scenario, new InMemoryDistributedLockManager(TimeProvider.System),
+            notifications);
+
+        await runner.RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DeploymentStatus.Failed, deployment.Status);
+        TeamNotification notification = Assert.Single(notifications.Published);
+        Assert.Equal(scenario.Team.Id, notification.TeamId);
+        Assert.Equal(NotificationEventTypes.DeploymentFailed, notification.Notification.EventType);
+        Assert.Equal(deployment.Id.Value.ToString("D"), notification.Notification.TargetId);
+        Assert.Contains("app", notification.Notification.Title, StringComparison.Ordinal);
+        Assert.DoesNotContain("unreachable", notification.Notification.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeploymentRunnerSurvivesNotificationBuildFailure()
+    {
+        Scenario scenario = Scenario.Create();
+        scenario.Server.ChangeStatus(ServerStatus.Unreachable, scenario.Now);
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            null, scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+
+        // A publisher that swallows builder failures (the production contract) must not affect the runner.
+        await CreateRunner(scenario, new InMemoryDistributedLockManager(TimeProvider.System),
+                new SwallowingPublisher())
+            .RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DeploymentStatus.Failed, deployment.Status);
+    }
+
+    [Fact]
+    public async Task DeploymentRunnerLeavesQueuedDeploymentQueuedOnRunLockContention()
+    {
+        Scenario scenario = Scenario.Create();
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            "0123456789abcdef0123", scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+        var locks = new InMemoryDistributedLockManager(TimeProvider.System);
+        // Another run of the same application holds the run lock.
+        await using DistributedLockHandle? held = await locks.TryAcquireAsync(
+            $"deployment:{scenario.Application.Id.Value:D}", TimeSpan.FromMinutes(5), TimeSpan.Zero,
+            TestContext.Current.CancellationToken);
+        var jobs = new TestJobDispatcher();
+        var notifications = new RecordingNotificationEventPublisher();
+
+        await CreateRunner(scenario, locks, notifications, jobs)
+            .RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        // DEP-04: Queued -> Failed was the old (invalid) behavior; the deployment stays queued and is retried.
+        Assert.Equal(DeploymentStatus.Queued, deployment.Status);
+        Assert.Equal(1, jobs.Scheduled);
+        Assert.Empty(notifications.Published);
+        Assert.Contains(deployment.LogLines, line => line.Message.Contains("run lock", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DeploymentRunnerFailsOrphanedRunningDeploymentInsteadOfRunningItTwice()
+    {
+        Scenario scenario = Scenario.Create();
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            "0123456789abcdef0123", scenario.Now);
+        deployment.Start(scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+        var notifications = new RecordingNotificationEventPublisher();
+
+        await CreateRunner(scenario, new InMemoryDistributedLockManager(TimeProvider.System), notifications)
+            .RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DeploymentStatus.Failed, deployment.Status);
+        Assert.Contains(deployment.LogLines, line => line.Message.Contains("worker that ran it stopped",
+            StringComparison.Ordinal));
+    }
+
+    private static DeploymentRunner CreateRunner(Scenario scenario, IDistributedLockManager locks,
+        INotificationEventPublisher notifications, TestJobDispatcher? dispatcher = null)
+    {
+        var authorization = new VesselAuthorizationService(scenario.Db);
+        var proxyLifecycle = new ProxyLifecycleService(scenario.Db, authorization, locks, [],
+            ThrowingProxy.Create<IProxyContainerRuntime>(), ThrowingProxy.Create<IProxyRuntimeRenderer>(),
+            new TestAuditWriter(), new TestRedactor(), TimeProvider.System);
+        var proxy = new Vessel.Application.Proxy.ProxyConfigurationService(scenario.Db, authorization,
+            ThrowingProxy.Create<Vessel.Application.Proxy.IProxyProvider>(), proxyLifecycle, locks,
+            new TestAuditWriter(), new TestRedactor(), TimeProvider.System, notifications,
+            new Vessel.Application.Proxy.ProxyRouteProjector(scenario.Db, ThrowingProxy.Create<ISecretVault>()),
+            new Vessel.Application.Proxy.ProxyConfigurationProtector(ThrowingProxy.Create<ISecretCipher>()));
+        TestJobDispatcher jobs = dispatcher ?? new TestJobDispatcher();
+        var cancellations = new Vessel.Application.Deployments.Queue.DeploymentCancellationRegistry();
+        var queue = new Vessel.Application.Deployments.Queue.DeploymentQueueService(scenario.Db, locks, jobs,
+            cancellations, new TestRealtimeNotifier(), TimeProvider.System);
+        return new DeploymentRunner(scenario.Db, ThrowingProxy.Create<Vessel.Application.Git.IGitClient>(),
+            new TestContainerRuntime(), ThrowingProxy.Create<IDeploymentWorkspaceManager>(), locks,
+            ThrowingProxy.Create<ISecretVault>(), new TestRedactor(), new TestRealtimeNotifier(),
+            ThrowingProxy.Create<IComposeDocumentBuilder>(), proxy,
+            proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications, authorization, queue,
+            cancellations, jobs);
+    }
+
+    private sealed class TestJobDispatcher : IBackgroundJobDispatcher
+    {
+        public int Scheduled { get; private set; }
+
+        public string Enqueue<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall)
+        {
+            return "job";
+        }
+
+        public string Schedule<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
+        {
+            Scheduled++;
+            return "job";
+        }
+    }
+
+    private sealed class SwallowingPublisher : INotificationEventPublisher
+    {
+        public Task PublishAsync(TeamId teamId, RaiseNotificationRequest notification,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task PublishAsync(Func<TeamNotification?> build, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                _ = build();
+            }
+            catch (InvalidOperationException)
+            {
+                // Mirrors BackgroundNotificationEventPublisher: logged and swallowed.
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    public class ThrowingProxy : System.Reflection.DispatchProxy
+    {
+        public static T Create<T>() where T : class
+        {
+            return Create<T, ThrowingProxy>();
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? targetMethod, object?[]? args)
+        {
+            throw new NotSupportedException($"{targetMethod?.Name} is not expected in this test.");
+        }
     }
 
     [Fact]
@@ -217,6 +438,8 @@ public sealed class Phase12OperationalTests
         {
             var scenario = new Scenario();
             User user = User.Create(new DisplayName("Alice"), new EmailAddress("alice@example.com"), scenario.Now);
+            // The scenario server is host-local (control-plane host), which requires an instance administrator.
+            user.GrantInstanceAdmin(scenario.Now);
             Team team = Team.Create(new DisplayName("Team"), user.Id, false, scenario.Now);
             Project project = Project.Create(team.Id, new ResourceName("project"), scenario.Now);
             EnvironmentEntity environment = EnvironmentEntity.CreateProduction(project.Id, scenario.Now);
@@ -291,6 +514,7 @@ public sealed class Phase12OperationalTests
         public IQueryable<ApplicationPreview> ApplicationPreviews => Empty<ApplicationPreview>();
         public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => Empty<ProxyConfigurationVersion>();
         public IQueryable<Certificate> Certificates => Empty<Certificate>();
+        public IQueryable<ServerProxySettings> ServerProxySettings => Empty<ServerProxySettings>();
         public IQueryable<TerminalSession> TerminalSessions => TerminalSessionItems.AsQueryable();
 
         public IRepository<User, UserId> UserRepository => new ListRepository<User, UserId>(UserItems);
@@ -316,6 +540,7 @@ public sealed class Phase12OperationalTests
         public IRepository<ApplicationPreview, ApplicationPreviewId> ApplicationPreviewRepository => EmptyRepo<ApplicationPreview, ApplicationPreviewId>();
         public IRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId> ProxyConfigurationVersionRepository => EmptyRepo<ProxyConfigurationVersion, ProxyConfigurationVersionId>();
         public IRepository<Certificate, CertificateId> CertificateRepository => EmptyRepo<Certificate, CertificateId>();
+        public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository => EmptyRepo<ServerProxySettings, ServerId>();
         public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository => new ListRepository<TerminalSession, TerminalSessionId>(TerminalSessionItems);
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(1);
@@ -404,8 +629,12 @@ public sealed class Phase12OperationalTests
 
     private sealed class TestContainerRuntime : IContainerRuntimeClient
     {
+        public bool Fail { get; set; }
+
         public Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new ContainerRuntimeInfo(ContainerRuntimeProvider.Docker, "1", "1", "linux", "x64"));
+            Fail
+                ? throw new InvalidOperationException("runtime unavailable")
+                : Task.FromResult(new ContainerRuntimeInfo(ContainerRuntimeProvider.Docker, "1", "1", "linux", "x64"));
         public Task<IReadOnlyList<ContainerSummary>> ListContainersAsync(ContainerRuntimeTarget target, bool all, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ContainerSummary>>([new ContainerSummary("1", ["app"], "image", "running", "Up", new Dictionary<string, string>())]);
         public Task<string> InspectContainerAsync(ContainerRuntimeTarget target, string containerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -416,6 +645,16 @@ public sealed class Phase12OperationalTests
         public IAsyncEnumerable<Vessel.Application.Processes.ProcessOutputLine> BuildImageAsync(ContainerRuntimeTarget target, DockerBuildCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<ContainerEvent> StreamEventsAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<Vessel.Application.Processes.ProcessOutputLine> RunComposeAsync(ContainerRuntimeTarget target, ComposeCommand command, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class TestSshClient : Vessel.Application.Ssh.ISshClient
+    {
+        public Task<bool> TestConnectionAsync(Vessel.Application.Ssh.SshConnectionOptions options, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Host-local servers must not be probed over SSH.");
+        public Task<Vessel.Application.Ssh.SshCommandResult> RunCommandAsync(Vessel.Application.Ssh.SshCommandRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<Vessel.Application.Ssh.SshCommandResult> RunCommandWithInputAsync(Vessel.Application.Ssh.SshCommandRequest request, Stream standardInput, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task UploadAsync(Vessel.Application.Ssh.SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DownloadAsync(Vessel.Application.Ssh.SshFileTransferRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed record RecurringRegistration(

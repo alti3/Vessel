@@ -5,6 +5,8 @@ namespace Vessel.Domain.Users;
 
 public sealed class User : Entity<UserId>
 {
+    public const int TwoFactorSecretMaxLength = 512;
+
     private User()
     {
     }
@@ -22,7 +24,17 @@ public sealed class User : Entity<UserId>
 
     public DateTimeOffset? EmailVerifiedAt { get; private set; }
 
+    /// <summary>
+    ///     Deprecated (IAM-07): a single subject cannot identify the provider or issuer. External identities live in
+    ///     <c>OauthIdentity</c>; this column is kept only so existing rows still load.
+    /// </summary>
     public string? ExternalSubject { get; private set; }
+
+    /// <summary>
+    ///     The team the user last worked in (IAM-09). Login restores it when the user is still a member; otherwise
+    ///     the personal team is used. It is a preference, not an authorization input.
+    /// </summary>
+    public TeamId? CurrentTeamId { get; private set; }
 
     public string? PasswordHash { get; private set; }
 
@@ -44,6 +56,13 @@ public sealed class User : Entity<UserId>
 
     public string? TwoFactorRecoveryCodeHashes { get; private set; }
 
+    /// <summary>
+    /// Instance administrators may use host-local execution (the control-plane host's Docker/Podman
+    /// runtime, host terminals) and run instance-wide maintenance such as secret re-encryption.
+    /// This is an instance-level privilege and is independent of team roles.
+    /// </summary>
+    public bool IsInstanceAdmin { get; private set; }
+
     public bool HasPassword => !string.IsNullOrWhiteSpace(PasswordHash);
 
     public static User Create(DisplayName name, EmailAddress email, DateTimeOffset now)
@@ -57,6 +76,22 @@ public sealed class User : Entity<UserId>
         Touch(now);
     }
 
+    /// <summary>
+    ///     Remembers the active team for the next login. It deliberately does not rotate the concurrency stamp, so a
+    ///     team switch never conflicts with another switch (last writer wins).
+    /// </summary>
+    public void SetCurrentTeam(TeamId teamId)
+    {
+        CurrentTeamId = teamId;
+    }
+
+    /// <summary>Forgets the stored team when it is the given one (for example after the member was removed).</summary>
+    public void ClearCurrentTeam(TeamId teamId)
+    {
+        if (CurrentTeamId == teamId) CurrentTeamId = null;
+    }
+
+    [Obsolete("Use OauthIdentity (IAM-07); ExternalSubject cannot hold the provider or issuer.")]
     public void LinkExternalSubject(string externalSubject, DateTimeOffset now)
     {
         ExternalSubject = DomainValidation.Required(externalSubject, nameof(ExternalSubject), 255);
@@ -124,11 +159,38 @@ public sealed class User : Entity<UserId>
         Touch(now);
     }
 
-    public void StageTwoFactorSecret(string secret, DateTimeOffset now)
+    public void GrantInstanceAdmin(DateTimeOffset now)
     {
-        TwoFactorSecret = DomainValidation.Required(secret, nameof(TwoFactorSecret), 128);
+        if (IsInstanceAdmin) return;
+        IsInstanceAdmin = true;
+        Touch(now);
+    }
+
+    public void RevokeInstanceAdmin(DateTimeOffset now)
+    {
+        if (!IsInstanceAdmin) return;
+        IsInstanceAdmin = false;
+        Touch(now);
+    }
+
+    public void StageTwoFactorSecret(string protectedSecret, DateTimeOffset now)
+    {
+        TwoFactorSecret = DomainValidation.Required(protectedSecret, nameof(TwoFactorSecret), TwoFactorSecretMaxLength);
         TwoFactorConfirmedAt = null;
         TwoFactorRecoveryCodeHashes = null;
+        Touch(now);
+    }
+
+    /// <summary>
+    /// Replaces the stored (protected) TOTP secret without changing the 2FA enrollment state.
+    /// Used when the at-rest protection is upgraded or re-encrypted with a new key.
+    /// </summary>
+    public void RewrapTwoFactorSecret(string protectedSecret, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(TwoFactorSecret))
+            throw new DomainException("Two-factor authentication has not been started.");
+
+        TwoFactorSecret = DomainValidation.Required(protectedSecret, nameof(TwoFactorSecret), TwoFactorSecretMaxLength);
         Touch(now);
     }
 

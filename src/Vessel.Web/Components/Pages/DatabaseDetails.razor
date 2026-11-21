@@ -3,6 +3,9 @@
 @using System.ComponentModel.DataAnnotations
 @inject ResourceManagementService Resources
 @inject ManagedDatabaseService ManagedDatabases
+@inject DatabaseBackupService Backups
+@inject BackupDestinationService Destinations
+@inject Vessel.Application.Authorization.VesselAuthorizationService Authorization
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Database | Vessel</PageTitle>
@@ -10,47 +13,150 @@
             Description="@($"Database {Database?.Name ?? Id.ToString()} lifecycle, health, and backups.")"/>
 
 <section class="dashboard-grid">
-    <SettingsPanel Title="Health and storage" Description="Health state, storage policy, and runtime target.">
+    <SettingsPanel Title="Health and storage"
+                   Description="Health comes from the container health check (observed, never assumed).">
         <div class="signal-list">
             <div class="signal-row"><span>Health</span>
                 <StatusBadge Text="@(Database?.HealthState.ToString() ?? "Unknown")" Tone="neutral"/>
             </div>
+            <div class="signal-row"><span>State</span>
+                <strong>@(Database?.LifecycleState.ToString() ?? "Unknown")</strong>
+            </div>
             <div class="signal-row"><span>Engine</span>
                 <strong>@(Database?.Engine.ToString() ?? "Unknown")</strong>
             </div>
-            <div class="signal-row"><span>Version</span>
-                <strong>@(Database?.Version ?? "Unknown")</strong>
+            <div class="signal-row"><span>Image</span>
+                <strong>@(Database?.Image ?? Database?.Version ?? "Unknown")</strong>
             </div>
         </div>
         <div class="button-row">
             <button class="button button-primary" type="button" @onclick="StartAsync">Start</button>
             <button class="button button-secondary" type="button" @onclick="RestartAsync">Restart</button>
             <button class="button button-secondary" type="button" @onclick="StopAsync">Stop</button>
+            <button class="button button-secondary" type="button" @onclick="InspectAsync">Check health</button>
             <button class="button button-secondary" type="button" @onclick="BackupAsync">Backup now</button>
         </div>
     </SettingsPanel>
-    <SettingsPanel Title="Backup schedule" Description="Schedules are queued through Hangfire and enforce retention.">
+    <SettingsPanel Title="Backup schedule"
+                   Description="Schedules run through Hangfire, keep a local copy and/or copy to S3 destinations, and apply retention per location.">
         <EditForm Model="Schedule" OnValidSubmit="CreateScheduleAsync" FormName="create-backup-schedule">
             <DataAnnotationsValidator/>
             <ValidationSummary/>
             <div class="form-grid">
                 <label>Name
                     <InputText @bind-Value="Schedule.Name" name="name"/>
-                    <ValidationMessage For="() => Schedule.Name"/>
                 </label>
                 <label>Cron
                     <InputText @bind-Value="Schedule.CronExpression" name="cron"/>
-                    <ValidationMessage For="() => Schedule.CronExpression"/>
                 </label>
-                <label>Retention
+                <label>Databases (comma separated, empty = all)
+                    <InputText @bind-Value="Schedule.Databases" name="databases"/>
+                </label>
+                <label>Format<InputSelect @bind-Value="Schedule.DumpFormat" name="format">
+                        <option value="@BackupDumpFormat.Native">Native (PostgreSQL custom archive)</option>
+                        <option value="@BackupDumpFormat.PlainSql">Plain SQL (gzip)</option>
+                    </InputSelect></label>
+                <label>Local retention (count)
                     <InputNumber @bind-Value="Schedule.RetentionCount" name="retention"/>
-                    <ValidationMessage For="() => Schedule.RetentionCount"/>
                 </label>
+                <label>Local retention (days, 0 = off)
+                    <InputNumber @bind-Value="Schedule.LocalDays" name="localDays"/>
+                </label>
+                <label>Remote retention (count, 0 = unlimited)
+                    <InputNumber @bind-Value="Schedule.RemoteCount" name="remoteCount"/>
+                </label>
+                <label>Remote retention (days, 0 = off)
+                    <InputNumber @bind-Value="Schedule.RemoteDays" name="remoteDays"/>
+                </label>
+                <label>Timeout (seconds)
+                    <InputNumber @bind-Value="Schedule.TimeoutSeconds" name="timeout"/>
+                </label>
+                <label>Alert after days without a backup (0 = off)
+                    <InputNumber @bind-Value="Schedule.MissingAlertDays" name="missingAlertDays"/>
+                </label>
+                @foreach (var destination in AvailableDestinations)
+                {
+                    <label>
+                        <input type="checkbox" checked="@Schedule.DestinationIds.Contains(destination.Id)"
+                               @onchange="@(args => ToggleDestination(destination.Id, (bool)(args.Value ?? false)))"/>
+                        Copy to @destination.Name (@destination.Bucket)@(destination.IsUsable ? string.Empty : " - unusable")
+                    </label>
+                }
+                @if (AvailableDestinations.Count > 0)
+                {
+                    <label>
+                        <InputCheckbox @bind-Value="Schedule.DisableLocalCopy" name="disableLocal"/>
+                        Remote copies only (no local copy)
+                    </label>
+                }
                 <button class="button button-primary" type="submit">Create schedule</button>
             </div>
         </EditForm>
     </SettingsPanel>
 </section>
+
+<SettingsPanel Title="Schedules" Description="Disabled schedules never fire. Deleting a schedule deletes its execution history.">
+    @if (SchedulesList.Count == 0)
+    {
+        <EmptyState Title="No backup schedules" Description="Create a schedule above."/>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead><tr><th>Name</th><th>Cron</th><th>Databases</th><th>Destinations</th><th>Last success</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var schedule in SchedulesList)
+            {
+                <tr>
+                    <td>@schedule.Name @(schedule.Enabled ? string.Empty : "(disabled)")</td>
+                    <td><code>@schedule.CronExpression</code></td>
+                    <td>@(schedule.DatabaseSelection == BackupDatabaseSelectionMode.Named ? string.Join(", ", schedule.Databases) : schedule.DatabaseSelection.ToString())</td>
+                    <td>@(schedule.DestinationIds.Count)@(schedule.DisableLocalCopy ? " (remote only)" : " + local")</td>
+                    <td>@(schedule.LastSucceededAt?.ToString("u") ?? "never")</td>
+                    <td class="button-row">
+                        <button class="button button-secondary" type="button"
+                                @onclick="() => ToggleScheduleAsync(schedule)">@(schedule.Enabled ? "Disable" : "Enable")</button>
+                        <button class="button button-secondary" type="button"
+                                @onclick="() => DeleteScheduleAsync(schedule)">Delete</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</SettingsPanel>
+
+<SettingsPanel Title="Recent backups" Description="Skipped runs mean another database operation was in progress.">
+    @if (Executions.Count == 0)
+    {
+        <EmptyState Title="No backups yet" Description="Run a backup or wait for a schedule."/>
+    }
+    else
+    {
+        <table class="data-table">
+            <thead><tr><th>Created</th><th>Database</th><th>Status</th><th>Size</th><th>Copies</th><th>Message</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var execution in Executions)
+            {
+                <tr>
+                    <td>@execution.CreatedAt.ToString("u")</td>
+                    <td>@(execution.DatabaseName ?? "default")</td>
+                    <td>@execution.Status</td>
+                    <td>@(execution.SizeBytes?.ToString("N0") ?? "-")</td>
+                    <td>@(execution.HasLocalCopy ? "local " : string.Empty)@(execution.Replicas?.Count(replica => replica.Uploaded && !replica.Deleted) ?? 0) remote</td>
+                    <td>@(execution.MessageHidden ? "(requires secrets.read)" : execution.FailureReason)</td>
+                    <td>
+                        @if (CanDownload && execution.Status is BackupExecutionStatus.Succeeded or BackupExecutionStatus.RestoreSucceeded)
+                        {
+                            <a class="button button-secondary" href="@($"/api/v1/databases/backups/{execution.Id}/download")">Download</a>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</SettingsPanel>
 
 @if (!string.IsNullOrWhiteSpace(Message))
 {
@@ -61,52 +167,119 @@
     [Parameter] public Guid Id { get; set; }
     private DatabaseSummary? Database { get; set; }
     private ScheduleForm Schedule { get; } = new();
+    private IReadOnlyList<BackupScheduleSummary> SchedulesList { get; set; } = [];
+    private IReadOnlyList<BackupExecutionSummary> Executions { get; set; } = [];
+    private IReadOnlyList<BackupDestinationSummary> AvailableDestinations { get; set; } = [];
+    private bool CanDownload { get; set; }
     private string? Message { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         Database = Resources.ListDatabases(user.GetUserId(), user.GetTeamId()).SingleOrDefault(item => item.Id == Id);
+        if (Database is null) return;
+        try
+        {
+            SchedulesList = Backups.ListSchedules(user.GetUserId(), user.GetTeamId(), new DatabaseResourceId(Id));
+            var page = Backups.ListExecutions(user.GetUserId(), user.GetTeamId(), new DatabaseResourceId(Id), null, 1, 20);
+            Executions = page.Items;
+            CanDownload = Authorization.HasPermission(user.GetUserId(), user.GetTeamId(),
+                Vessel.Application.Authorization.VesselPermissions.SecretsRead);
+            AvailableDestinations = Destinations.List(user.GetUserId(), user.GetTeamId());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            SchedulesList = [];
+            Executions = [];
+        }
     }
 
-    private Task StartAsync()
-    {
-        return LifecycleAsync(DatabaseLifecycleAction.Start);
-    }
+    private Task StartAsync() => LifecycleAsync(DatabaseLifecycleAction.Start);
 
-    private Task StopAsync()
-    {
-        return LifecycleAsync(DatabaseLifecycleAction.Stop);
-    }
+    private Task StopAsync() => LifecycleAsync(DatabaseLifecycleAction.Stop);
 
-    private Task RestartAsync()
-    {
-        return LifecycleAsync(DatabaseLifecycleAction.Restart);
-    }
+    private Task RestartAsync() => LifecycleAsync(DatabaseLifecycleAction.Restart);
+
+    private Task InspectAsync() => LifecycleAsync(DatabaseLifecycleAction.Inspect);
 
     private async Task LifecycleAsync(DatabaseLifecycleAction action)
     {
-        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-        var result = await ManagedDatabases.QueueLifecycleActionAsync(user.GetUserId(), user.GetTeamId(),
-            new DatabaseResourceId(Id), action);
-        Message = result.Message;
+        try
+        {
+            var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            var result = await ManagedDatabases.QueueLifecycleActionAsync(user.GetUserId(), user.GetTeamId(),
+                new DatabaseResourceId(Id), action);
+            Message = result.Message;
+        }
+        catch (DatabaseOperationConflictException exception)
+        {
+            Message = exception.Message;
+        }
     }
 
     private async Task BackupAsync()
     {
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-        var result = await ManagedDatabases.QueueBackupAsync(user.GetUserId(), user.GetTeamId(),
-            new DatabaseResourceId(Id));
+        var result = await Backups.QueueBackupAsync(user.GetUserId(), user.GetTeamId(), new DatabaseResourceId(Id));
         Message = $"Backup queued: {result.Id}";
+        await LoadAsync();
+    }
+
+    private void ToggleDestination(Guid destinationId, bool selected)
+    {
+        if (selected) Schedule.DestinationIds.Add(destinationId);
+        else Schedule.DestinationIds.Remove(destinationId);
     }
 
     private async Task CreateScheduleAsync()
     {
+        try
+        {
+            var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            string[] names = (Schedule.Databases ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var schedule = await Backups.CreateScheduleAsync(user.GetUserId(), user.GetTeamId(),
+                new CreateBackupScheduleRequest(Id, Schedule.Name, Schedule.CronExpression, Schedule.RetentionCount,
+                    Schedule.TimeoutSeconds, names.Length == 0, names, Schedule.DumpFormat,
+                    new BackupRetentionRequest(Schedule.RetentionCount, Schedule.LocalDays),
+                    new BackupRetentionRequest(Schedule.RemoteCount, Schedule.RemoteDays),
+                    Schedule.DestinationIds.ToArray(), Schedule.DisableLocalCopy, Schedule.MissingAlertDays));
+            Message = $"Backup schedule created: {schedule.Name}";
+            await LoadAsync();
+        }
+        catch (Vessel.Domain.Common.DomainException exception)
+        {
+            Message = exception.Message;
+        }
+    }
+
+    private async Task ToggleScheduleAsync(BackupScheduleSummary schedule)
+    {
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
-        var schedule = await ManagedDatabases.CreateBackupScheduleAsync(user.GetUserId(), user.GetTeamId(),
-            new CreateBackupScheduleRequest(Id, Schedule.Name, Schedule.CronExpression, Schedule.RetentionCount,
-                BackupStorageKind.ObjectStorage));
-        Message = $"Backup schedule created: {schedule.Name}";
+        await Backups.UpdateScheduleAsync(user.GetUserId(), user.GetTeamId(), new BackupScheduleId(schedule.Id),
+            new UpdateBackupScheduleRequest(Enabled: !schedule.Enabled));
+        await LoadAsync();
+    }
+
+    private async Task DeleteScheduleAsync(BackupScheduleSummary schedule)
+    {
+        try
+        {
+            var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            await Backups.DeleteScheduleAsync(user.GetUserId(), user.GetTeamId(), new BackupScheduleId(schedule.Id),
+                false);
+            Message = $"Backup schedule deleted: {schedule.Name}";
+            await LoadAsync();
+        }
+        catch (DatabaseOperationConflictException exception)
+        {
+            Message = exception.Message;
+        }
     }
 
     private sealed class ScheduleForm
@@ -119,8 +292,31 @@
         [RegularExpression(@"^(\S+\s+){4}\S+$", ErrorMessage = "Cron expression must contain five fields.")]
         public string CronExpression { get; set; } = "0 2 * * *";
 
-        [Range(1, 365)]
+        public string? Databases { get; set; }
+
+        public BackupDumpFormat DumpFormat { get; set; } = BackupDumpFormat.Native;
+
+        [Range(1, BackupRetentionPolicy.MaxCount)]
         public int RetentionCount { get; set; } = 7;
+
+        [Range(0, BackupRetentionPolicy.MaxDays)]
+        public int LocalDays { get; set; }
+
+        [Range(0, BackupRetentionPolicy.MaxCount)]
+        public int RemoteCount { get; set; } = 30;
+
+        [Range(0, BackupRetentionPolicy.MaxDays)]
+        public int RemoteDays { get; set; }
+
+        [Range(BackupSchedule.MinTimeoutSeconds, BackupSchedule.MaxTimeoutSeconds)]
+        public int TimeoutSeconds { get; set; } = BackupSchedule.DefaultTimeoutSeconds;
+
+        [Range(0, BackupSchedule.MaxMissingAlertDays)]
+        public int MissingAlertDays { get; set; }
+
+        public HashSet<Guid> DestinationIds { get; } = [];
+
+        public bool DisableLocalCopy { get; set; }
     }
 
 }

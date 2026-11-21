@@ -18,7 +18,8 @@ public sealed record ServerHealthPollingResult(
     Guid ServerId,
     ServerStatus Status,
     int RunningContainers,
-    bool RuntimeReachable);
+    bool RuntimeReachable,
+    string? Reason = null);
 
 public interface IServerHealthQuery
 {

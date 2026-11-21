@@ -51,7 +51,7 @@ public sealed class ProjectsController : ControllerBase
     }
 
     [HttpDelete("{projectId:guid}")]
-    [Authorize(Policy = VesselPermissions.ProjectsWrite)]
+    [Authorize(Policy = VesselPermissions.ProjectsDelete)]
     public async Task<IActionResult> Archive(Guid projectId, CancellationToken cancellationToken)
     {
         await _resources.ArchiveProjectAsync(User.GetUserId(), User.GetTeamId(), new ProjectId(projectId),

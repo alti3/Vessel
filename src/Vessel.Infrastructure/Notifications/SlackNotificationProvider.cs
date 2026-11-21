@@ -24,11 +24,12 @@ public sealed class SlackNotificationProvider(HttpClient httpClient) : INotifica
 
             return response.IsSuccessStatusCode
                 ? NotificationDeliveryResult.Succeeded()
-                : NotificationDeliveryResult.Failed($"Slack notification delivery failed with HTTP {(int)response.StatusCode}.");
+                : NotificationDeliveryResult.FromHttpStatus("Slack", (int)response.StatusCode,
+                    NotificationHttpFailures.SlackConfigurationStatuses);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or UriFormatException)
+        catch (Exception ex) when (NotificationHttpFailures.IsHandled(ex, cancellationToken))
         {
-            return NotificationDeliveryResult.Failed($"Slack notification delivery failed: {ex.GetType().Name}.");
+            return NotificationHttpFailures.FromException("Slack", ex, cancellationToken);
         }
     }
 }

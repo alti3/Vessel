@@ -44,6 +44,10 @@ public sealed class RateLimitOptionsValidator : IValidateOptions<RateLimitOption
         ValidatePolicy("Webhooks", options.Webhooks, failures);
         ValidatePolicy("Api", options.Api, failures);
         ValidatePolicy("Terminal", options.Terminal, failures);
+        if (options.ApiFailedRequests.PermitLimit is < 0 or > 100_000)
+            failures.Add("RateLimits:ApiFailedRequests:PermitLimit must be between 0 (disabled) and 100000.");
+        if (options.ApiFailedRequests.WindowSeconds is < 1 or > 86_400)
+            failures.Add("RateLimits:ApiFailedRequests:WindowSeconds must be between 1 and 86400.");
 
         return failures.Count == 0
             ? ValidateOptionsResult.Success

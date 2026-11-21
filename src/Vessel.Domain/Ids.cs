@@ -132,6 +132,19 @@ public readonly record struct BackupExecutionId(Guid Value) : IStronglyTypedId
     }
 }
 
+public readonly record struct BackupDestinationId(Guid Value) : IStronglyTypedId
+{
+    public static BackupDestinationId New()
+    {
+        return new BackupDestinationId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct DeploymentId(Guid Value) : IStronglyTypedId
 {
     public static DeploymentId New()
@@ -262,6 +275,19 @@ public readonly record struct EnvironmentVariableId(Guid Value) : IStronglyTyped
     }
 }
 
+public readonly record struct SshKeyId(Guid Value) : IStronglyTypedId
+{
+    public static SshKeyId New()
+    {
+        return new SshKeyId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct RegistryCredentialId(Guid Value) : IStronglyTypedId
 {
     public static RegistryCredentialId New()
@@ -384,6 +410,19 @@ public readonly record struct TeamInvitationId(Guid Value) : IStronglyTypedId
     public static TeamInvitationId New()
     {
         return new TeamInvitationId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
+public readonly record struct DatabaseRestoreId(Guid Value) : IStronglyTypedId
+{
+    public static DatabaseRestoreId New()
+    {
+        return new DatabaseRestoreId(Guid.NewGuid());
     }
 
     public override string ToString()

@@ -12,6 +12,16 @@ public static class AuditActions
     public const string TwoFactorDisabled = "auth.two_factor_disabled";
     public const string TokenCreated = "auth.token_created";
     public const string TokenRevoked = "auth.token_revoked";
+    public const string TokenUpdated = "auth.token_updated";
+    public const string TokenPaused = "auth.token_paused";
+    public const string TokenResumed = "auth.token_resumed";
+    public const string TokenRolled = "auth.token_rolled";
+    public const string RegistrationRejected = "auth.registration_rejected";
+    public const string TeamMemberAccessChanged = "team.member_access_changed";
+    public const string InstanceSettingChanged = "instance.setting_changed";
+    public const string InstanceAdminGranted = "instance.admin_granted";
+    public const string InstanceAdminRevoked = "instance.admin_revoked";
+    public const string ApiFailedRequestsThrottled = "api.failed_requests_throttled";
     public const string TeamInvitationCreated = "team.invitation_created";
     public const string TeamInvitationAccepted = "team.invitation_accepted";
     public const string TeamMemberRemoved = "team.member_removed";
@@ -24,6 +34,20 @@ public static class AuditActions
     public const string EnvironmentDeleted = "environment.deleted";
     public const string ServerCreated = "server.created";
     public const string ServerConnectivityChecked = "server.connectivity_checked";
+    public const string ServerUpdated = "server.updated";
+    public const string ServerDeleted = "server.deleted";
+    public const string ServerValidationRequested = "server.validation_requested";
+    public const string ServerValidated = "server.validated";
+    public const string ServerHostKeyPinned = "server.ssh_host_key_pinned";
+    public const string ServerHostKeyChanged = "server.ssh_host_key_changed";
+    public const string ServerHostKeyTrusted = "server.ssh_host_key_trusted";
+    public const string ServerHostKeyReset = "server.ssh_host_key_reset";
+    public const string SshKeyCreated = "ssh_key.created";
+    public const string SshKeyUpdated = "ssh_key.updated";
+    public const string SshKeyDeleted = "ssh_key.deleted";
+    public const string SshKeyRotationRequested = "ssh_key.rotation_requested";
+    public const string SshKeyRotated = "ssh_key.rotated";
+    public const string TerminalSessionRevoked = "terminal.session_revoked";
     public const string ApplicationCreated = "application.created";
     public const string DeploymentStarted = "deployment.started";
     public const string DeploymentCanceled = "deployment.canceled";
@@ -34,11 +58,34 @@ public static class AuditActions
     public const string WebhookProcessed = "webhook.processed";
     public const string PreviewOpened = "preview.opened";
     public const string PreviewArchived = "preview.archived";
+    public const string PreviewStopped = "preview.stopped";
+    public const string PreviewCleanedUp = "preview.cleaned_up";
+    public const string DeploymentRollbackQueued = "deployment.rollback_queued";
+    public const string DeploymentImagePushed = "deployment.image_pushed";
+    public const string DeploymentComposeElevated = "deployment.compose_elevated";
+    public const string ApplicationBuildSettingsUpdated = "application.build_settings_updated";
+    public const string ApplicationDeploymentSettingsUpdated = "application.deployment_settings_updated";
+    public const string ServerDeploymentLimitsUpdated = "server.deployment_limits_updated";
     public const string DomainRouteConfigured = "domain_route.configured";
     public const string DomainRouteRemoved = "domain_route.removed";
     public const string ProxyConfigurationApplied = "proxy_configuration.applied";
     public const string ProxyConfigurationRolledBack = "proxy_configuration.rolled_back";
+    public const string ServerProxyUpdated = "server_proxy.updated";
+    public const string ServerProxyStarted = "server_proxy.started";
+    public const string ServerProxyStopped = "server_proxy.stopped";
+    public const string ServerProxyRestarted = "server_proxy.restarted";
     public const string CertificateIssuanceQueued = "certificate.issuance_queued";
+    public const string DomainConflictOverridden = "domain_route.conflict_overridden";
+    public const string ServiceDomainConfigured = "service_domain.configured";
+    public const string ServiceDomainRemoved = "service_domain.removed";
+    public const string ProxyConfigurationRestored = "proxy_configuration.restored";
+    public const string ProxyConfigurationRevealed = "proxy_configuration.revealed";
+    public const string ProxyConfigurationPruned = "proxy_configuration.pruned";
+    public const string ProxyDynamicConfigurationSaved = "proxy_dynamic_configuration.saved";
+    public const string ProxyDynamicConfigurationRemoved = "proxy_dynamic_configuration.removed";
+    public const string CertificateDeleted = "certificate.deleted";
+    public const string AcmeBackupRestored = "certificate.acme_backup_restored";
+    public const string AcmeBackupDeleted = "certificate.acme_backup_deleted";
     public const string DatabaseCreated = "database.created";
     public const string DatabaseLifecycleActionQueued = "database.lifecycle_action_queued";
     public const string DatabaseLifecycleActionCompleted = "database.lifecycle_action_completed";
@@ -50,10 +97,25 @@ public static class AuditActions
     public const string BackupPruned = "backup.pruned";
     public const string RestoreValidated = "backup.restore_validated";
     public const string RestoreCompleted = "backup.restore_completed";
+    public const string RestoreQueued = "backup.restore_queued";
+    public const string RestoreFailed = "backup.restore_failed";
+    public const string BackupScheduleUpdated = "backup.schedule_updated";
+    public const string BackupScheduleDeleted = "backup.schedule_deleted";
+    public const string BackupSkipped = "backup.skipped";
+    public const string BackupFailed = "backup.failed";
+    public const string BackupDeleted = "backup.deleted";
+    public const string BackupDownloaded = "backup.downloaded";
+    public const string BackupDestinationCreated = "backup_destination.created";
+    public const string BackupDestinationUpdated = "backup_destination.updated";
+    public const string BackupDestinationDeleted = "backup_destination.deleted";
+    public const string BackupDestinationValidated = "backup_destination.validated";
+    public const string BackupDestinationTlsVerificationChanged = "backup_destination.tls_verification_changed";
+    public const string DatabaseLifecycleActionSkipped = "database.lifecycle_action_skipped";
     public const string EnvironmentVariableCreated = "environment_variable.created";
     public const string SecretStored = "secret.stored";
     public const string SecretRevealed = "secret.revealed";
     public const string SecretRotated = "secret.rotated";
+    public const string SecretsReencrypted = "secrets.reencrypted";
     public const string RegistryCredentialCreated = "registry_credential.created";
     public const string TerminalSessionOpened = "terminal.session_opened";
     public const string TerminalSessionClosed = "terminal.session_closed";
@@ -62,4 +124,30 @@ public static class AuditActions
     public const string ServerHealthPolled = "server.health_polled";
     public const string DeploymentLogsPruned = "deployment.logs_pruned";
     public const string NotificationTargetConfigured = "notification.target_configured";
+    public const string NotificationTargetTested = "notification.target_tested";
+    public const string NotificationTargetAutoDisabled = "notification.target_auto_disabled";
+    public const string InstanceEmailSettingsUpdated = "settings.email_updated";
+    public const string InstanceEmailTestSent = "settings.email_test_sent";
+    public const string EmailVerified = "auth.email_verified";
+
+    // IAM-07 external sign-in.
+    public const string OAuthLoginSucceeded = "auth.oauth_login";
+    public const string OAuthLoginDenied = "auth.oauth_login_denied";
+    public const string OAuthIdentityLinked = "auth.oauth_identity_linked";
+    public const string OAuthTwoFactorChallenged = "auth.oauth_two_factor_challenged";
+    public const string AuthProviderCreated = "instance.auth_provider_created";
+    public const string AuthProviderUpdated = "instance.auth_provider_updated";
+    public const string AuthProviderDeleted = "instance.auth_provider_deleted";
+
+    // IAM-09 sessions and the active team.
+    public const string SessionRevoked = "auth.session_revoked";
+    public const string SessionsRevoked = "auth.sessions_revoked";
+    public const string TeamSwitched = "team.switched";
+
+    // IAM-08 audit housekeeping.
+    public const string AuditEventsPruned = "audit.events_pruned";
+    public const string AuditUserAnonymized = "audit.user_anonymized";
+
+    // IAM-04 token expiry warning.
+    public const string TokenExpiryWarningSent = "auth.token_expiry_warning_sent";
 }

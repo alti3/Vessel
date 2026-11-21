@@ -18,9 +18,13 @@ public sealed class ApplicationPreview : Entity<ApplicationPreviewId>
         string commitSha,
         string? pullRequestUrl,
         string? title,
+        string? sourceRepository,
+        bool isSameRepository,
         DateTimeOffset createdAt)
         : base(id, createdAt)
     {
+        SourceRepository = sourceRepository;
+        IsSameRepository = isSameRepository;
         ApplicationId = applicationId;
         Provider = provider;
         PullRequestNumber = pullRequestNumber;
@@ -50,6 +54,15 @@ public sealed class ApplicationPreview : Entity<ApplicationPreviewId>
 
     public string? PreviewUrl { get; private set; }
 
+    /// <summary>Provider full name of the pull request head repository (the fork for fork pull requests).</summary>
+    public string? SourceRepository { get; private set; }
+
+    /// <summary>
+    ///     True when the pull request branch lives in the application repository itself. Only same-repository previews
+    ///     may use repository-provided Docker Compose files.
+    /// </summary>
+    public bool IsSameRepository { get; private set; }
+
     public ApplicationPreviewStatus Status { get; private set; }
 
     public DateTimeOffset? ClosedAt { get; private set; }
@@ -63,7 +76,9 @@ public sealed class ApplicationPreview : Entity<ApplicationPreviewId>
         string commitSha,
         string? pullRequestUrl,
         string? title,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? sourceRepository = null,
+        bool isSameRepository = false)
     {
         return new ApplicationPreview(
             ApplicationPreviewId.New(),
@@ -75,12 +90,16 @@ public sealed class ApplicationPreview : Entity<ApplicationPreviewId>
             DomainValidation.Required(commitSha, nameof(commitSha), 80),
             DomainValidation.Optional(pullRequestUrl, nameof(pullRequestUrl), 2048),
             DomainValidation.Optional(title, nameof(title), 255),
+            DomainValidation.Optional(sourceRepository, nameof(sourceRepository), 512),
+            isSameRepository,
             now);
     }
 
     public void Refresh(string sourceBranch, string targetBranch, string commitSha, string? pullRequestUrl,
-        string? title, DateTimeOffset now)
+        string? title, DateTimeOffset now, string? sourceRepository = null, bool isSameRepository = false)
     {
+        SourceRepository = DomainValidation.Optional(sourceRepository, nameof(sourceRepository), 512);
+        IsSameRepository = isSameRepository;
         SourceBranch = DomainValidation.Required(sourceBranch, nameof(sourceBranch), 255);
         TargetBranch = DomainValidation.Required(targetBranch, nameof(targetBranch), 255);
         CommitSha = DomainValidation.Required(commitSha, nameof(commitSha), 80);
@@ -94,6 +113,24 @@ public sealed class ApplicationPreview : Entity<ApplicationPreviewId>
     public void SetPreviewUrl(string? previewUrl, DateTimeOffset now)
     {
         PreviewUrl = DomainValidation.Optional(previewUrl, nameof(previewUrl), 2048);
+        Touch(now);
+    }
+
+    /// <summary>Stops an open preview (its containers are removed, volumes kept). A redeploy reopens it.</summary>
+    public void Stop(DateTimeOffset now)
+    {
+        if (Status == ApplicationPreviewStatus.Archived)
+            throw new DomainException("Preview is closed.");
+        Status = ApplicationPreviewStatus.Stopped;
+        Touch(now);
+    }
+
+    /// <summary>Reopens a stopped preview for a redeploy. A closed (archived) preview reopens only with its pull request.</summary>
+    public void Reopen(DateTimeOffset now)
+    {
+        if (Status == ApplicationPreviewStatus.Archived)
+            throw new DomainException("Preview is closed; it reopens when its pull request is reopened.");
+        Status = ApplicationPreviewStatus.Open;
         Touch(now);
     }
 

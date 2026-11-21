@@ -81,10 +81,13 @@
     private async Task OpenAsync()
     {
         if (User is null || SelectedServerId is null) return;
-        Session = await TerminalSessions.OpenAsync(
+        TerminalSessionDetails opened = await TerminalSessions.OpenAsync(
             User.GetUserId(),
             User.GetTeamId(),
             new OpenTerminalSessionRequest(SelectedServerId.Value, TerminalTargetType.Server, null, Columns, Rows));
+        // Server-side component: redeem the single-use attach token immediately for the same user.
+        Session = await TerminalSessions.AttachAsync(User.GetUserId(), User.GetTeamId(),
+            new TerminalSessionId(opened.Id), opened.AttachToken);
         Message = Session.Status == TerminalSessionStatus.Failed
             ? Session.FailureReason
             : "Terminal session opened.";

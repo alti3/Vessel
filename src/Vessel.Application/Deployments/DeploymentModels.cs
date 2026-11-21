@@ -3,18 +3,26 @@ using Vessel.Domain.Deployments;
 
 namespace Vessel.Application.Deployments;
 
+/// <summary>
+///     A deployment request. <paramref name="CancelPrevious" /> (<c>none</c>|<c>queued</c>|<c>building</c>, default
+///     none) is honored for API deployments only; <paramref name="ParentDeploymentId" /> links a redeploy to the
+///     deployment it repeats. The trigger source is decided by the endpoint, never by the request body.
+/// </summary>
 public sealed record StartDeploymentRequest(
     Guid ApplicationId,
     bool ForceRebuild = false,
     string? CommitSha = null,
     Guid? PreviewId = null,
-    Guid? WebhookEventId = null);
+    string? CancelPrevious = null,
+    Guid? ParentDeploymentId = null);
 
+/// <summary><paramref name="Deduplicated" /> is true when an identical deployment was already queued or running.</summary>
 public sealed record StartDeploymentResult(
     Guid DeploymentId,
     Guid ApplicationId,
     DeploymentStatus Status,
-    string Message);
+    string Message,
+    bool Deduplicated = false);
 
 public sealed record DeploymentDetails(
     Guid Id,
@@ -33,7 +41,13 @@ public sealed record DeploymentDetails(
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
     DateTimeOffset? CancellationRequestedAt,
-    IReadOnlyList<DeploymentLogEntry> Logs);
+    IReadOnlyList<DeploymentLogEntry> Logs,
+    DeploymentTrigger Trigger = DeploymentTrigger.Manual,
+    Guid? ParentDeploymentId = null,
+    bool IsRollback = false,
+    string? RollbackImage = null,
+    DateTimeOffset? DeployPhaseStartedAt = null,
+    string? CancellationReason = null);
 
 public sealed record DeploymentLogEntry(
     int Sequence,
@@ -66,11 +80,21 @@ public sealed record DeploymentRuntimePlan(
     string RedactedComposeYaml,
     string EnvironmentFile,
     string RedactedEnvironmentFile,
-    string HealthCheckUrl);
+    string HealthCheckUrl,
+    DeploymentNaming? Naming = null,
+    int Port = DeploymentPlanBuilder.DefaultPort,
+    string HealthCheckPath = "/")
+{
+    /// <summary>The application has persistent storage (DATA-12) to prepare on the server before compose up.</summary>
+    public bool HasStorage { get; init; }
+}
 
 public interface IDeploymentRunner
 {
     Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Runs a deployment; <paramref name="attempt" /> counts retries after run-lock contention.</summary>
+    Task RunAsync(DeploymentId deploymentId, int attempt, CancellationToken cancellationToken = default);
 }
 
 public interface IDeploymentWorkspaceManager
@@ -84,8 +108,26 @@ public interface IDeploymentWorkspaceManager
         bool restrictToOwner,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reads a file from an owned workspace (typically the cloned repository). Symbolic links anywhere on the
+    /// path are rejected so repository content cannot redirect reads to host files.
+    /// </summary>
     Task<string> ReadTextAsync(string rootDirectory, string relativePath,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies that <paramref name="relativePath"/> names a regular file inside <paramref name="rootDirectory"/>
+    /// with no symbolic links on its path, and returns its full path.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    string EnsureRegularFile(string rootDirectory, string relativePath);
+
+    /// <summary>
+    ///     Verifies that <paramref name="relativePath" /> names a directory inside <paramref name="rootDirectory" />
+    ///     with no symbolic links on its path (a build context must never redirect to host directories).
+    /// </summary>
+    /// <exception cref="DirectoryNotFoundException">The directory does not exist.</exception>
+    string EnsureDirectory(string rootDirectory, string relativePath);
 
     Task CleanupAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default);
 }

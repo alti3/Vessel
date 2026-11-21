@@ -14,6 +14,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
     public async Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.GetInfoAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         SystemInfoResponse info = await client.System.GetSystemInfoAsync(cancellationToken);
         VersionResponse version = await client.System.GetVersionAsync(cancellationToken);
@@ -30,6 +31,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         bool all,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListContainersAsync(target, all, cancellationToken);
         using DockerClient client = CreateClient(target);
         IList<ContainerListResponse> containers = await client.Containers.ListContainersAsync(
             new ContainersListParameters { All = all },
@@ -49,6 +51,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         string containerId,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.InspectContainerAsync(target, containerId, cancellationToken);
         using DockerClient client = CreateClient(target);
         ContainerInspectResponse container =
             await client.Containers.InspectContainerAsync(containerId, cancellationToken);
@@ -59,6 +62,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListImagesAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         IList<ImagesListResponse> images = await client.Images.ListImagesAsync(
             new ImagesListParameters { All = true },
@@ -74,6 +78,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListNetworksAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         IList<NetworkResponse> networks = await client.Networks.ListNetworksAsync(cancellationToken: cancellationToken);
         return networks.Select(network => new NetworkSummary(
@@ -87,6 +92,7 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote) return await cliFallback.ListVolumesAsync(target, cancellationToken);
         using DockerClient client = CreateClient(target);
         VolumesListResponse volumes = await client.Volumes.ListAsync(cancellationToken);
         return volumes.Volumes.Select(volume => new VolumeSummary(
@@ -117,6 +123,13 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         ContainerRuntimeTarget target,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        if (target.IsRemote)
+        {
+            await foreach (ContainerEvent remoteEvent in cliFallback.StreamEventsAsync(target, cancellationToken))
+                yield return remoteEvent;
+            yield break;
+        }
+
         using DockerClient client = CreateClient(target);
         var progress = new DockerEventProgress();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -133,6 +146,96 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         CancellationToken cancellationToken = default)
     {
         return cliFallback.RunComposeAsync(target, command, cancellationToken);
+    }
+
+    public Task<bool> RemoveComposeProjectAsync(
+        ContainerRuntimeTarget target,
+        string projectName,
+        bool removeVolumes,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.RemoveComposeProjectAsync(target, projectName, removeVolumes, cancellationToken);
+    }
+
+    public Task<bool> RemoveImageAsync(
+        ContainerRuntimeTarget target,
+        string imageReference,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.RemoveImageAsync(target, imageReference, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> PrepareRailpackPlanAsync(ContainerRuntimeTarget target,
+        RailpackPrepareCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PrepareRailpackPlanAsync(target, command, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> BuildRailpackImageAsync(ContainerRuntimeTarget target,
+        RailpackBuildCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.BuildRailpackImageAsync(target, command, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> GenerateNixpacksBuildAsync(ContainerRuntimeTarget target,
+        NixpacksGenerateCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.GenerateNixpacksBuildAsync(target, command, cancellationToken);
+    }
+
+    public Task<bool> TagImageAsync(ContainerRuntimeTarget target, string source, string destination,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.TagImageAsync(target, source, destination, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> PushImageAsync(ContainerRuntimeTarget target,
+        RegistryImageCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PushImageAsync(target, command, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> PullImageAsync(ContainerRuntimeTarget target,
+        RegistryImageCommand command, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PullImageAsync(target, command, cancellationToken);
+    }
+
+    // Monitoring, logs and cleanup (SRV-03/04/05/07) use the structured CLI for local and remote targets alike.
+    public Task<IReadOnlyList<ContainerStateReading>> ListContainerStatesAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.ListContainerStatesAsync(target, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<ImageDetails>> ListImageDetailsAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.ListImageDetailsAsync(target, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> StreamContainerLogsAsync(ContainerRuntimeTarget target,
+        string containerId, ContainerLogOptions options, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.StreamContainerLogsAsync(target, containerId, options, cancellationToken);
+    }
+
+    public Task<bool> StopContainersAsync(ContainerRuntimeTarget target, IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.StopContainersAsync(target, containerIds, cancellationToken);
+    }
+
+    public Task<int> RemoveContainersAsync(ContainerRuntimeTarget target, IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.RemoveContainersAsync(target, containerIds, cancellationToken);
+    }
+
+    public Task<RuntimePruneResult> PruneAsync(ContainerRuntimeTarget target, RuntimePruneKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PruneAsync(target, kind, cancellationToken);
     }
 
     private static DockerClient CreateClient(ContainerRuntimeTarget target)

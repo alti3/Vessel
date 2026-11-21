@@ -9,5 +9,6 @@ public enum NotificationTargetType
     Server = 4,
     Database = 5,
     Deployment = 6,
-    System = 7
+    System = 7,
+    ScheduledTask = 8
 }

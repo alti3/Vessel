@@ -33,3 +33,7 @@ ASP.NET Core authentication is still used for transport concerns:
 The Application layer owns auth use cases and security decisions. Infrastructure owns hashing and persistence details. Web controllers and auth handlers stay thin and delegate to Application services.
 
 Future OIDC, GitHub, and GitLab login flows should link external identities into the existing `User.ExternalSubject` boundary rather than replacing the domain user model.
+
+### Amendment (2026-11, IAM-07/IAM-09)
+
+`User.ExternalSubject` cannot identify the provider or issuer, so external identities are stored in `oauth_identities` (provider instance + subject, unique; issuer recorded; one identity per account), and the column is deprecated. Providers are instance-level rows (`auth_providers`) managed by instance administrators with key-ring protected client secrets, not configuration keys. The authorization-code + PKCE flow is implemented in Application (`ExternalLoginService`) with an Infrastructure protocol client instead of dynamically registered ASP.NET Core `AddOpenIdConnect`/`AddOAuth` schemes: providers change at runtime, secrets live in the database, the callback URL must come from the instance URL, and every outbound call must go through the SSRF policy. Interactive sessions are server-side rows (`user_sessions`) referenced by the cookie, so they can be listed and revoked.

@@ -1,11 +1,13 @@
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Auth;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
+using Vessel.Domain.Monitoring;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
 using Vessel.Domain.Proxy;
@@ -14,6 +16,9 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
+using Vessel.Domain.Sources;
+using Vessel.Domain.Ssh;
+using Vessel.Domain.Storage;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
@@ -24,8 +29,18 @@ using Environment = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Application.Persistence;
 
-public interface IVesselDbContext : IUnitOfWork
+public partial interface IVesselDbContext : IUnitOfWork
 {
+    /// <summary>
+    ///     Re-reads a tracked entity's current database values, discarding stale tracked state. Long-running work
+    ///     (deployment runs, queue decisions) calls it before acting on state other scopes may have changed. In-memory
+    ///     contexts share instances and need no refresh.
+    /// </summary>
+    Task RefreshAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default) where TEntity : class
+    {
+        return Task.CompletedTask;
+    }
+
     IQueryable<User> Users { get; }
 
     IQueryable<Team> Teams { get; }
@@ -52,6 +67,10 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<BackupExecution> BackupExecutions { get; }
 
+    IQueryable<DatabaseRestore> DatabaseRestores => Enumerable.Empty<DatabaseRestore>().AsQueryable();
+
+    IQueryable<BackupDestination> BackupDestinations => Enumerable.Empty<BackupDestination>().AsQueryable();
+
     IQueryable<Deployment> Deployments { get; }
 
     IQueryable<SecretReference> SecretReferences { get; }
@@ -72,6 +91,10 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts { get; }
 
+    /// <summary>The singleton instance email settings row (NTF-06); empty until an administrator saves it.</summary>
+    IQueryable<InstanceEmailSettings> InstanceEmailSettings =>
+        Enumerable.Empty<InstanceEmailSettings>().AsQueryable();
+
     IQueryable<AuditLog> AuditLogs { get; }
 
     IQueryable<SettingEntry> Settings { get; }
@@ -89,6 +112,66 @@ public interface IVesselDbContext : IUnitOfWork
     IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions { get; }
 
     IQueryable<Certificate> Certificates { get; }
+
+    IQueryable<ServerProxySettings> ServerProxySettings { get; }
+
+    IQueryable<SshKey> SshKeys => Enumerable.Empty<SshKey>().AsQueryable();
+
+    IQueryable<GitSourceConnection> GitSourceConnections =>
+        Enumerable.Empty<GitSourceConnection>().AsQueryable();
+
+    IQueryable<GitKnownHost> GitKnownHosts => Enumerable.Empty<GitKnownHost>().AsQueryable();
+
+    IRepository<GitSourceConnection, GitSourceConnectionId> GitSourceConnectionRepository =>
+        throw new InvalidOperationException("Git source persistence is not available.");
+
+    IRepository<GitKnownHost, GitKnownHostId> GitKnownHostRepository =>
+        throw new InvalidOperationException("Git known host persistence is not available.");
+
+    IQueryable<ProxyDynamicConfiguration> ProxyDynamicConfigurations =>
+        Enumerable.Empty<ProxyDynamicConfiguration>().AsQueryable();
+
+    IQueryable<ServiceDomain> ServiceDomains => Enumerable.Empty<ServiceDomain>().AsQueryable();
+
+    IRepository<ProxyDynamicConfiguration, ProxyDynamicConfigurationId> ProxyDynamicConfigurationRepository =>
+        throw new InvalidOperationException("Proxy dynamic configuration persistence is not available.");
+
+    IRepository<ServiceDomain, ServiceDomainId> ServiceDomainRepository =>
+        throw new InvalidOperationException("Service domain persistence is not available.");
+
+    // DATA-12 persistent storage, DATA-09 volume backups and DATA-10 import uploads.
+
+    IQueryable<PersistentVolume> PersistentVolumes => Enumerable.Empty<PersistentVolume>().AsQueryable();
+
+    IQueryable<FileMount> FileMounts => Enumerable.Empty<FileMount>().AsQueryable();
+
+    IQueryable<ScheduledVolumeBackup> ScheduledVolumeBackups =>
+        Enumerable.Empty<ScheduledVolumeBackup>().AsQueryable();
+
+    IQueryable<VolumeBackupExecution> VolumeBackupExecutions =>
+        Enumerable.Empty<VolumeBackupExecution>().AsQueryable();
+
+    IQueryable<VolumeBackupRestore> VolumeBackupRestores => Enumerable.Empty<VolumeBackupRestore>().AsQueryable();
+
+    IQueryable<DatabaseImportUpload> DatabaseImportUploads => Enumerable.Empty<DatabaseImportUpload>().AsQueryable();
+
+    IRepository<PersistentVolume, PersistentVolumeId> PersistentVolumeRepository =>
+        throw new InvalidOperationException("Persistent volume persistence is not available.");
+
+    IRepository<FileMount, FileMountId> FileMountRepository =>
+        throw new InvalidOperationException("File mount persistence is not available.");
+
+    IRepository<ScheduledVolumeBackup, ScheduledVolumeBackupId> ScheduledVolumeBackupRepository =>
+        throw new InvalidOperationException("Volume backup schedule persistence is not available.");
+
+    IRepository<VolumeBackupExecution, VolumeBackupExecutionId> VolumeBackupExecutionRepository =>
+        throw new InvalidOperationException("Volume backup execution persistence is not available.");
+
+    IRepository<VolumeBackupRestore, VolumeBackupRestoreId> VolumeBackupRestoreRepository =>
+        throw new InvalidOperationException("Volume backup restore persistence is not available.");
+
+    IRepository<DatabaseImportUpload, DatabaseImportUploadId> DatabaseImportUploadRepository =>
+        throw new InvalidOperationException("Database import upload persistence is not available.");
 
     IRepository<User, UserId> UserRepository { get; }
 
@@ -114,6 +197,12 @@ public interface IVesselDbContext : IUnitOfWork
 
     IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; }
 
+    IRepository<DatabaseRestore, DatabaseRestoreId> DatabaseRestoreRepository =>
+        throw new InvalidOperationException("Database restore persistence is not available.");
+
+    IRepository<BackupDestination, BackupDestinationId> BackupDestinationRepository =>
+        throw new InvalidOperationException("Backup destination persistence is not available.");
+
     IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
     IRepository<SecretReference, SecretReferenceId> SecretReferenceRepository { get; }
@@ -138,6 +227,9 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId> NotificationDeliveryAttemptRepository =>
         throw new InvalidOperationException("Notification delivery attempt persistence is not available.");
 
+    IRepository<InstanceEmailSettings, InstanceEmailSettingsId> InstanceEmailSettingsRepository =>
+        throw new InvalidOperationException("Instance email settings persistence is not available.");
+
     IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
     IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
@@ -150,5 +242,61 @@ public interface IVesselDbContext : IUnitOfWork
 
     IRepository<Certificate, CertificateId> CertificateRepository { get; }
 
+    IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
+
     IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; }
+
+    IRepository<SshKey, SshKeyId> SshKeyRepository =>
+        throw new InvalidOperationException("SSH key persistence is not available.");
+
+    IRepository<SettingEntry, SettingId> SettingRepository =>
+        throw new InvalidOperationException("Setting persistence is not available.");
+
+    // IAM-07/IAM-08/IAM-09 identity additions.
+    IQueryable<UserSession> UserSessions => Enumerable.Empty<UserSession>().AsQueryable();
+
+    IQueryable<AuthProvider> AuthProviders => Enumerable.Empty<AuthProvider>().AsQueryable();
+
+    IQueryable<OauthIdentity> OauthIdentities => Enumerable.Empty<OauthIdentity>().AsQueryable();
+
+    IRepository<UserSession, UserSessionId> UserSessionRepository =>
+        throw new InvalidOperationException("Session persistence is not available.");
+
+    IRepository<AuthProvider, AuthProviderId> AuthProviderRepository =>
+        throw new InvalidOperationException("Authentication provider persistence is not available.");
+
+    IRepository<OauthIdentity, OauthIdentityId> OauthIdentityRepository =>
+        throw new InvalidOperationException("External identity persistence is not available.");
+
+    IRepository<AuditLog, AuditLogId> AuditLogRepository =>
+        throw new InvalidOperationException("Audit log persistence is not available.");
+    // Server monitoring, runtime status and Docker cleanup (SRV-03/04/07/08).
+    IQueryable<ServerMetricSample> ServerMetricSamples => Enumerable.Empty<ServerMetricSample>().AsQueryable();
+
+    IQueryable<ContainerMetricSample> ContainerMetricSamples =>
+        Enumerable.Empty<ContainerMetricSample>().AsQueryable();
+
+    IQueryable<ServerMonitoringSettings> ServerMonitoringSettings =>
+        Enumerable.Empty<ServerMonitoringSettings>().AsQueryable();
+
+    IQueryable<ResourceRuntimeStatus> ResourceRuntimeStatuses =>
+        Enumerable.Empty<ResourceRuntimeStatus>().AsQueryable();
+
+    IQueryable<DockerCleanupExecution> DockerCleanupExecutions =>
+        Enumerable.Empty<DockerCleanupExecution>().AsQueryable();
+
+    IRepository<ServerMetricSample, ServerMetricSampleId> ServerMetricSampleRepository =>
+        throw new InvalidOperationException("Server metric persistence is not available.");
+
+    IRepository<ContainerMetricSample, ContainerMetricSampleId> ContainerMetricSampleRepository =>
+        throw new InvalidOperationException("Container metric persistence is not available.");
+
+    IRepository<ServerMonitoringSettings, ServerId> ServerMonitoringSettingsRepository =>
+        throw new InvalidOperationException("Server monitoring settings persistence is not available.");
+
+    IRepository<ResourceRuntimeStatus, ResourceRuntimeStatusId> ResourceRuntimeStatusRepository =>
+        throw new InvalidOperationException("Resource runtime status persistence is not available.");
+
+    IRepository<DockerCleanupExecution, DockerCleanupExecutionId> DockerCleanupExecutionRepository =>
+        throw new InvalidOperationException("Docker cleanup execution persistence is not available.");
 }

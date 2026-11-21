@@ -170,6 +170,77 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         }
     }
 
+    public async Task<ProcessResult> RunStreamingAsync(
+        ProcessCommand command,
+        ProcessStreams streams,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateCommand(command, ProcessOutputMode.Stream);
+        ArgumentNullException.ThrowIfNull(streams);
+        if (streams.StandardInput is { CanRead: false })
+            throw new InvalidOperationException("Process standard input stream is not readable.");
+        if (streams.StandardOutput is { CanWrite: false })
+            throw new InvalidOperationException("Process standard output stream is not writable.");
+
+        DateTimeOffset startedAt = timeProvider.GetUtcNow();
+        using CancellationTokenSource timeout = CreateTimeoutToken(command, cancellationToken);
+        ProcessStartInfo startInfo = CreateStartInfo(command, true, true);
+        using SafeFileHandle? nullInput = streams.StandardInput is null ? File.OpenNullHandle() : null;
+        if (nullInput is null)
+            startInfo.RedirectStandardInput = true;
+        else
+            startInfo.StandardInputHandle = nullInput;
+
+        using Process process = Process.Start(startInfo)
+                                ?? throw new InvalidOperationException(
+                                    $"Failed to start process '{command.FileName}'.");
+        var standardOutputText = new BoundedTextCapture(command.MaxOutputBytes);
+        var standardErrorText = new BoundedTextCapture(command.MaxOutputBytes);
+
+        try
+        {
+            Task standardOutput = streams.StandardOutput is null
+                ? standardOutputText.CaptureAsync(process.StandardOutput, timeout.Token)
+                : process.StandardOutput.BaseStream.CopyToAsync(streams.StandardOutput, timeout.Token);
+            Task standardError = standardErrorText.CaptureAsync(process.StandardError, timeout.Token);
+            if (streams.StandardInput is not null)
+                await CopyToProcessInputAsync(streams.StandardInput, process, timeout.Token);
+
+            await Task.WhenAll(standardOutput, standardError);
+            await process.WaitForExitAsync(timeout.Token);
+
+            DateTimeOffset exitedAt = timeProvider.GetUtcNow();
+            return new ProcessResult(
+                command,
+                new ProcessExitInfo(process.ExitCode, false, false, null),
+                process.Id,
+                startedAt,
+                exitedAt,
+                Redact(standardOutputText.ToString(), command),
+                Redact(standardErrorText.ToString(), command));
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            await TerminateAsync(process, command.TerminationPolicy ?? ProcessTerminationPolicy.Default);
+            DateTimeOffset exitedAt = timeProvider.GetUtcNow();
+            var timedOut = !cancellationToken.IsCancellationRequested;
+            return new ProcessResult(
+                command,
+                new ProcessExitInfo(-1, true, timedOut, null),
+                process.Id,
+                startedAt,
+                exitedAt,
+                string.Empty,
+                Redact(standardErrorText.ToString(), command) +
+                (timedOut ? "Process timed out." : "Process was canceled."));
+        }
+        finally
+        {
+            if (!process.HasExited)
+                await TerminateAsync(process, command.TerminationPolicy ?? ProcessTerminationPolicy.Default);
+        }
+    }
+
     public async IAsyncEnumerable<AppProcessOutputLine> StreamLinesAsync(
         ProcessCommand command,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -277,6 +348,9 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
         foreach (var argument in command.Arguments) startInfo.ArgumentList.Add(argument);
 
+        if (!command.InheritEnvironment)
+            startInfo.Environment.Clear();
+
         foreach (var (key, value) in command.Environment ?? new Dictionary<string, string?>())
             startInfo.Environment[key] = value;
 
@@ -319,7 +393,39 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
 
     private static RedactionContext CreateRedactionContext(ProcessCommand command)
     {
-        return new RedactionContext(command.Redaction?.SecretValues, command.Redaction?.PatternNames);
+        return new RedactionContext(command.Redaction?.SecretValues, command.Redaction?.PatternNames,
+            command.Redaction?.KnownValues, command.Redaction?.IsLogOutput ?? false);
+    }
+
+    private static async Task CopyToProcessInputAsync(Stream source, Process process, CancellationToken cancellationToken)
+    {
+        Stream destination = process.StandardInput.BaseStream;
+        var buffer = new byte[81920];
+        try
+        {
+            int read;
+            while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+                try
+                {
+                    await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                }
+                catch (IOException)
+                {
+                    // The process closed its standard input early (for example it rejected the payload);
+                    // its exit code and standard error report the failure.
+                    return;
+                }
+        }
+        finally
+        {
+            try
+            {
+                process.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 
     private static async Task TerminateAsync(Process process, ProcessTerminationPolicy policy)
@@ -357,6 +463,36 @@ public sealed class DotNetProcessRunner(ISecretRedactor redactor, TimeProvider t
         }
         catch (InvalidOperationException)
         {
+        }
+    }
+
+    private sealed class BoundedTextCapture(long maxCharacters)
+    {
+        private readonly System.Text.StringBuilder _builder = new();
+        private bool _truncated;
+
+        public async Task CaptureAsync(StreamReader reader, CancellationToken cancellationToken)
+        {
+            var buffer = new char[4096];
+            int read;
+            while ((read = await reader.ReadAsync(buffer.AsMemory(), cancellationToken)) > 0)
+            {
+                var remaining = maxCharacters - _builder.Length;
+                if (remaining <= 0)
+                {
+                    _truncated = true;
+                    continue;
+                }
+
+                var take = (int)Math.Min(read, remaining);
+                _builder.Append(buffer, 0, take);
+                if (take < read) _truncated = true;
+            }
+        }
+
+        public override string ToString()
+        {
+            return _truncated ? _builder + Environment.NewLine + "[output truncated]" : _builder.ToString();
         }
     }
 

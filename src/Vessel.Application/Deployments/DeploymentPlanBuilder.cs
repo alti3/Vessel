@@ -1,0 +1,250 @@
+using System.Globalization;
+using Vessel.Application.Git;
+using Vessel.Application.Proxy;
+using Vessel.Domain;
+using Vessel.Domain.Applications;
+using Vessel.Domain.Common;
+using Vessel.Domain.Deployments;
+using Vessel.Domain.EnvironmentVariables;
+using Vessel.Domain.Proxy;
+using Vessel.Domain.ValueObjects;
+using Vessel.Domain.Webhooks;
+using AppEntity = Vessel.Domain.Applications.Application;
+using AppId = Vessel.Domain.ApplicationId;
+
+namespace Vessel.Application.Deployments;
+
+/// <summary>
+///     Runtime names of one deployment stack. Production and each preview get disjoint names: previews use their own
+///     compose project (so they never replace production), their own service name and upstream alias (never the display
+///     name) and a <c>pr-{n}</c> suffix that namespaces container and volume names. The suffix is null for production.
+/// </summary>
+public sealed record DeploymentNaming(
+    string ProjectName,
+    string ServiceName,
+    string ImageName,
+    string NetworkName,
+    string UpstreamAlias,
+    string? PreviewSuffix)
+{
+    public bool IsPreview => PreviewSuffix is not null;
+}
+
+/// <summary>
+///     Variables passed to a deployment (production values first, then preview copies, later wins) and the production
+///     keys a preview does not receive (logged by key only, so users know what to add).
+/// </summary>
+public sealed record DeploymentVariableSelection(
+    IReadOnlyList<EnvironmentVariable> Variables,
+    IReadOnlyList<string> WithheldKeys,
+    bool UsesProductionFallback);
+
+/// <summary>
+///     Pure planning rules for a deployment: stack naming, git checkout, preview routing and preview variables.
+///     Kept free of I/O so production/preview isolation is unit tested.
+/// </summary>
+public static class DeploymentPlanBuilder
+{
+    public const int DefaultPort = 8080;
+
+    public static DeploymentNaming Naming(AppId applicationId, ServerId serverId, DeploymentId deploymentId,
+        ApplicationPreview? preview)
+    {
+        var app = applicationId.Value.ToString("N");
+        var network = ProxyNaming.ServerNetwork(serverId);
+        if (preview is null)
+        {
+            var alias = ProxyNaming.UpstreamAlias(applicationId);
+            return new DeploymentNaming($"vessel-{app}", alias, $"vessel/{app}:{deploymentId.Value:N}", network,
+                alias, null);
+        }
+
+        if (preview.ApplicationId != applicationId)
+            throw new DomainException("Preview does not belong to the deployed application.");
+
+        var suffix = PreviewSuffix(preview.PullRequestNumber);
+        var previewAlias = ProxyNaming.PreviewUpstreamAlias(applicationId, preview.PullRequestNumber);
+        return new DeploymentNaming($"vessel-{app}-{suffix}", previewAlias,
+            $"vessel/{app}:{suffix}-{deploymentId.Value:N}", network, previewAlias, suffix);
+    }
+
+    /// <summary>Local image repository of an application (<c>vessel/{applicationId:N}</c>).</summary>
+    public static string ImageRepository(AppId applicationId)
+    {
+        return $"vessel/{applicationId.Value:N}";
+    }
+
+    /// <summary>
+    ///     Production image reference. Images are tagged by commit SHA (Coolify tags by commit) so earlier commits stay
+    ///     available as rollback targets; without a resolved commit the deployment ID is the tag.
+    /// </summary>
+    public static string ProductionImage(AppId applicationId, string? commitSha, DeploymentId deploymentId,
+        string? registryImage = null)
+    {
+        var tag = GitRef.IsCommitShaValue(commitSha) && commitSha!.Length <= 64
+            ? commitSha.ToLowerInvariant()
+            : deploymentId.Value.ToString("N");
+        // A configured registry repository (validated, without tag) names the image so it can be pushed and pulled.
+        var repository = string.IsNullOrWhiteSpace(registryImage)
+            ? ImageRepository(applicationId)
+            : ImageReference.ParseRepository(registryImage).Repository;
+        return $"{repository}:{tag}";
+    }
+
+    /// <summary>Local image repositories of an application: its own and, when configured, its registry repository.</summary>
+    public static IReadOnlyList<string> ImageRepositories(AppEntity application)
+    {
+        ArgumentNullException.ThrowIfNull(application);
+        var registry = application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
+            ? null
+            : application.BuildConfiguration.RegistryImage;
+        return registry is null ? [ImageRepository(application.Id)] : [ImageRepository(application.Id), registry];
+    }
+
+    public static string PreviewSuffix(int pullRequestNumber)
+    {
+        if (pullRequestNumber <= 0) throw new DomainException("Pull request number must be positive.");
+        return "pr-" + pullRequestNumber.ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    ///     Provider ref that holds a pull request head in the target repository, so fork commits are reachable:
+    ///     GitHub and Gitea <c>refs/pull/{n}/head</c>, GitLab <c>refs/merge-requests/{n}/head</c>. Bitbucket has no PR refs,
+    ///     so its source branch is fetched (same-repository pull requests only).
+    /// </summary>
+    public static string PullRequestFetchRef(WebhookProvider provider, int pullRequestNumber, string sourceBranch)
+    {
+        if (pullRequestNumber <= 0) throw new DomainException("Pull request number must be positive.");
+        var number = pullRequestNumber.ToString(CultureInfo.InvariantCulture);
+        return provider switch
+        {
+            WebhookProvider.GitHub or WebhookProvider.Gitea => $"refs/pull/{number}/head",
+            WebhookProvider.GitLab => $"refs/merge-requests/{number}/head",
+            WebhookProvider.Bitbucket => GitRef.Parse(sourceBranch, "pull request source branch").Value,
+            _ => throw new DomainException($"Preview deployments are not supported for provider {provider}.")
+        };
+    }
+
+    /// <summary>
+    ///     Builds the checkout for a deployment. Refs are validated here (at start) in addition to queue time.
+    ///     Previews fetch the provider PR ref and pin the PR head commit; production deploys the requested commit,
+    ///     the application's pinned commit, or the branch head.
+    /// </summary>
+    public static GitCheckoutRequest Checkout(AppEntity application, Deployment deployment,
+        ApplicationPreview? preview, string targetDirectory)
+    {
+        // SEC-10: the persisted source is validated again at start (it may predate stricter validation).
+        application.GitSource.EnsureSafeForGit();
+        Uri repositoryUrl = application.GitSource.RepositoryUrl.ToTransportUri();
+        GitRef branch = GitRef.Parse(application.GitSource.Branch, "application branch");
+
+        if (preview is not null)
+        {
+            if (preview.ApplicationId != application.Id)
+                throw new DomainException("Preview does not belong to the deployed application.");
+            var expected = FirstCommitSha(deployment.CommitSha, preview.CommitSha);
+            return new GitCheckoutRequest(repositoryUrl, targetDirectory, GitCheckoutKind.PullRequest,
+                PullRequestFetchRef(preview.Provider, preview.PullRequestNumber, preview.SourceBranch),
+                null, expected);
+        }
+
+        var requested = IsUnresolved(deployment.CommitSha) ? application.GitSource.CommitSha : deployment.CommitSha;
+        if (IsUnresolved(requested))
+            return new GitCheckoutRequest(repositoryUrl, targetDirectory, GitCheckoutKind.Named, branch.Value);
+
+        GitRef reference = GitRef.Parse(requested, "deployment commit or ref");
+        return reference.IsCommitSha
+            ? new GitCheckoutRequest(repositoryUrl, targetDirectory, GitCheckoutKind.Commit, reference.Value,
+                branch.Value)
+            : new GitCheckoutRequest(repositoryUrl, targetDirectory, GitCheckoutKind.Named, reference.Value);
+    }
+
+    /// <summary>
+    ///     Validates a commit or ref supplied at queue time (UI, API or webhook). Returns null for "use the branch head".
+    /// </summary>
+    public static string? NormalizeRequestedRef(string? value)
+    {
+        if (IsUnresolved(value)) return null;
+        return GitRef.Parse(value, "commit or ref").Value;
+    }
+
+    /// <summary>
+    ///     Preview host derived from the application's canonical (or first) DNS domain using Coolify's default preview
+    ///     template <c>{{pr_id}}.{{domain}}</c>. The preview keeps the source route's path prefix, TLS and route policy.
+    ///     Returns null when the application has no DNS domain to derive from (wildcard and IP hosts cannot be prefixed).
+    /// </summary>
+    public static PreviewRoute? PreviewRoute(IEnumerable<ApplicationDomain> domains, int pullRequestNumber,
+        int defaultPort)
+    {
+        ApplicationDomain? domain = domains
+            .Where(item => item.HostKind == RouteHostKind.Dns)
+            .OrderByDescending(item => item.Canonical)
+            .ThenBy(item => item.Host, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.PathPrefix, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (domain is null) return null;
+
+        DomainName host;
+        try
+        {
+            host = new DomainName($"{pullRequestNumber.ToString(CultureInfo.InvariantCulture)}.{domain.Host}");
+        }
+        catch (DomainException)
+        {
+            return null;
+        }
+
+        var scheme = domain.TlsEnabled ? "https" : "http";
+        return new PreviewRoute(host.Value, $"{scheme}://{host.Value}{domain.PathPrefix}",
+            domain.TargetPort ?? defaultPort, domain.TlsEnabled, domain.PathPrefix, domain.Policy);
+    }
+
+    /// <summary>
+    ///     Selects variables per Coolify's preview rules. Production deployments never receive preview copies. A preview
+    ///     always receives its preview copies; it falls back to production runtime values (for keys without a preview
+    ///     copy) only when public/fork previews are off and at least one preview copy exists. Public previews never
+    ///     receive production values.
+    /// </summary>
+    public static DeploymentVariableSelection SelectVariables(IReadOnlyList<EnvironmentVariable> applicable,
+        bool isPreview, bool publicPreviewsEnabled)
+    {
+        EnvironmentVariable[] production = applicable.Where(variable => !variable.IsPreview).ToArray();
+        if (!isPreview) return new DeploymentVariableSelection(production, [], false);
+
+        EnvironmentVariable[] previewCopies = applicable.Where(variable => variable.IsPreview).ToArray();
+        var previewKeys = previewCopies.Select(variable => variable.Key.Value).ToHashSet(StringComparer.Ordinal);
+        var fallback = !publicPreviewsEnabled && previewCopies.Length > 0;
+        EnvironmentVariable[] inherited = fallback
+            ? production.Where(variable => !previewKeys.Contains(variable.Key.Value)).ToArray()
+            : [];
+        var passedKeys = previewKeys.Concat(inherited.Select(variable => variable.Key.Value))
+            .ToHashSet(StringComparer.Ordinal);
+        var withheld = production.Select(variable => variable.Key.Value)
+            .Where(key => !passedKeys.Contains(key))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .ToArray();
+        return new DeploymentVariableSelection([.. inherited, .. previewCopies], withheld, fallback);
+    }
+
+    private static string? FirstCommitSha(params string?[] candidates)
+    {
+        return candidates.FirstOrDefault(GitRef.IsCommitShaValue);
+    }
+
+    private static bool IsUnresolved(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ||
+               string.Equals(value.Trim(), "pending", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value.Trim(), "HEAD", StringComparison.Ordinal);
+    }
+}
+
+/// <summary>Routing record of one preview: its own host and URL, never a production host.</summary>
+public sealed record PreviewRoute(
+    string Host,
+    string Url,
+    int TargetPort,
+    bool TlsEnabled,
+    string PathPrefix = "",
+    RoutePolicy? Policy = null);

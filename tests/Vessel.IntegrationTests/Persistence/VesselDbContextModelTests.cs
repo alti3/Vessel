@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
@@ -131,6 +132,23 @@ public sealed class VesselDbContextModelTests
     }
 
     [Fact]
+    public void Model_MapsServerProxySettingsKeyedByServer()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? settings = context.Model.FindEntityType(typeof(ServerProxySettings));
+
+        Assert.Equal("server_proxy_settings", settings?.GetTableName());
+        IProperty key = Assert.Single(settings!.FindPrimaryKey()!.Properties);
+        Assert.Equal("ServerId", key.GetColumnName());
+        Assert.Equal(255, settings.FindProperty(nameof(ServerProxySettings.Image))?.GetMaxLength());
+        Assert.Null(settings.FindProperty(nameof(ServerProxySettings.ServerId)));
+        Assert.Contains(settings.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(Server) &&
+                          foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
+    }
+
+    [Fact]
     public void Model_MapsDeploymentMvpMetadata()
     {
         using VesselDbContext context = CreateContext();
@@ -177,6 +195,120 @@ public sealed class VesselDbContextModelTests
         Assert.Equal("backup_executions", execution?.GetTableName());
         Assert.Equal(512, execution?.FindProperty(nameof(BackupExecution.ArtifactKey))?.GetMaxLength());
         Assert.Equal(1000, execution?.FindProperty(nameof(BackupExecution.LastRestoreFailureReason))?.GetMaxLength());
+    }
+
+    [Fact]
+    public void Model_MapsPerApplicationWebhookVerificationAndPreviewIsolation()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType webhookEvent = context.Model.FindEntityType(typeof(WebhookEvent))!;
+        IProperty verified = webhookEvent.FindProperty(nameof(WebhookEvent.VerifiedApplicationIds))!;
+        Assert.Equal("uuid[]", verified.GetColumnType());
+        Assert.False(verified.IsNullable);
+
+        IEntityType preview = context.Model.FindEntityType(typeof(ApplicationPreview))!;
+        Assert.NotNull(preview.FindProperty(nameof(ApplicationPreview.SourceRepository)));
+        Assert.NotNull(preview.FindProperty(nameof(ApplicationPreview.IsSameRepository)));
+
+        // Index facets such as NULLS NOT DISTINCT are design-time annotations (used by migrations).
+        IModel designModel = context.GetService<Microsoft.EntityFrameworkCore.Metadata.IDesignTimeModel>().Model;
+        IEntityType variable = designModel.FindEntityType(typeof(EnvironmentVariable))!;
+        IIndex unique = Assert.Single(variable.GetIndexes(), index => index.IsUnique);
+        Assert.Contains(unique.Properties, property => property.Name == nameof(EnvironmentVariable.IsPreview));
+        Assert.Equal(false, unique.FindAnnotation("Npgsql:NullsDistinct")?.Value);
+    }
+
+    [Fact]
+    public void Model_MapsDatabaseRestoresAndBackupTimeout()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? schedule = context.Model.FindEntityType(typeof(BackupSchedule));
+        IEntityType? restore = context.Model.FindEntityType(typeof(DatabaseRestore));
+
+        Assert.Equal(BackupSchedule.DefaultTimeoutSeconds,
+            schedule?.FindProperty(nameof(BackupSchedule.TimeoutSeconds))?.GetDefaultValue());
+        Assert.Equal("database_restores", restore?.GetTableName());
+        Assert.Equal(32, restore?.FindProperty(nameof(DatabaseRestore.Status))?.GetMaxLength());
+        Assert.Equal(DatabaseRestore.MaxLogLength, restore?.FindProperty(nameof(DatabaseRestore.Log))?.GetMaxLength());
+        Assert.Null(restore?.FindProperty(nameof(DatabaseRestore.IsActive)));
+        Assert.Null(context.Model.FindEntityType(typeof(BackupExecution))
+            ?.FindProperty(nameof(BackupExecution.HasRestorableArtifact)));
+    }
+
+    [Fact]
+    public void Model_MapsBackupDestinationsSchedulesReplicasAndHealthChecks()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? destination = context.Model.FindEntityType(typeof(BackupDestination));
+        IEntityType? join = context.Model.FindEntityType(typeof(BackupScheduleDestination));
+        IEntityType? replica = context.Model.FindEntityType(typeof(BackupArtifactReplica));
+        IEntityType? schedule = context.Model.FindEntityType(typeof(BackupSchedule));
+        IEntityType? execution = context.Model.FindEntityType(typeof(BackupExecution));
+        IEntityType? database = context.Model.FindEntityType(typeof(DatabaseResource));
+
+        Assert.Equal("backup_destinations", destination?.GetTableName());
+        Assert.Equal(63, destination?.FindProperty(nameof(BackupDestination.Bucket))?.GetMaxLength());
+        Assert.Equal("backup_schedule_destinations", join?.GetTableName());
+        Assert.Equal("backup_artifact_replicas", replica?.GetTableName());
+        Assert.Equal("*", schedule?.FindProperty(nameof(BackupSchedule.DatabaseSelection))?.GetDefaultValue());
+        Assert.Null(schedule?.FindProperty(nameof(BackupSchedule.LocalRetention)));
+        Assert.Equal(DeleteBehavior.Cascade, execution?.GetForeignKeys()
+            .Single(key => key.PrincipalEntityType.ClrType == typeof(BackupSchedule)).DeleteBehavior);
+        Assert.Equal(DeleteBehavior.SetNull, replica?.GetForeignKeys()
+            .Single(key => key.PrincipalEntityType.ClrType == typeof(BackupDestination)).DeleteBehavior);
+        Assert.Equal(true, database?.FindProperty(nameof(DatabaseResource.HealthCheckEnabled))?.GetDefaultValue());
+        Assert.Equal(DatabaseImage.MaxLength, database?.FindProperty(nameof(DatabaseResource.Image))?.GetMaxLength());
+        Assert.DoesNotContain(context.Model.GetEntityTypes(),
+            entity => entity.GetTableName() == "database_backup_policies");
+    }
+
+    [Fact]
+    public void Model_StoresAccessGrantsAsJsonbAndTracksPausedTokens()
+    {
+        using VesselDbContext context = CreateContext();
+
+        foreach (Type entity in new[]
+                 {
+                     typeof(TeamMembership), typeof(TeamInvitation), typeof(Vessel.Domain.Users.PersonalAccessToken)
+                 })
+        {
+            IProperty? grants = context.Model.FindEntityType(entity)?.FindProperty("AccessGrants");
+            Assert.NotNull(grants);
+            Assert.Equal("jsonb", grants.GetColumnType());
+            Assert.True(grants.IsNullable);
+        }
+
+        IProperty? pausedAt = context.Model.FindEntityType(typeof(Vessel.Domain.Users.PersonalAccessToken))
+            ?.FindProperty(nameof(Vessel.Domain.Users.PersonalAccessToken.PausedAt));
+        Assert.NotNull(pausedAt);
+        Assert.True(pausedAt.IsNullable);
+    }
+
+    [Fact]
+    public void AccessGrantColumns_RoundTripAndDropUnknownValues()
+    {
+        using VesselDbContext context = CreateContext();
+        IProperty grants = context.Model.FindEntityType(typeof(TeamMembership))!.FindProperty("AccessGrants")!;
+        var converter = grants.GetValueConverter()!;
+        var projectId = Guid.NewGuid();
+        IReadOnlyList<Vessel.Domain.Access.AccessGrant> value =
+        [
+            Vessel.Domain.Access.AccessGrant.Team(Vessel.Domain.Access.AccessLevel.Read),
+            new(Vessel.Domain.Access.AccessScope.Project, projectId,
+                [Vessel.Domain.Access.AccessLevel.Write, Vessel.Domain.Access.AccessLevel.Deploy])
+        ];
+
+        var json = (string)converter.ConvertToProvider(value)!;
+        var restored = (IReadOnlyList<Vessel.Domain.Access.AccessGrant>)converter.ConvertFromProvider(json)!;
+        var tampered = (IReadOnlyList<Vessel.Domain.Access.AccessGrant>)converter.ConvertFromProvider(
+            """[{"scope":"galaxy","target":null,"levels":["read"]},{"scope":"team","levels":["read","sudo"]}]""")!;
+
+        Assert.Contains("\"write\"", json, StringComparison.Ordinal);
+        Assert.Equal(value, restored);
+        Assert.Equal([Vessel.Domain.Access.AccessGrant.Team(Vessel.Domain.Access.AccessLevel.Read)], tampered);
     }
 
     private static VesselDbContext CreateContext()

@@ -2,12 +2,41 @@ using System.Collections.Concurrent;
 using Vessel.Application.Processes;
 using Vessel.Application.Terminals;
 using Vessel.Domain;
+using Vessel.Domain.Servers;
 using Vessel.Domain.Terminals;
 
 namespace Vessel.Infrastructure.Processes;
 
+/// <summary>
+/// Runs host-local terminal shells through <see cref="IProcessRunner"/>. The shell never inherits the daemon
+/// environment: it starts from an explicit allowlist so values such as <c>Secrets__MasterKey</c> or database
+/// connection strings are not visible to the session.
+/// </summary>
 public sealed class InteractiveTerminalProcessBridge(IProcessRunner processRunner) : ITerminalProcessBridge, IAsyncDisposable
 {
+    /// <summary>Non-secret variables copied from the daemon environment when present.</summary>
+    public static readonly IReadOnlySet<string> AllowedInheritedVariables = new HashSet<string>(
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "TZ",
+        // Windows process essentials.
+        "SystemRoot",
+        "SystemDrive",
+        "ComSpec",
+        "PATHEXT",
+        "WINDIR",
+        "USERPROFILE",
+        "TEMP",
+        "TMP"
+    };
+
     private readonly ConcurrentDictionary<TerminalSessionId, TerminalProcessHandle> _sessions = new();
 
     public async Task OpenAsync(
@@ -16,8 +45,10 @@ public sealed class InteractiveTerminalProcessBridge(IProcessRunner processRunne
         Func<TerminalSessionId, string?, CancellationToken, Task> onExit,
         CancellationToken cancellationToken = default)
     {
+        if (!Server.IsHostLocalConnection(request.TargetConnection))
+            throw new InvalidOperationException(TerminalTargetPolicy.RemoteNotSupportedMessage);
         if (request.TargetType == TerminalTargetType.Container)
-            throw new InvalidOperationException("Container terminal sessions require a reviewed docker exec PTY bridge.");
+            throw new InvalidOperationException(TerminalTargetPolicy.ContainerNotSupportedMessage);
 
         List<string> arguments = [];
         if (OperatingSystem.IsWindows() && request.Command.EndsWith("pwsh", StringComparison.OrdinalIgnoreCase))
@@ -34,9 +65,11 @@ public sealed class InteractiveTerminalProcessBridge(IProcessRunner processRunne
         var command = new ProcessCommand(
             request.Command,
             arguments,
+            Environment: BuildEnvironment(),
             Timeout: request.MaxLifetime,
             OutputMode: ProcessOutputMode.None,
-            TerminationPolicy: new ProcessTerminationPolicy(TimeSpan.FromMilliseconds(100), true, true));
+            TerminationPolicy: new ProcessTerminationPolicy(TimeSpan.FromMilliseconds(100), true, true),
+            InheritEnvironment: false);
 
         IInteractiveProcess process;
         try
@@ -95,6 +128,23 @@ public sealed class InteractiveTerminalProcessBridge(IProcessRunner processRunne
             await StopAsync(handle, CancellationToken.None);
 
         _sessions.Clear();
+    }
+
+    /// <summary>Builds the explicit, minimal terminal environment.</summary>
+    public static IReadOnlyDictionary<string, string?> BuildEnvironment()
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (string name in AllowedInheritedVariables)
+        {
+            string? value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrEmpty(value)) environment[name] = value;
+        }
+
+        if (!environment.ContainsKey("PATH") && !OperatingSystem.IsWindows())
+            environment["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+        environment["TERM"] = "xterm-256color";
+        environment.TryAdd("LANG", "C.UTF-8");
+        return environment;
     }
 
     private static async Task PumpAsync(

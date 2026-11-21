@@ -1,6 +1,9 @@
+using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -11,27 +14,56 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Vessel.Application.Auditing;
 using Vessel.Application.Auth;
+using Vessel.Application.Auth.External;
+using Vessel.Application.Auth.Sessions;
 using Vessel.Application.Authorization;
+using Vessel.Application.Backups;
+using Vessel.Application.Backups.Volumes;
+using Vessel.Application.Common;
 using Vessel.Application.Dashboard;
 using Vessel.Application.Deployments;
+using Vessel.Application.Deployments.Previews;
+using Vessel.Application.Deployments.Queue;
+using Vessel.Application.Deployments.Rollback;
+using Vessel.Application.Deployments.Settings;
 using Vessel.Application.Diagnostics;
+using Vessel.Application.Email;
+using Vessel.Application.Instance;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.ManagedServices.DatabaseImports;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Monitoring;
+using Vessel.Application.Monitoring.HostMetrics;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
+using Vessel.Application.Proxy.Certificates;
+using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Resources;
+using Vessel.Application.Resources.RuntimeLogs;
+using Vessel.Application.Resources.Status;
 using Vessel.Application.Security;
+using Vessel.Application.Security.ApiAbuse;
+using Vessel.Application.Servers;
+using Vessel.Application.Servers.Alerts;
+using Vessel.Application.Servers.DockerCleanup;
+using Vessel.Application.Servers.Validation;
+using Vessel.Application.Sources;
+using Vessel.Application.Ssh;
+using Vessel.Application.Ssh.Keys;
 using Vessel.Application.Storage;
+using Vessel.Application.Storage.Persistent;
 using Vessel.Application.Terminals;
 using Vessel.Application.Webhooks;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
+using Vessel.Web.Diagnostics;
 using Vessel.Web.Middleware;
+using Vessel.Web.OpenApi;
 using Vessel.Web.Realtime;
 using Vessel.Web.Security;
 
@@ -55,13 +87,17 @@ public static class ServiceCollectionExtensions
         services.AddSignalR();
         services.AddHttpContextAccessor();
         services.AddCascadingAuthenticationState();
+        // IAM-09: Blazor circuits re-check their server-side session every minute.
+        services.AddScoped<AuthenticationStateProvider, VesselRevalidatingAuthenticationStateProvider>();
 
         services.AddVesselWebOptions(configuration);
         services.AddVesselApplicationServices(configuration);
         services.AddVesselAuthenticationAndAuthorization();
         services.AddVesselRateLimiting(configuration);
+        services.AddVesselForwardedHeaders(configuration);
         services.AddVesselOpenTelemetry(configuration, environment);
         services.AddVesselHealthChecks();
+        services.AddVesselOpenApi();
 
         return services;
     }
@@ -80,27 +116,128 @@ public static class ServiceCollectionExtensions
             .Validate(options => options.InvitationExpirationDays > 0, "Invitation expiration must be positive.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<InstanceUrlOptions>()
+            .Bind(configuration.GetSection(InstanceUrlOptions.SectionName))
+            .Validate(options => string.IsNullOrWhiteSpace(options.PublicUrl)
+                                 || InstanceUrlOptions.ParseBaseUrl(options.PublicUrl) is not null,
+                "Vessel:Host:PublicUrl must be an absolute http(s) URL without credentials, query, or fragment.")
+            .ValidateOnStart();
+
         services.TryAddScoped<IVesselDbContext, UnavailableVesselDbContext>();
         services.TryAddScoped<IUnitOfWork>(provider => provider.GetRequiredService<IVesselDbContext>());
         services.TryAddScoped<IAuditWriter, NoopAuditWriter>();
         services.AddScoped<VesselAuthenticationService>();
+        // IAM-07/IAM-08/IAM-09: external sign-in, audit context/query/retention, sessions, token expiry warnings.
+        services.AddOptions<AuditOptions>().Bind(configuration.GetSection(AuditOptions.SectionName));
+        services.AddScoped<IAuditContextAccessor, HttpAuditContextAccessor>();
+        services.AddScoped<AuditQueryService>();
+        services.AddScoped<AuditRetentionService>();
+        services.AddScoped<AuditRetentionJob>();
+        services.AddScoped<AuditAnonymizationService>();
+        services.AddScoped<UserSessionService>();
+        services.AddScoped<SessionPruneJob>();
+        services.AddScoped<VesselSessionManager>();
+        services.AddScoped<ExternalLoginService>();
+        services.AddScoped<AuthProviderAdminService>();
+        services.AddScoped<TokenExpiryWarningService>();
+        services.AddScoped<TokenExpiryWarningJob>();
+        services.AddMemoryCache();
         services.AddScoped<VesselTokenService>();
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
+        // IAM-05 access grants: member layer + request token layer, consulted by VesselAuthorizationService.
+        services.AddScoped<IApiTokenAccessContext, HttpApiTokenAccessContext>();
+        services.AddScoped<IAccessResolver, AccessResolver>();
+        services.AddScoped<AccessScopedCatalog>();
+        services.AddScoped<InstanceSettingsService>();
+        // SEC-07 / SEC-13 abuse throttles (Redis when enabled, otherwise in-process counters).
+        services.TryAddSingleton<IRedisCache, InMemoryRedisCache>();
+        services.AddSingleton<WebhookFailureThrottle>();
+        services.AddScoped<ApiFailedRequestThrottle>();
         services.AddScoped<ResourceManagementService>();
         services.AddScoped<StartDeploymentService>();
         services.AddScoped<DeploymentQueryService>();
         services.AddScoped<DeploymentLogRetentionService>();
         services.AddScoped<IDeploymentRunner, DeploymentRunner>();
+        services.AddSingleton<IDeploymentCancellationRegistry, DeploymentCancellationRegistry>();
+        services.AddScoped<DeploymentQueueService>();
+        services.AddScoped<DeploymentQueueJob>();
+        services.AddScoped<PreviewLifecycleService>();
+        services.AddScoped<CleanupPreviewJob>();
+        services.AddScoped<RollbackService>();
+        services.AddScoped<DeploymentSettingsService>();
+        services.AddScoped<Vessel.Application.Deployments.BuildPacks.BuildSettingsService>();
         services.AddScoped<TerminalSessionManager>();
+        services.TryAddSingleton<TerminalAttachTokens>();
+        services.TryAddSingleton<SshHostKeyScanThrottle>();
+        services.AddScoped<ServerSshConnectionService>();
+        services.AddScoped<SshKeyService>();
+        services.AddScoped<IGitCredentialProvider, GitCredentialResolver>();
+        services.AddScoped<GitSourceService>();
+        services.AddScoped<SshKeyRotationService>();
+        services.AddScoped<RotateSshKeyJob>();
+        services.AddScoped<ServerManagementService>();
+        services.AddScoped<ServerValidationService>();
+        services.AddScoped<ValidateServerJob>();
         services.AddScoped<ServerHealthPollingService>();
         services.AddScoped<ServerHealthPollingJob>();
+        // SRV-03/04/05/07/08: metrics, runtime status, runtime logs, Docker cleanup and server alerts.
+        services.AddScoped<ServerMetricsCollectionService>();
+        services.AddScoped<ServerMetricsQueryService>();
+        services.AddScoped<ServerMetricsRetentionService>();
+        services.AddScoped<ServerMonitoringSettingsService>();
+        services.TryAddScoped<IServerMetricsPruner, QueryableServerMetricsPruner>();
+        services.AddScoped<ServerMetricsDispatchJob>();
+        services.AddScoped<CollectServerMetricsJob>();
+        services.AddScoped<ServerMetricsRetentionJob>();
+        services.AddScoped<ServerAlertEvaluator>();
+        services.AddScoped<ResourceStatusReconciler>();
+        services.AddScoped<ExpectedStopRecorder>();
+        services.AddScoped<ResourceRuntimeStatusService>();
+        services.AddScoped<NotifyResourceStoppedJob>();
+        services.AddScoped<RuntimeLogQueryService>();
+        services.AddScoped<DockerCleanupService>();
+        services.AddScoped<RunDockerCleanupJob>();
+        services.AddScoped<DockerCleanupScheduleSyncJob>();
         services.AddScoped<ManagedDatabaseService>();
-        services.AddSingleton<ServiceTemplateCatalog>();
+        services.AddScoped<DatabaseRestoreService>();
+        services.AddScoped<DatabaseHealthProbe>();
+        services.AddScoped<DatabaseHealthPollingJob>();
+        services.AddScoped<DatabaseBackupService>();
+        services.AddScoped<BackupDestinationService>();
+        services.AddScoped<BackupDestinationConnector>();
+        services.AddScoped<BackupArtifactReader>();
+        services.AddScoped<CheckMissingBackupsJob>();
+        services.AddScoped<RevalidateBackupDestinationsJob>();
+        // DATA-12 persistent storage, DATA-09 volume backups, DATA-10 database imports.
+        services.AddScoped<StorageOwnerAccess>();
+        services.AddScoped<ResourceStorageService>();
+        services.AddScoped<ResourceStorageProvisioner>();
+        services.AddScoped<VolumeBackupService>();
+        services.AddScoped<RunVolumeBackupJob>();
+        services.AddScoped<RunVolumeBackupExecutionJob>();
+        services.AddScoped<RunVolumeRestoreJob>();
+        services.AddScoped<VolumeBackupRecoveryJob>();
+        services.AddScoped<CheckMissingVolumeBackupsJob>();
+        services.AddScoped<DatabaseImportService>();
+        services.AddScoped<DatabaseImportArtifactSource>();
+        services.AddScoped<CleanupDatabaseImportUploadsJob>();
+        services.AddSingleton(provider => ServiceTemplateCatalog.Create(
+            provider.GetService<IServiceTemplateComposeProcessor>(), provider.GetService<IServiceTemplateSource>()));
         services.AddScoped<DomainRoutingService>();
         services.AddScoped<ProxyConfigurationService>();
+        services.AddScoped<ProxyLifecycleService>();
+        services.AddScoped<IProxyStatusProbe>(provider => provider.GetRequiredService<ProxyLifecycleService>());
         services.AddScoped<CertificateManagementService>();
-        services.AddScoped<CertificateRenewalJob>();
+        services.AddScoped<CertificateInventoryService>();
+        services.AddScoped<CertificateSyncJob>();
+        services.AddScoped<ProxyConfigurationHistoryCleanupJob>();
+        services.AddScoped<ProxyRouteProjector>();
+        services.AddScoped<ProxyConfigurationProtector>();
+        services.AddScoped<RoutePolicyWriter>();
+        services.AddScoped<ServiceDomainService>();
+        services.AddScoped<ServiceRoutingCoordinator>();
         services.AddScoped<CertificateIssuanceJob>();
         services.AddScoped<WebhookReceiptService>();
         services.AddScoped<WebhookProcessingService>();
@@ -110,10 +247,21 @@ public static class ServiceCollectionExtensions
         services.AddScoped<NotificationEventService>();
         services.AddScoped<NotificationDispatchService>();
         services.AddScoped<DispatchNotificationJob>();
+        services.AddScoped<RaiseNotificationJob>();
+        services.AddScoped<NotificationThrottlePurgeJob>();
+        services.AddSingleton<InstanceLinkBuilder>();
+        services.AddScoped<InstanceEmailSender>();
+        services.AddScoped<InstanceEmailOutbox>();
+        services.AddScoped<SendInstanceEmailJob>();
+        services.AddScoped<InstanceEmailSettingsService>();
+        services.AddScoped<AuthEmailService>();
         services.AddScoped<TotpService>();
+        services.AddScoped<SecretReencryptionService>();
+        services.AddScoped<SecretReencryptionJob>();
         services.TryAddScoped<ISecretVault, UnavailableSecretVault>();
         services.TryAddSingleton<IDatabaseBackupProvider, UnavailableDatabaseBackupProvider>();
         services.TryAddSingleton<IObjectStorage, UnavailableObjectStorage>();
+        services.TryAddSingleton<IBackupStorageProvider, UnavailableBackupStorageProvider>();
         services.TryAddSingleton<IDistributedLockManager, InMemoryDistributedLockManager>();
         services.TryAddSingleton<IBackgroundJobDispatcher, UnavailableBackgroundJobDispatcher>();
         services.TryAddSingleton<IRecurringJobScheduler, UnavailableRecurringJobScheduler>();
@@ -128,6 +276,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationCatalogQuery, EmptyNotificationCatalogQuery>();
         services.AddScoped<ISettingsCatalogQuery, EmptySettingsCatalogQuery>();
         services.TryAddScoped<IServerHealthQuery, EmptyServerHealthQuery>();
+        services.AddVesselSchedulingServices();
+        services.AddVesselOperationsServices();
 
         return services;
     }
@@ -165,6 +315,8 @@ public static class ServiceCollectionExtensions
                     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
                     options.LoginPath = "/api/auth/login";
                     options.LogoutPath = "/api/auth/logout";
+                    // IAM-09: every request re-validates the server-side session (revocation, active team).
+                    options.EventsType = typeof(VesselCookieAuthenticationEvents);
                 })
             .AddScheme<AuthenticationSchemeOptions, VesselBearerAuthenticationHandler>(
                 VesselAuthenticationSchemes.Bearer,
@@ -176,8 +328,17 @@ public static class ServiceCollectionExtensions
                 options.AddPolicy(permission, policy => policy
                     .RequireAuthenticatedUser()
                     .AddRequirements(new PermissionRequirement(permission)));
+
+            options.AddPolicy(VesselAuthorizationPolicies.InteractiveSession, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => VesselAuthorizationPolicies.IsInteractiveSession(context.User)));
+            options.AddPolicy(VesselAuthorizationPolicies.InteractiveSessionOrRootToken, policy => policy
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context =>
+                    VesselAuthorizationPolicies.IsInteractiveSessionOrRootToken(context.User)));
         });
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddScoped<VesselCookieAuthenticationEvents>();
 
         return services;
     }
@@ -254,7 +415,10 @@ public static class ServiceCollectionExtensions
                             activity.SetTag("vessel.correlation_id", correlationId.ToString());
                     };
                 })
-                .AddHttpClientInstrumentation();
+                .AddHttpClientInstrumentation(options =>
+                    options.EnrichWithHttpRequestMessage = OutboundUrlTelemetryRedaction.EnrichWithHttpRequestMessage)
+                // Must precede exporters: processors run in registration order.
+                .AddProcessor(new OutboundUrlTelemetryRedaction());
 
             if (!string.IsNullOrWhiteSpace(diagnosticsOptions.OtlpEndpoint))
                 tracing.AddOtlpExporter(options => { options.Endpoint = new Uri(diagnosticsOptions.OtlpEndpoint); });
@@ -298,6 +462,32 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    private static IServiceCollection AddVesselForwardedHeaders(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ForwardedHeadersSettings settings = configuration
+            .GetSection(ForwardedHeadersSettings.SectionName)
+            .Get<ForwardedHeadersSettings>() ?? new ForwardedHeadersSettings();
+        IReadOnlyList<string> failures = settings.Validate();
+        if (failures.Count > 0) throw new InvalidOperationException(string.Join(' ', failures));
+
+        services.AddSingleton(settings);
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = settings.ForwardLimit;
+            // No blanket trust: drop the framework's loopback defaults and trust only what is configured.
+            options.KnownProxies.Clear();
+            options.KnownIPNetworks.Clear();
+            foreach (var proxy in settings.KnownProxies) options.KnownProxies.Add(IPAddress.Parse(proxy));
+            foreach (var network in settings.KnownNetworks)
+                options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+        });
+
+        return services;
+    }
+
     private static IServiceCollection AddVesselRateLimiting(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -306,9 +496,20 @@ public static class ServiceCollectionExtensions
             .GetSection(RateLimitOptions.SectionName)
             .Get<RateLimitOptions>() ?? new RateLimitOptions();
 
+        services.AddSingleton(rateLimitOptions.ApiFailedRequests.PermitLimit <= 0
+            ? new ApiFailedRequestThrottleSettings(0, TimeSpan.FromSeconds(60))
+            : new ApiFailedRequestThrottleSettings(rateLimitOptions.ApiFailedRequests.PermitLimit,
+                TimeSpan.FromSeconds(rateLimitOptions.ApiFailedRequests.WindowSeconds)));
+
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            // SEC-13: every /api route shares the "api" budget per client address, not only the endpoints that opt
+            // in. Named policies (auth, terminal, ...) still apply on top.
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
+                    ? CreateLimiter(context, rateLimitOptions.Api, "api-global")
+                    : RateLimitPartition.GetNoLimiter("unlimited"));
             options.AddPolicy("auth", context => CreateLimiter(context, rateLimitOptions.Auth));
             options.AddPolicy("webhooks", context => CreateLimiter(context, rateLimitOptions.Webhooks));
             options.AddPolicy("api", context => CreateLimiter(context, rateLimitOptions.Api));
@@ -320,10 +521,12 @@ public static class ServiceCollectionExtensions
 
     private static RateLimitPartition<string> CreateLimiter(
         HttpContext context,
-        RateLimitPolicyOptions options)
+        RateLimitPolicyOptions options,
+        string? bucket = null)
     {
-        var partitionKey = context.Connection.RemoteIpAddress?.ToString()
-                           ?? context.TraceIdentifier;
+        // RemoteIpAddress is the real client only when it was rewritten by ForwardedHeaders from a trusted proxy.
+        var partitionKey = (bucket is null ? string.Empty : bucket + ":")
+                           + (context.Connection.RemoteIpAddress?.ToString() ?? context.TraceIdentifier);
 
         return RateLimitPartition.GetFixedWindowLimiter(
             partitionKey,

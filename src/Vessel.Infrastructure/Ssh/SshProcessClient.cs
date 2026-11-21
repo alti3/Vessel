@@ -1,9 +1,13 @@
-using System.Globalization;
+using System.Runtime.CompilerServices;
 using Vessel.Application.Processes;
 using Vessel.Application.Ssh;
 
 namespace Vessel.Infrastructure.Ssh;
 
+/// <summary>
+///     OpenSSH client through <see cref="IProcessRunner" />. Argument vectors come from <see cref="SshArguments" />, so
+///     every connection uses the fixed hardened options and Vessel-managed host key verification.
+/// </summary>
 public sealed class SshProcessClient(IProcessRunner processRunner) : ISshClient
 {
     public async Task<bool> TestConnectionAsync(SshConnectionOptions options,
@@ -11,8 +15,8 @@ public sealed class SshProcessClient(IProcessRunner processRunner) : ISshClient
     {
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
             "ssh",
-            BuildSshArgs(options, "true"),
-            Timeout: options.ConnectTimeout ?? TimeSpan.FromSeconds(15),
+            SshArguments.ForSsh(options, "true"),
+            Timeout: (options.ConnectTimeout ?? TimeSpan.FromSeconds(15)) + TimeSpan.FromSeconds(5),
             Redaction: Redaction(options)), cancellationToken);
         return result.Succeeded;
     }
@@ -22,18 +26,60 @@ public sealed class SshProcessClient(IProcessRunner processRunner) : ISshClient
     {
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
             "ssh",
-            BuildSshArgs(request.Connection, request.Command),
+            SshArguments.ForSsh(request.Connection, request.Command),
             Timeout: request.Timeout ?? TimeSpan.FromMinutes(5),
             Redaction: new ProcessRedactionProfile(request.SecretValues ?? [], [])), cancellationToken);
-        return new SshCommandResult(result.ExitInfo.ExitCode, result.StandardOutput, result.StandardError);
+        return new SshCommandResult(ExitCode(result), result.StandardOutput, result.StandardError);
+    }
+
+    public async Task<SshCommandResult> RunCommandWithInputAsync(
+        SshCommandRequest request,
+        Stream standardInput,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await processRunner.RunTextWithInputAsync(new ProcessCommand(
+            "ssh",
+            SshArguments.ForSsh(request.Connection, request.Command),
+            Timeout: request.Timeout ?? TimeSpan.FromMinutes(5),
+            Redaction: new ProcessRedactionProfile(request.SecretValues ?? [], [])), standardInput, cancellationToken);
+        return new SshCommandResult(ExitCode(result), result.StandardOutput, result.StandardError);
+    }
+
+    public async Task<SshCommandResult> RunCommandStreamingAsync(
+        SshCommandRequest request,
+        ProcessStreams streams,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await processRunner.RunStreamingAsync(new ProcessCommand(
+            "ssh",
+            SshArguments.ForSsh(request.Connection, request.Command),
+            Timeout: request.Timeout ?? TimeSpan.FromHours(1),
+            OutputMode: ProcessOutputMode.Stream,
+            Redaction: new ProcessRedactionProfile(request.SecretValues ?? [], []),
+            MaxOutputBytes: 1024 * 1024), streams, cancellationToken);
+        return new SshCommandResult(ExitCode(result), result.StandardOutput, result.StandardError);
+    }
+
+    public async IAsyncEnumerable<ProcessOutputLine> StreamCommandAsync(
+        SshCommandRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (ProcessOutputLine line in processRunner.StreamLinesAsync(new ProcessCommand(
+                               "ssh",
+                               SshArguments.ForSsh(request.Connection, request.Command),
+                               Timeout: request.Timeout ?? TimeSpan.FromMinutes(30),
+                               OutputMode: ProcessOutputMode.Lines,
+                               Redaction: new ProcessRedactionProfile(request.SecretValues ?? [], [])),
+                           cancellationToken))
+            yield return line;
     }
 
     public async Task UploadAsync(SshFileTransferRequest request, CancellationToken cancellationToken = default)
     {
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
             "scp",
-            BuildScpArgs(request.Connection, request.LocalPath,
-                $"{request.Connection.UserName}@{request.Connection.Host}:{request.RemotePath}"),
+            SshArguments.ForScp(request.Connection, request.LocalPath,
+                SshArguments.RemotePath(request.Connection, request.RemotePath)),
             Timeout: TimeSpan.FromMinutes(10),
             Redaction: Redaction(request.Connection)), cancellationToken);
         if (!result.Succeeded) throw new ProcessExecutionException(result);
@@ -43,56 +89,23 @@ public sealed class SshProcessClient(IProcessRunner processRunner) : ISshClient
     {
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
             "scp",
-            BuildScpArgs(request.Connection,
-                $"{request.Connection.UserName}@{request.Connection.Host}:{request.RemotePath}", request.LocalPath),
+            SshArguments.ForScp(request.Connection,
+                SshArguments.RemotePath(request.Connection, request.RemotePath), request.LocalPath),
             Timeout: TimeSpan.FromMinutes(10),
             Redaction: Redaction(request.Connection)), cancellationToken);
         if (!result.Succeeded) throw new ProcessExecutionException(result);
     }
 
-    private static List<string> BuildSshArgs(SshConnectionOptions options, string command)
+    /// <summary>A canceled or timed-out ssh process never reports success, even if it exited with 0.</summary>
+    private static int ExitCode(ProcessResult result)
     {
-        List<string> args = BaseArgs(options);
-        args.Add($"{options.UserName}@{options.Host}");
-        args.Add(command);
-        return args;
-    }
-
-    private static List<string> BuildScpArgs(SshConnectionOptions options, string source, string destination)
-    {
-        List<string> args = BaseArgs(options);
-        args.AddRange([source, destination]);
-        return args;
-    }
-
-    private static List<string> BaseArgs(SshConnectionOptions options)
-    {
-        var args = new List<string>
-        {
-            "-p",
-            options.Port.ToString(CultureInfo.InvariantCulture),
-            "-o",
-            HostKeyOption(options.HostIdentityPolicy),
-            "-o",
-            "BatchMode=yes"
-        };
-        if (!string.IsNullOrWhiteSpace(options.PrivateKeyPath))
-            args.AddRange(["-i", options.PrivateKeyPath]);
-        return args;
-    }
-
-    private static string HostKeyOption(SshHostIdentityPolicy policy)
-    {
-        return policy switch
-        {
-            SshHostIdentityPolicy.InsecureSkipValidation => "StrictHostKeyChecking=no",
-            SshHostIdentityPolicy.TrustOnFirstUse => "StrictHostKeyChecking=accept-new",
-            _ => "StrictHostKeyChecking=yes"
-        };
+        if (result.Succeeded) return 0;
+        return result.ExitInfo.ExitCode == 0 ? -1 : result.ExitInfo.ExitCode;
     }
 
     private static ProcessRedactionProfile Redaction(SshConnectionOptions options)
     {
-        return new ProcessRedactionProfile([options.PasswordSecretReference ?? string.Empty], []);
+        return new ProcessRedactionProfile(
+            string.IsNullOrEmpty(options.PasswordSecretReference) ? [] : [options.PasswordSecretReference], []);
     }
 }

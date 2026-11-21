@@ -80,6 +80,9 @@ public class UnavailableVesselDbContext : IVesselDbContext
 
     public IQueryable<Certificate> Certificates => Enumerable.Empty<Certificate>().AsQueryable();
 
+    public IQueryable<ServerProxySettings> ServerProxySettings =>
+        Enumerable.Empty<ServerProxySettings>().AsQueryable();
+
     public IQueryable<TerminalSession> TerminalSessions => Enumerable.Empty<TerminalSession>().AsQueryable();
 
     public IRepository<User, UserId> UserRepository { get; } = new UnavailableRepository<User, UserId>();
@@ -162,8 +165,17 @@ public class UnavailableVesselDbContext : IVesselDbContext
     public IRepository<Certificate, CertificateId> CertificateRepository { get; } =
         new UnavailableRepository<Certificate, CertificateId>();
 
+    public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; } =
+        new UnavailableRepository<ServerProxySettings, ServerId>();
+
     public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; } =
         new UnavailableRepository<TerminalSession, TerminalSessionId>();
+
+    public virtual IQueryable<InstanceEmailSettings> InstanceEmailSettings =>
+        Enumerable.Empty<InstanceEmailSettings>().AsQueryable();
+
+    public virtual IRepository<InstanceEmailSettings, InstanceEmailSettingsId> InstanceEmailSettingsRepository
+    { get; } = new UnavailableRepository<InstanceEmailSettings, InstanceEmailSettingsId>();
 
     public virtual Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

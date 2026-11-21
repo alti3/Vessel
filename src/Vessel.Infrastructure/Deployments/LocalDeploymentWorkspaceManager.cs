@@ -1,4 +1,3 @@
-using System.Text;
 using Vessel.Application.Deployments;
 using Vessel.Application.Files;
 using Vessel.Domain;
@@ -25,21 +24,16 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
             Path.Combine(root, ".env")));
     }
 
-    public async Task WriteTextAsync(
+    public Task WriteTextAsync(
         string rootDirectory,
         string relativePath,
         string contents,
         bool restrictToOwner,
         CancellationToken cancellationToken = default)
     {
-        var path = paths.EnsureOwnedRelativePath(rootDirectory, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await File.WriteAllTextAsync(path, contents, new UTF8Encoding(false), cancellationToken);
-
-        if (restrictToOwner)
-        {
-            OwnerOnlyFilePermissions.Apply(path);
-        }
+        var root = paths.EnsureOwnedPath(_root, rootDirectory);
+        return SafeFileAccess.WriteAllTextAsync(paths, root, relativePath, contents, restrictToOwner,
+            cancellationToken);
     }
 
     public Task<string> ReadTextAsync(
@@ -47,8 +41,27 @@ public sealed class LocalDeploymentWorkspaceManager(IPathSafetyService paths) : 
         string relativePath,
         CancellationToken cancellationToken = default)
     {
-        var path = paths.EnsureOwnedRelativePath(rootDirectory, relativePath);
-        return File.ReadAllTextAsync(path, cancellationToken);
+        var root = paths.EnsureOwnedPath(_root, rootDirectory);
+        return SafeFileAccess.ReadAllTextAsync(paths, root, relativePath, SafeFileAccess.DefaultMaxReadBytes,
+            cancellationToken);
+    }
+
+    public string EnsureRegularFile(string rootDirectory, string relativePath)
+    {
+        var root = paths.EnsureOwnedPath(_root, rootDirectory);
+        var path = paths.EnsureNoSymlinks(root, relativePath);
+        if (!File.Exists(path))
+            throw new FileNotFoundException("File was not found inside the deployment workspace.", relativePath);
+        return path;
+    }
+
+    public string EnsureDirectory(string rootDirectory, string relativePath)
+    {
+        var root = paths.EnsureOwnedPath(_root, rootDirectory);
+        var path = paths.EnsureNoSymlinks(root, relativePath);
+        if (!Directory.Exists(path))
+            throw new DirectoryNotFoundException($"Directory {relativePath} was not found in the repository.");
+        return path;
     }
 
     public Task CleanupAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default)

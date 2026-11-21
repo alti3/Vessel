@@ -1,7 +1,14 @@
+using Microsoft.Extensions.Options;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.ManagedServices;
+using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy;
+using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Security;
+using Vessel.Application.Sources;
+using Vessel.Application.Ssh;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
@@ -12,6 +19,7 @@ using Vessel.Domain.Projects;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Sources;
 using Vessel.Domain.ValueObjects;
 using ApplicationId = Vessel.Domain.ApplicationId;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
@@ -23,27 +31,32 @@ public sealed class ResourceManagementService(
     VesselAuthorizationService authorization,
     ISecretVault secretVault,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ServerHealthPollingService serverHealth,
+    IOptions<SshOptions>? sshOptions = null)
 {
     public IReadOnlyList<ProjectSummary> ListProjects(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ProjectsRead);
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ProjectsRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
 
         return dbContext.Projects
             .Where(project => project.TeamId == teamId)
-            .OrderBy(project => project.Name)
             .Select(project => new ProjectSummary(
                 project.Id.Value,
                 project.Name.Value,
                 project.Description == null ? null : project.Description.Value.Value,
                 project.IsArchived,
                 dbContext.Environments.Count(environment => environment.ProjectId == project.Id)))
+            .AsEnumerable()
+            .Where(project => visibility.CanSeeProject(project.Id))
+            .OrderBy(project => project.Name, StringComparer.Ordinal)
             .ToArray();
     }
 
     public ProjectDetails GetProject(UserId actorUserId, TeamId teamId, ProjectId projectId)
     {
-        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsRead);
+        RequireProjectOpen(actorUserId, teamId, projectId);
         Project project = dbContext.Projects.Single(project => project.Id == projectId);
 
         return new ProjectDetails(
@@ -60,6 +73,7 @@ public sealed class ResourceManagementService(
         CreateProjectRequest request,
         CancellationToken cancellationToken = default)
     {
+        // Creating a project needs team-wide write; project-scoped grants never suffice (IAM-05).
         Require(actorUserId, teamId, VesselPermissions.ProjectsWrite);
         DateTimeOffset now = Now();
 
@@ -97,7 +111,7 @@ public sealed class ResourceManagementService(
         ProjectId projectId,
         CancellationToken cancellationToken = default)
     {
-        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsWrite);
+        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsDelete);
         Project project = await GetRequiredAsync(dbContext.ProjectRepository, projectId, cancellationToken);
         project.Archive(Now());
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -107,7 +121,8 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<EnvironmentSummary> ListEnvironments(UserId actorUserId, TeamId teamId, ProjectId projectId)
     {
-        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsRead);
+        RequireProjectOpen(actorUserId, teamId, projectId);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
 
         return dbContext.Environments
             .Where(environment => environment.ProjectId == projectId)
@@ -119,6 +134,8 @@ public sealed class ResourceManagementService(
                 environment.Name.Value,
                 environment.Kind,
                 environment.Description == null ? null : environment.Description.Value.Value))
+            .AsEnumerable()
+            .Where(environment => visibility.CanSeeEnvironment(environment.Id))
             .ToArray();
     }
 
@@ -166,7 +183,7 @@ public sealed class ResourceManagementService(
     {
         EnvironmentEntity environment =
             await GetRequiredAsync(dbContext.EnvironmentRepository, environmentId, cancellationToken);
-        RequireProject(actorUserId, teamId, environment.ProjectId, VesselPermissions.ProjectsWrite);
+        RequireProject(actorUserId, teamId, environment.ProjectId, VesselPermissions.ProjectsDelete);
         if (environment.Kind == EnvironmentKind.Production)
             throw new InvalidOperationException("Production environments cannot be deleted.");
         if (dbContext.Applications.Any(application => application.EnvironmentId == environmentId)
@@ -181,11 +198,15 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<ServerSummary> ListServers(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ServersRead);
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ServersRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
 
+        // Scoped actors only see the servers that run a resource they can reach (Coolify v4.7 parity).
         return dbContext.Servers
             .Where(server => server.TeamId == teamId)
-            .OrderBy(server => server.Name)
+            .AsEnumerable()
+            .Where(server => visibility.CanSeeServer(server.Id.Value))
+            .OrderBy(server => server.Name.Value, StringComparer.Ordinal)
             .Select(ToSummary)
             .ToArray();
     }
@@ -197,12 +218,31 @@ public sealed class ResourceManagementService(
         CancellationToken cancellationToken = default)
     {
         Require(actorUserId, teamId, VesselPermissions.ServersWrite);
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, request.ConnectionType);
         DateTimeOffset now = Now();
         var server = Server.Create(teamId, new ResourceName(request.Name),
             ToServerAddress(request.Host, request.Port, request.User),
             request.ConnectionType, request.Runtime, now, ToDescription(request.Description));
         server.UpdateSettings(server.Name, server.Description, server.Address, request.ConnectionType, request.Runtime,
             request.Labels, now);
+        if (request.ConnectionType == ServerConnectionType.Ssh)
+        {
+            if (!SshTargetValidator.IsSafeHost(request.Host) ||
+                (!string.IsNullOrWhiteSpace(request.User) && !SshTargetValidator.IsSafeUser(request.User)))
+                throw new DomainException("Server address or user contains characters that are not allowed for SSH.");
+            // New servers start at the instance host key checking mode (enforce by default).
+            server.SetHostKeyChecking(sshOptions?.Value.ResolveInstanceMode() ?? SshHostKeyCheckingMode.Enforce, now);
+        }
+
+        if (request.SshKeyId.HasValue)
+        {
+            var keyId = new SshKeyId(request.SshKeyId.Value);
+            // Only keys of the same team can be selected; another team's key looks like a missing key.
+            if (!dbContext.SshKeys.Any(key => key.Id == keyId && key.TeamId == teamId))
+                throw new DomainException("SSH key was not found.");
+            server.AssignSshKey(keyId, now);
+        }
+
         await dbContext.ServerRepository.AddAsync(server, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.ServerCreated, "server", server.Id.Value, cancellationToken);
@@ -218,16 +258,16 @@ public sealed class ResourceManagementService(
     {
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ServersWrite);
         Server server = await GetRequiredAsync(dbContext.ServerRepository, serverId, cancellationToken);
-        DateTimeOffset now = Now();
-        server.ChangeStatus(ServerStatus.Reachable, now);
-        var snapshot = ServerStatusSnapshot.Create(server.Id, server.Status, null, null, null, 0, true, true, now);
-        await dbContext.ServerStatusSnapshotRepository.AddAsync(snapshot, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, server);
+
+        // A real probe over the server's own connection; the snapshot records measured state only.
+        ServerHealthPollingResult probe =
+            await serverHealth.PollAsync(actorUserId, teamId, serverId, cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.ServerConnectivityChecked, "server", server.Id.Value,
             cancellationToken);
 
-        return new ServerConnectivityResult(server.Id.Value, true, server.Runtime,
-            "Server record is valid. Runtime probing is deferred to deployment/runtime phases.", now);
+        return new ServerConnectivityResult(server.Id.Value, probe.Status == ServerStatus.Reachable, server.Runtime,
+            probe.Reason ?? probe.Status.ToString(), Now());
     }
 
     public IReadOnlyList<ServerStatusSnapshotSummary> ListServerSnapshots(UserId actorUserId, TeamId teamId,
@@ -248,8 +288,14 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<ApplicationSummary> ListApplications(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ApplicationsRead);
-        return ApplicationsForTeam(teamId).OrderBy(application => application.Name).Select(ToSummary).ToArray();
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ApplicationsRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
+        return ApplicationsForTeam(teamId)
+            .AsEnumerable()
+            .Where(application => visibility.CanSeeResource(application.EnvironmentId.Value, application.Id.Value))
+            .OrderBy(application => application.Name.Value, StringComparer.Ordinal)
+            .Select(ToSummary)
+            .ToArray();
     }
 
     public async Task<ApplicationSummary> CreateApplicationAsync(
@@ -263,17 +309,30 @@ public sealed class ResourceManagementService(
         var serverId = new ServerId(request.ServerId);
         RequireProject(actorUserId, teamId, projectId, VesselPermissions.ApplicationsWrite);
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ApplicationsWrite);
+        RequireHostLocalTargetAllowed(actorUserId, serverId);
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
 
         DateTimeOffset now = Now();
         var application = Domain.Applications.Application.Create(environmentId, serverId,
             new ResourceName(request.Name),
-            new GitSource(new RepositoryUrl(request.RepositoryUrl), request.Branch),
+            // SEC-10: repository URL (no embedded credentials) and branch are validated at the API/UI boundary.
+            GitSource.FromInput(request.RepositoryUrl, request.Branch),
             BuildConfig(request.BuildPack, request.BaseDirectory, request.DockerfilePath), now);
+        // DEP-08: a private Git source must be usable by the team and accept the repository host.
+        GitSourceConnection? source = GitSourceSelection.Resolve(dbContext, teamId, request.SourceId,
+            application.GitSource.RepositoryUrl);
+        application.AssignSource(source?.Id, now);
         application.UpdateSettings(application.Name, ToDescription(request.Description), application.GitSource,
             application.BuildConfiguration, RuntimeConfig(request.ExposedPort), DeploymentSettings.Default, now);
         foreach (var domain in request.Domains.Where(domain => !string.IsNullOrWhiteSpace(domain)))
-            application.AddDomain(new DomainName(domain), now);
+        {
+            // Same rules as the domains API: URL/host forms, and no silent claim of a route another resource uses.
+            RouteAddress address = RouteAddress.Parse(domain);
+            IReadOnlyList<DomainConflict> conflicts = DomainConflicts.Find(dbContext, teamId, address.WithoutPort(),
+                RouteOwnerKind.Application, application.Id.Value);
+            if (conflicts.Count > 0) throw new DomainException(DomainConflicts.Describe(conflicts));
+            application.AddDomain(address, now);
+        }
 
         await dbContext.ApplicationRepository.AddAsync(application, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -285,8 +344,14 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<DatabaseSummary> ListDatabases(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ProjectsRead);
-        return DatabasesForTeam(teamId).OrderBy(database => database.Name).Select(ToSummary).ToArray();
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ProjectsRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
+        return DatabasesForTeam(teamId)
+            .AsEnumerable()
+            .Where(database => visibility.CanSeeResource(database.EnvironmentId.Value, database.Id.Value))
+            .OrderBy(database => database.Name.Value, StringComparer.Ordinal)
+            .Select(ToSummary)
+            .ToArray();
     }
 
     public async Task<DatabaseSummary> CreateDatabaseAsync(
@@ -300,14 +365,25 @@ public sealed class ResourceManagementService(
         var serverId = new ServerId(request.ServerId);
         RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsWrite);
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ProjectsWrite);
+        RequireHostLocalTargetAllowed(actorUserId, serverId);
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
+        // New databases always run a pinned image (engine default, a tag for the engine image, or an explicit image).
+        // A bare "latest" version from older clients means "use the pinned default".
+        DatabaseImage image = DatabaseEngineProfiles.ResolveNewImage(request.Engine, request.Image,
+            string.Equals(request.Version, "latest", StringComparison.OrdinalIgnoreCase) ? null : request.Version,
+            request.RedisFlavor);
+        var mountPath = string.IsNullOrWhiteSpace(request.MountPath)
+            ? DatabaseEngineProfiles.DefaultMountPath(request.Engine, image)
+            : request.MountPath;
+        var volumeName = string.IsNullOrWhiteSpace(request.VolumeName) ? "data" : request.VolumeName;
+        EnsureComposeSafeCredentials(request.Credentials);
         SecretReference secret = await secretVault.StoreAsync(teamId, SecretScope.Database,
             $"{request.Name}:credentials",
             request.Credentials, SecretPolicy.Default, new SecretTarget(projectId, environmentId, serverId),
             cancellationToken);
         var database = DatabaseResource.Create(environmentId, serverId, new ResourceName(request.Name), request.Engine,
-            new VersionLabel(request.Version), new StorageConfiguration(request.VolumeName, request.MountPath),
-            secret.Id, Now());
+            new VersionLabel(image.Tag ?? image.Digest ?? "pinned"), new StorageConfiguration(volumeName, mountPath),
+            secret.Id, Now(), image);
         await dbContext.DatabaseResourceRepository.AddAsync(database, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.DatabaseCreated, "database", database.Id.Value,
@@ -316,10 +392,23 @@ public sealed class ResourceManagementService(
         return ToSummary(database);
     }
 
+    private static void EnsureComposeSafeCredentials(string credentials)
+    {
+        try
+        {
+            ComposeEnvironmentFile.Quote(credentials);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new DomainException(exception.Message.Split(" (Parameter", 2)[0]);
+        }
+    }
+
     public IReadOnlyList<EnvironmentVariableSummary> ListEnvironmentVariables(UserId actorUserId, TeamId teamId)
     {
         Require(actorUserId, teamId, VesselPermissions.ProjectsRead);
-        var canReveal = authorization.HasPermission(actorUserId, teamId, VesselPermissions.SecretsRead);
+        // Sensitive-response policy (IAM-04): values are returned only to actors (and tokens) holding read:sensitive.
+        var canReveal = authorization.CanReadSensitive(actorUserId, teamId);
 
         return dbContext.EnvironmentVariables
             .Where(variable => variable.TeamId == teamId)
@@ -330,7 +419,7 @@ public sealed class ResourceManagementService(
                 variable.TargetType,
                 variable.Key.Value,
                 variable.ValueKind,
-                variable.ValueKind == EnvironmentVariableValueKind.Secret
+                variable.ValueKind == EnvironmentVariableValueKind.Secret || !canReveal
                     ? "********"
                     : variable.PlainValue ?? string.Empty,
                 canReveal && variable.ValueKind == EnvironmentVariableValueKind.Secret,
@@ -367,6 +456,12 @@ public sealed class ResourceManagementService(
             request.ValueKind, plainValue, secretReferenceId, request.IsBuildTime, request.IsRuntime, request.IsPreview,
             request.IsLiteral, request.IsMultiline, request.Comment, Now());
         ApplyTarget(variable, request, target);
+        // DEP-10: new variables go to the end of their scope's page order (deployments write variables in that order).
+        var scopeCount = dbContext.EnvironmentVariables.Count(item =>
+            item.TeamId == teamId && item.TargetType == variable.TargetType && item.ProjectId == variable.ProjectId &&
+            item.EnvironmentId == variable.EnvironmentId && item.ServerId == variable.ServerId &&
+            item.ApplicationId == variable.ApplicationId && item.DatabaseResourceId == variable.DatabaseResourceId);
+        variable.Reorder(scopeCount, Now());
         await dbContext.EnvironmentVariableRepository.AddAsync(variable, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentVariableCreated, "environment-variable",
@@ -419,18 +514,49 @@ public sealed class ResourceManagementService(
             throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
     }
 
+    /// <summary>List gate: the permission on any scope; results are then filtered by visibility.</summary>
+    private void RequireSomewhere(UserId actorUserId, TeamId teamId, string permission)
+    {
+        if (!authorization.HasPermissionSomewhere(actorUserId, teamId, permission))
+            throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
+    }
+
+    /// <summary>
+    ///     Opening a project needs Read on it, or a grant on one of its environments or resources (the project then
+    ///     shows only the children the actor can see).
+    /// </summary>
+    private void RequireProjectOpen(UserId actorUserId, TeamId teamId, ProjectId projectId)
+    {
+        if (authorization.IsAuthorized(actorUserId, teamId, ResourceRef.Project(projectId),
+                VesselPermissions.ProjectsRead))
+            return;
+
+        var inTeam = dbContext.Projects.Any(project => project.Id == projectId && project.TeamId == teamId);
+        if (inTeam && authorization.HasPermissionSomewhere(actorUserId, teamId, VesselPermissions.ProjectsRead)
+                   && authorization.GetVisibility(actorUserId, teamId).CanSeeProject(projectId.Value))
+            return;
+
+        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsRead);
+    }
+
     private void RequireProject(UserId actorUserId, TeamId teamId, ProjectId projectId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessProject(actorUserId, projectId))
-            throw new UnauthorizedAccessException("Project is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Project(projectId), permission);
     }
 
     private void RequireServer(UserId actorUserId, TeamId teamId, ServerId serverId, string permission)
     {
-        Require(actorUserId, teamId, permission);
-        if (!authorization.CanAccessServer(actorUserId, serverId))
-            throw new UnauthorizedAccessException("Server is outside the active team.");
+        authorization.Demand(actorUserId, teamId, ResourceRef.Server(serverId), permission);
+    }
+
+    private void RequireHostLocalTargetAllowed(UserId actorUserId, ServerId serverId)
+    {
+        ServerConnectionType? connectionType = dbContext.Servers
+            .Where(server => server.Id == serverId)
+            .Select(server => (ServerConnectionType?)server.ConnectionType)
+            .SingleOrDefault();
+        if (connectionType.HasValue)
+            HostLocalExecutionGuard.RequireInstanceAdmin(authorization, actorUserId, connectionType.Value);
     }
 
     private DateTimeOffset Now()
@@ -469,8 +595,20 @@ public sealed class ResourceManagementService(
             ? new DatabaseResourceId(request.DatabaseResourceId.Value)
             : null;
 
-        _ = teamId;
+        // Every referenced target must be owned by the active team; a variable can never be attached to (or leak
+        // into) another team's resource.
+        EnsureOwnedByTeam(teamId, projectId.HasValue ? ResourceRef.Project(projectId.Value) : null);
+        EnsureOwnedByTeam(teamId, environmentId.HasValue ? ResourceRef.Environment(environmentId.Value) : null);
+        EnsureOwnedByTeam(teamId, serverId.HasValue ? ResourceRef.Server(serverId.Value) : null);
+        EnsureOwnedByTeam(teamId, applicationId.HasValue ? ResourceRef.Application(applicationId.Value) : null);
+        EnsureOwnedByTeam(teamId, databaseId.HasValue ? ResourceRef.Database(databaseId.Value) : null);
         return new SecretTarget(projectId, environmentId, serverId, applicationId, databaseId);
+    }
+
+    private void EnsureOwnedByTeam(TeamId teamId, ResourceRef? resource)
+    {
+        if (resource.HasValue && authorization.ResolveOwningTeam(resource.Value) != teamId)
+            throw new UnauthorizedAccessException($"{resource.Value.Kind} is outside the active team.");
     }
 
     private static void ApplyTarget(EnvironmentVariable variable, CreateEnvironmentVariableRequest request,
@@ -568,7 +706,8 @@ public sealed class ResourceManagementService(
             application.Description == null ? null : application.Description.Value.Value, projectId.Value,
             application.EnvironmentId.Value, application.ServerId.Value, application.GitSource.RepositoryUrl.Value,
             application.GitSource.Branch, application.BuildConfiguration.BuildPack,
-            application.Domains.Select(domain => domain.DomainName.Value).ToArray());
+            application.Domains.Select(domain => domain.Host + domain.PathPrefix).ToArray(),
+            application.SourceId?.Value);
     }
 
     private DatabaseSummary ToSummary(DatabaseResource database)
@@ -579,7 +718,8 @@ public sealed class ResourceManagementService(
         return new DatabaseSummary(database.Id.Value, database.Name.Value,
             database.Description == null ? null : database.Description.Value.Value, projectId.Value,
             database.EnvironmentId.Value, database.ServerId.Value, database.Engine, database.Version.Value,
-            database.HealthState, database.CredentialsReferenceId.Value);
+            database.HealthState, database.CredentialsReferenceId.Value, DatabaseEngineProfiles.EffectiveImage(database),
+            database.LifecycleState, database.HealthCheckEnabled);
     }
 
     private static ServerSummary ToSummary(Server server)

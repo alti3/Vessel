@@ -16,6 +16,7 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
+using Vessel.Domain.Ssh;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
@@ -26,7 +27,7 @@ using EnvironmentEntity = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Infrastructure.Persistence;
 
-public sealed class VesselDbContext : DbContext, IVesselDbContext
+public sealed partial class VesselDbContext : DbContext, IVesselDbContext
 {
     public VesselDbContext(DbContextOptions<VesselDbContext> options)
         : base(options)
@@ -43,6 +44,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ServiceResourceRepository = new EfRepository<ServiceResource, ServiceResourceId>(this);
         BackupScheduleRepository = new EfRepository<BackupSchedule, BackupScheduleId>(this);
         BackupExecutionRepository = new EfRepository<BackupExecution, BackupExecutionId>(this);
+        DatabaseRestoreRepository = new EfRepository<DatabaseRestore, DatabaseRestoreId>(this);
+        BackupDestinationRepository = new EfRepository<BackupDestination, BackupDestinationId>(this);
         DeploymentRepository = new EfRepository<Deployment, DeploymentId>(this);
         TerminalSessionRepository = new EfRepository<TerminalSession, TerminalSessionId>(this);
         SecretReferenceRepository = new EfRepository<SecretReference, SecretReferenceId>(this);
@@ -55,6 +58,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         InAppNotificationRepository = new EfRepository<InAppNotification, InAppNotificationId>(this);
         NotificationDeliveryAttemptRepository =
             new EfRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId>(this);
+        InstanceEmailSettingsRepository = new EfRepository<InstanceEmailSettings, InstanceEmailSettingsId>(this);
         WebhookEventRepository = new EfRepository<WebhookEvent, WebhookEventId>(this);
         ApplicationWebhookConfigurationRepository =
             new EfRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>(this);
@@ -62,6 +66,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ProxyConfigurationVersionRepository =
             new EfRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(this);
         CertificateRepository = new EfRepository<Certificate, CertificateId>(this);
+        ServerProxySettingsRepository = new EfRepository<ServerProxySettings, ServerId>(this);
+        SshKeyRepository = new EfRepository<SshKey, SshKeyId>(this);
+
+        SettingRepository = new EfRepository<SettingEntry, SettingId>(this);
     }
 
     public DbSet<User> UserSet => Set<User>();
@@ -91,6 +99,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public DbSet<BackupSchedule> BackupScheduleSet => Set<BackupSchedule>();
 
     public DbSet<BackupExecution> BackupExecutionSet => Set<BackupExecution>();
+
+    public DbSet<DatabaseRestore> DatabaseRestoreSet => Set<DatabaseRestore>();
+
+    public DbSet<BackupDestination> BackupDestinationSet => Set<BackupDestination>();
 
     public DbSet<Deployment> DeploymentSet => Set<Deployment>();
 
@@ -129,6 +141,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<Certificate> CertificateSet => Set<Certificate>();
 
+    public DbSet<ServerProxySettings> ServerProxySettingsSet => Set<ServerProxySettings>();
+
+    public DbSet<SshKey> SshKeySet => Set<SshKey>();
+
     public IQueryable<User> Users => UserSet;
 
     public IQueryable<PersonalAccessToken> PersonalAccessTokens => PersonalAccessTokenSet;
@@ -157,6 +173,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<BackupExecution> BackupExecutions => BackupExecutionSet;
 
+    public IQueryable<DatabaseRestore> DatabaseRestores => DatabaseRestoreSet;
+
+    public IQueryable<BackupDestination> BackupDestinations => BackupDestinationSet;
+
     public IQueryable<Deployment> Deployments => DeploymentSet;
 
     public IQueryable<TerminalSession> TerminalSessions => TerminalSessionSet;
@@ -179,6 +199,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts => NotificationDeliveryAttemptSet;
 
+    public IQueryable<InstanceEmailSettings> InstanceEmailSettings => Set<InstanceEmailSettings>();
+
     public IQueryable<AuditLog> AuditLogs => AuditLogSet;
 
     public IQueryable<SettingEntry> Settings => SettingSet;
@@ -193,6 +215,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions => ProxyConfigurationVersionSet;
 
     public IQueryable<Certificate> Certificates => CertificateSet;
+
+    public IQueryable<ServerProxySettings> ServerProxySettings => ServerProxySettingsSet;
+
+    public IQueryable<SshKey> SshKeys => SshKeySet;
 
     public IRepository<User, UserId> UserRepository { get; }
 
@@ -217,6 +243,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
     public IRepository<BackupSchedule, BackupScheduleId> BackupScheduleRepository { get; }
 
     public IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; }
+
+    public IRepository<DatabaseRestore, DatabaseRestoreId> DatabaseRestoreRepository { get; }
+
+    public IRepository<BackupDestination, BackupDestinationId> BackupDestinationRepository { get; }
 
     public IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
@@ -243,6 +273,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         get;
     }
 
+    public IRepository<InstanceEmailSettings, InstanceEmailSettingsId> InstanceEmailSettingsRepository { get; }
+
     public IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 
     public IRepository<ApplicationWebhookConfiguration, ApplicationWebhookConfigurationId>
@@ -258,6 +290,20 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<Certificate, CertificateId> CertificateRepository { get; }
 
+    public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
+
+    public IRepository<SshKey, SshKeyId> SshKeyRepository { get; }
+
+    public IRepository<SettingEntry, SettingId> SettingRepository { get; }
+
+    public async Task RefreshAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default)
+        where TEntity : class
+    {
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity> entry = Entry(entity);
+        if (entry.State is EntityState.Detached or EntityState.Added) return;
+        await entry.ReloadAsync(cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("vessel");
@@ -266,7 +312,9 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ConfigureTeams(modelBuilder);
         ConfigureProjects(modelBuilder);
         ConfigureServers(modelBuilder);
+        ConfigureSshKeys(modelBuilder);
         ConfigureApplications(modelBuilder);
+        ConfigureSources(modelBuilder);
         ConfigureDatabases(modelBuilder);
         ConfigureManagedServices(modelBuilder);
         ConfigureBackups(modelBuilder);
@@ -276,12 +324,24 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
         ConfigureEnvironmentVariables(modelBuilder);
         ConfigureRegistryCredentials(modelBuilder);
         ConfigureNotifications(modelBuilder);
+        NotificationEmailModelConfiguration.Configure(modelBuilder);
         ConfigureAuditLogs(modelBuilder);
         ConfigureSettings(modelBuilder);
         ConfigureWebhooks(modelBuilder);
         ConfigureProxy(modelBuilder);
-        ConfigureCertificates(modelBuilder);
+        ConfigureRouting(modelBuilder);
+        ConfigureIdentity(modelBuilder);
+        ConfigureMonitoring(modelBuilder);
+        ConfigurePersistentStorage(modelBuilder);
+        ConfigureScheduling(modelBuilder);
+        ConfigureOperations(modelBuilder);
     }
+
+    /// <summary>Scheduled job ledger and user scheduled tasks (NTF-07/NTF-08); see VesselDbContext.Scheduling.cs.</summary>
+    static partial void ConfigureScheduling(ModelBuilder modelBuilder);
+
+    /// <summary>Control-plane operations: backups, upgrade runs (OPS-01/OPS-02/DATA-13); see VesselDbContext.Operations.cs.</summary>
+    static partial void ConfigureOperations(ModelBuilder modelBuilder);
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
     {
@@ -297,7 +357,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(user => user.ExternalSubject).HasMaxLength(255);
             builder.Property(user => user.PasswordHash).HasMaxLength(512);
             builder.Property(user => user.PasswordResetTokenHash).HasMaxLength(128);
-            builder.Property(user => user.TwoFactorSecret).HasMaxLength(128);
+            builder.Property(user => user.TwoFactorSecret).HasMaxLength(User.TwoFactorSecretMaxLength);
+            builder.Property(user => user.IsInstanceAdmin).IsRequired();
             builder.Property(user => user.TwoFactorRecoveryCodeHashes).HasMaxLength(4000);
             builder.Property(user => user.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(user => user.DomainEvents);
@@ -314,6 +375,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(token => token.Name).HasMaxLength(255).IsRequired();
             builder.Property(token => token.TokenHash).HasMaxLength(128).IsRequired();
             builder.Property(token => token.Scopes).HasMaxLength(512).IsRequired();
+            builder.Property(token => token.AccessGrants).HasAccessGrantsConversion();
             builder.Property(token => token.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(token => token.DomainEvents);
             builder.HasIndex(token => token.TokenHash).IsUnique();
@@ -356,6 +418,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(membership => membership.TeamId).HasTeamIdConversion();
             builder.Property(membership => membership.UserId).HasUserIdConversion();
             builder.Property(membership => membership.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(membership => membership.AccessGrants).HasAccessGrantsConversion();
             builder.Property(membership => membership.ConcurrencyStamp).IsConcurrencyToken();
             builder.HasIndex(membership => membership.UserId);
             builder.HasOne<User>()
@@ -374,6 +437,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasMaxLength(320).IsRequired();
             builder.Property(invitation => invitation.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(invitation => invitation.TokenHash).HasMaxLength(128).IsRequired();
+            builder.Property(invitation => invitation.AccessGrants).HasAccessGrantsConversion();
             builder.Property(invitation => invitation.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(invitation => invitation.DomainEvents);
             builder.HasIndex(invitation => invitation.TokenHash).IsUnique();
@@ -447,6 +511,46 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(server => server.Capabilities).HasConversion<int>().IsRequired();
             builder.Property(server => server.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(server => server.Labels).HasMaxLength(1000).IsRequired();
+            builder.Property(server => server.SshKeyId).HasConversion(
+                id => id.HasValue ? id.Value.Value : (Guid?)null,
+                value => value.HasValue ? new SshKeyId(value.Value) : null);
+            builder.Property(server => server.HostKeyChecking).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(SshHostKeyCheckingMode.Enforce).HasSentinel((SshHostKeyCheckingMode)(-1)).IsRequired();
+            builder.Property(server => server.PinnedHostKey).HasMaxLength(Server.MaxHostKeyLength);
+            builder.Property(server => server.PendingHostKey).HasMaxLength(Server.MaxHostKeyLength);
+            builder.Property(server => server.TerminalAccessEnabled).HasDefaultValue(true).HasSentinel(true)
+                .IsRequired();
+            builder.OwnsOne(server => server.Validation, validation =>
+            {
+                validation.Property(item => item.Succeeded).HasColumnName("validation_succeeded");
+                validation.Property(item => item.OsId).HasColumnName("validation_os_id")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.OsIdLike).HasColumnName("validation_os_id_like")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.OsVersion).HasColumnName("validation_os_version")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.PackageManager).HasColumnName("validation_package_manager")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.RuntimeVersion).HasColumnName("validation_runtime_version")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.ComposeVersion).HasColumnName("validation_compose_version")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.IsRootUser).HasColumnName("validation_is_root_user");
+                validation.Property(item => item.HasPasswordlessSudo).HasColumnName("validation_has_passwordless_sudo");
+                validation.Property(item => item.Message).HasColumnName("validation_message")
+                    .HasMaxLength(ServerValidation.MaxMessageLength);
+                validation.Property(item => item.ValidatedAt).HasColumnName("validation_validated_at");
+            });
+            builder.HasIndex(server => server.SshKeyId);
+            builder.HasOne<SshKey>()
+                .WithMany()
+                .HasForeignKey(server => server.SshKeyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Property(server => server.ConcurrentBuilds).HasDefaultValue(Server.DefaultConcurrentBuilds)
+                .IsRequired();
+            builder.Property(server => server.DeploymentQueueLimit)
+                .HasDefaultValue(Server.DefaultDeploymentQueueLimit).IsRequired();
             builder.Property(server => server.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(server => server.DomainEvents);
             builder.HasIndex(server => new { server.TeamId, server.Name }).IsUnique();
@@ -490,7 +594,7 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(application => application.GitSource).HasConversion(ValueObjectConversions.GitSource)
                 .HasMaxLength(2600).IsRequired();
             builder.Property(application => application.BuildConfiguration)
-                .HasConversion(ValueObjectConversions.BuildConfiguration).HasMaxLength(2048).IsRequired();
+                .HasConversion(ValueObjectConversions.BuildConfiguration).HasMaxLength(8192).IsRequired();
             builder.Property(application => application.RuntimeConfiguration)
                 .HasConversion(ValueObjectConversions.RuntimeConfiguration).HasMaxLength(1024).IsRequired();
             builder.Property(application => application.DeploymentSettings)
@@ -512,89 +616,36 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasForeignKey(application => application.ServerId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
-
-        modelBuilder.Entity<ApplicationDomain>(builder =>
-        {
-            builder.ToTable("application_domains");
-            builder.HasKey(domain => new { domain.ApplicationId, domain.DomainName });
-            builder.Property(domain => domain.ApplicationId).HasApplicationIdConversion();
-            builder.Property(domain => domain.DomainName).HasConversion(ValueObjectConversions.DomainName)
-                .HasMaxLength(253).IsRequired();
-            builder.Property(domain => domain.TargetPort);
-            builder.Property(domain => domain.TlsEnabled).IsRequired();
-            builder.Property(domain => domain.Canonical).IsRequired();
-            builder.Property(domain => domain.RedirectToCanonical).IsRequired();
-        });
     }
 
     private static void ConfigureProxy(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<ProxyConfigurationVersion>(builder =>
+        modelBuilder.Entity<ServerProxySettings>(builder =>
         {
-            builder.ToTable("proxy_configuration_versions");
-            builder.HasKey(version => version.Id);
-            builder.Property(version => version.Id).HasProxyConfigurationVersionIdConversion();
-            builder.Property(version => version.ServerId).HasServerIdConversion();
-            builder.Property(version => version.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
-            builder.Property(version => version.Version).HasMaxLength(80).IsRequired();
-            builder.Property(version => version.ConfigurationHash).HasMaxLength(128).IsRequired();
-            builder.Property(version => version.Configuration).IsRequired();
-            builder.Property(version => version.PreviousVersionId)
-                .HasConversion(StronglyTypedIdConversions.ProxyConfigurationVersionId);
-            builder.Property(version => version.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
-            builder.Property(version => version.ValidationError).HasMaxLength(2000);
-            builder.Property(version => version.ApplyError).HasMaxLength(2000);
-            builder.Property(version => version.ConcurrencyStamp).IsConcurrencyToken();
-            builder.Ignore(version => version.DomainEvents);
-            builder.HasIndex(version => new { version.ServerId, version.CreatedAt });
-            builder.HasIndex(version => new { version.ServerId, version.ConfigurationHash });
-            builder.HasIndex(version => version.PreviousVersionId);
+            builder.ToTable("server_proxy_settings");
+            builder.HasKey(settings => settings.Id);
+            builder.Property(settings => settings.Id).HasColumnName("ServerId").HasServerIdConversion()
+                .ValueGeneratedNever();
+            builder.Ignore(settings => settings.ServerId);
+            builder.Ignore(settings => settings.RoutingEnabled);
+            builder.Property(settings => settings.ProxyType).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(settings => settings.Image).HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxImageLength)
+                .IsRequired();
+            builder.Property(settings => settings.HttpPort).IsRequired();
+            builder.Property(settings => settings.HttpsPort).IsRequired();
+            builder.Property(settings => settings.DesiredState).HasConversion<string>().HasMaxLength(32)
+                .IsRequired();
+            builder.Property(settings => settings.LastAppliedStaticHash)
+                .HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxHashLength);
+            builder.Property(settings => settings.LastAppliedDynamicHash)
+                .HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxHashLength);
+            builder.Property(settings => settings.LastError).HasMaxLength(Vessel.Domain.Proxy.ServerProxySettings.MaxErrorLength);
+            builder.Property(settings => settings.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(settings => settings.DomainEvents);
             builder.HasOne<Server>()
-                .WithMany()
-                .HasForeignKey(version => version.ServerId)
+                .WithOne()
+                .HasForeignKey<ServerProxySettings>(settings => settings.Id)
                 .OnDelete(DeleteBehavior.Cascade);
-            builder.HasOne<ProxyConfigurationVersion>()
-                .WithMany()
-                .HasForeignKey(version => version.PreviousVersionId)
-                .OnDelete(DeleteBehavior.SetNull);
-        });
-    }
-
-    private static void ConfigureCertificates(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Certificate>(builder =>
-        {
-            builder.ToTable("certificates");
-            builder.HasKey(certificate => certificate.Id);
-            builder.Property(certificate => certificate.Id).HasCertificateIdConversion();
-            builder.Property(certificate => certificate.TeamId).HasTeamIdConversion();
-            builder.Property(certificate => certificate.ApplicationId).HasApplicationIdConversion();
-            builder.Property(certificate => certificate.Host).HasMaxLength(253).IsRequired();
-            builder.Property(certificate => certificate.Provider).HasConversion<string>().HasMaxLength(32).IsRequired();
-            builder.Property(certificate => certificate.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
-            builder.Property(certificate => certificate.LastError).HasMaxLength(2000);
-            builder.Property(certificate => certificate.CertificateSecretReferenceId)
-                .HasConversion(StronglyTypedIdConversions.SecretReferenceId);
-            builder.Property(certificate => certificate.PrivateKeySecretReferenceId)
-                .HasConversion(StronglyTypedIdConversions.SecretReferenceId);
-            builder.Property(certificate => certificate.ConcurrencyStamp).IsConcurrencyToken();
-            builder.Ignore(certificate => certificate.DomainEvents);
-            builder.HasIndex(certificate => new { certificate.ApplicationId, certificate.Host }).IsUnique();
-            builder.HasIndex(certificate => new { certificate.TeamId, certificate.RenewalDueAt });
-            builder.HasIndex(certificate => certificate.CertificateSecretReferenceId);
-            builder.HasIndex(certificate => certificate.PrivateKeySecretReferenceId);
-            builder.HasOne<AppEntity>()
-                .WithMany()
-                .HasForeignKey(certificate => certificate.ApplicationId)
-                .OnDelete(DeleteBehavior.Cascade);
-            builder.HasOne<SecretReference>()
-                .WithMany()
-                .HasForeignKey(certificate => certificate.CertificateSecretReferenceId)
-                .OnDelete(DeleteBehavior.SetNull);
-            builder.HasOne<SecretReference>()
-                .WithMany()
-                .HasForeignKey(certificate => certificate.PrivateKeySecretReferenceId)
-                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 
@@ -621,13 +672,21 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(database => database.LifecycleState).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(database => database.ContainerName).HasMaxLength(160);
             builder.Property(database => database.ComposeSnapshotReference).HasMaxLength(512);
+            // Null for databases created before images were pinned; they keep their legacy {repo}:{Version} image.
+            builder.Property(database => database.Image).HasConversion(ValueObjectConversions.NullableDatabaseImage)
+                .HasMaxLength(DatabaseImage.MaxLength);
+            builder.Property(database => database.HealthCheckEnabled).HasDefaultValue(true).IsRequired();
+            builder.Property(database => database.HealthCheckIntervalSeconds)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultIntervalSeconds).IsRequired();
+            builder.Property(database => database.HealthCheckTimeoutSeconds)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultTimeoutSeconds).IsRequired();
+            builder.Property(database => database.HealthCheckRetries)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultRetries).IsRequired();
+            builder.Property(database => database.HealthCheckStartPeriodSeconds)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultStartPeriodSeconds).IsRequired();
             builder.Property(database => database.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(database => database.DomainEvents);
-            builder.HasMany(database => database.BackupPolicies)
-                .WithOne()
-                .HasForeignKey(policy => policy.DatabaseResourceId)
-                .OnDelete(DeleteBehavior.Cascade);
-            builder.Navigation(database => database.BackupPolicies).UsePropertyAccessMode(PropertyAccessMode.Field);
+            builder.Ignore(database => database.HealthCheck);
             builder.HasOne<EnvironmentEntity>()
                 .WithMany()
                 .HasForeignKey(database => database.EnvironmentId)
@@ -640,14 +699,6 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(database => database.CredentialsReferenceId)
                 .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        modelBuilder.Entity<BackupPolicy>(builder =>
-        {
-            builder.ToTable("database_backup_policies");
-            builder.HasKey(policy => new { policy.DatabaseResourceId, policy.CronExpression });
-            builder.Property(policy => policy.DatabaseResourceId).HasDatabaseResourceIdConversion();
-            builder.Property(policy => policy.CronExpression).HasMaxLength(120);
         });
     }
 
@@ -668,6 +719,9 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(service => service.ConfigurationJson).HasColumnType("jsonb").IsRequired();
             builder.Property(service => service.State).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(service => service.ComposeSnapshotReference).HasMaxLength(512);
+            builder.Property(service => service.GeneratedSecretsReferenceId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new SecretReferenceId(value.Value) : null);
             builder.Property(service => service.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(service => service.DomainEvents);
             builder.HasIndex(service => new { service.TeamId, service.Name });
@@ -699,8 +753,26 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasMaxLength(120).IsRequired();
             builder.Property(schedule => schedule.CronExpression).HasMaxLength(120).IsRequired();
             builder.Property(schedule => schedule.StorageKind).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(schedule => schedule.TimeoutSeconds).HasDefaultValue(BackupSchedule.DefaultTimeoutSeconds)
+                .IsRequired();
+            // Existing schedules move to "all databases" so application databases are no longer skipped.
+            builder.Property(schedule => schedule.DatabaseSelection)
+                .HasMaxLength(BackupDatabaseSelection.MaxStoredLength).HasDefaultValue("*").IsRequired();
+            builder.Property(schedule => schedule.DumpFormat).HasConversion<string>().HasMaxLength(32)
+                .HasDefaultValue(BackupDumpFormat.Native).IsRequired();
             builder.Property(schedule => schedule.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(schedule => schedule.DomainEvents);
+            builder.Ignore(schedule => schedule.Databases);
+            builder.Ignore(schedule => schedule.LocalRetention);
+            builder.Ignore(schedule => schedule.RemoteRetention);
+            builder.Ignore(schedule => schedule.DestinationIds);
+            builder.HasMany(schedule => schedule.Destinations)
+                .WithOne()
+                .HasForeignKey(destination => destination.BackupScheduleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.Navigation(schedule => schedule.Destinations).UsePropertyAccessMode(PropertyAccessMode.Field)
+                .AutoInclude();
+            builder.HasIndex(schedule => new { schedule.Enabled, schedule.MissingAlertDays });
             builder.HasIndex(schedule => new { schedule.TeamId, schedule.DatabaseResourceId, schedule.Name })
                 .IsUnique();
             builder.HasOne<Team>()
@@ -730,8 +802,32 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(execution => execution.ChecksumSha256).HasMaxLength(128);
             builder.Property(execution => execution.FailureReason).HasMaxLength(1000);
             builder.Property(execution => execution.LastRestoreFailureReason).HasMaxLength(1000);
+            builder.Property(execution => execution.DatabaseName).HasMaxLength(BackupExecution.MaxDatabaseNameLength);
+            builder.Property(execution => execution.ArtifactFormat).HasMaxLength(64);
             builder.Property(execution => execution.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(execution => execution.DomainEvents);
+            builder.Ignore(execution => execution.HasRestorableArtifact);
+            builder.Ignore(execution => execution.HasLocalCopy);
+            builder.OwnsMany(execution => execution.Replicas, replica =>
+            {
+                replica.ToTable("backup_artifact_replicas");
+                replica.WithOwner().HasForeignKey(item => item.BackupExecutionId);
+                replica.HasKey(item => item.Id);
+                replica.Property(item => item.Id).ValueGeneratedNever();
+                replica.Property(item => item.BackupExecutionId).HasBackupExecutionIdConversion();
+                replica.Property(item => item.BackupDestinationId)
+                    .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                        value => value.HasValue ? new BackupDestinationId(value.Value) : null);
+                replica.Property(item => item.Bucket).HasMaxLength(63).IsRequired();
+                replica.Property(item => item.Message).HasMaxLength(BackupArtifactReplica.MaxMessageLength);
+                replica.Ignore(item => item.IsAvailable);
+                replica.HasIndex(item => item.BackupDestinationId);
+                replica.HasOne<BackupDestination>()
+                    .WithMany()
+                    .HasForeignKey(item => item.BackupDestinationId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+            builder.Navigation(execution => execution.Replicas).UsePropertyAccessMode(PropertyAccessMode.Field);
             builder.HasIndex(execution => new { execution.TeamId, execution.DatabaseResourceId, execution.CreatedAt });
             builder.HasOne<Team>()
                 .WithMany()
@@ -741,9 +837,109 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(execution => execution.DatabaseResourceId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Deleting a schedule deletes its executions (upstream main ce06a7981).
             builder.HasOne<BackupSchedule>()
                 .WithMany()
                 .HasForeignKey(execution => execution.ScheduleId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BackupScheduleDestination>(builder =>
+        {
+            builder.ToTable("backup_schedule_destinations");
+            builder.HasKey(destination => new { destination.BackupScheduleId, destination.BackupDestinationId });
+            builder.Property(destination => destination.BackupScheduleId).HasBackupScheduleIdConversion();
+            builder.Property(destination => destination.BackupDestinationId).HasBackupDestinationIdConversion();
+            builder.HasIndex(destination => destination.BackupDestinationId);
+            builder.HasOne<BackupDestination>()
+                .WithMany()
+                .HasForeignKey(destination => destination.BackupDestinationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BackupDestination>(builder =>
+        {
+            builder.ToTable("backup_destinations");
+            builder.HasKey(destination => destination.Id);
+            builder.Property(destination => destination.Id).HasBackupDestinationIdConversion();
+            builder.Property(destination => destination.TeamId).HasTeamIdConversion();
+            builder.Property(destination => destination.Name).HasConversion(ValueObjectConversions.ResourceName)
+                .HasMaxLength(120).IsRequired();
+            builder.Property(destination => destination.Description)
+                .HasConversion(ValueObjectConversions.NullableDescription).HasMaxLength(1000);
+            builder.Property(destination => destination.Kind).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(destination => destination.Endpoint).HasMaxLength(500).IsRequired();
+            builder.Property(destination => destination.Region).HasMaxLength(64).IsRequired();
+            builder.Property(destination => destination.Bucket).HasMaxLength(63).IsRequired();
+            builder.Property(destination => destination.CredentialsReferenceId).HasSecretReferenceIdConversion();
+            builder.Property(destination => destination.LastValidationError)
+                .HasMaxLength(BackupDestination.MaxValidationErrorLength);
+            builder.Property(destination => destination.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(destination => destination.DomainEvents);
+            builder.HasIndex(destination => new { destination.TeamId, destination.Name }).IsUnique();
+            builder.HasIndex(destination => destination.IsUsable);
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(destination => destination.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(destination => destination.CredentialsReferenceId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<DatabaseRestore>(builder =>
+        {
+            builder.ToTable("database_restores");
+            builder.HasKey(restore => restore.Id);
+            builder.Property(restore => restore.Id).HasDatabaseRestoreIdConversion();
+            builder.Property(restore => restore.TeamId).HasTeamIdConversion();
+            builder.Property(restore => restore.BackupExecutionId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new BackupExecutionId(value.Value) : null);
+            builder.Property(restore => restore.TargetDatabaseResourceId).HasDatabaseResourceIdConversion();
+            // DATA-10: imports have no backup execution; they record their external source instead.
+            builder.Property(restore => restore.ImportSource).HasConversion<string>().HasMaxLength(32)
+                .HasDefaultValue(DatabaseImportSourceKind.None).IsRequired();
+            builder.Property(restore => restore.ImportReference).HasMaxLength(DatabaseRestore.MaxImportReferenceLength);
+            builder.Property(restore => restore.ImportDestinationId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new BackupDestinationId(value.Value) : null);
+            builder.Property(restore => restore.ImportDatabaseName).HasMaxLength(BackupExecution.MaxDatabaseNameLength);
+            builder.Ignore(restore => restore.IsImport);
+            builder.Property(restore => restore.RequestedByUserId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new UserId(value.Value) : null);
+            builder.Property(restore => restore.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(restore => restore.DetectedFormat).HasMaxLength(64);
+            builder.Property(restore => restore.Log).HasMaxLength(DatabaseRestore.MaxLogLength).IsRequired();
+            builder.Property(restore => restore.FailureReason).HasMaxLength(DatabaseRestore.MaxFailureReasonLength);
+            builder.Property(restore => restore.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(restore => restore.DomainEvents);
+            builder.Ignore(restore => restore.IsActive);
+            builder.HasIndex(restore => new { restore.TeamId, restore.TargetDatabaseResourceId, restore.CreatedAt });
+            builder.HasIndex(restore => new { restore.TargetDatabaseResourceId, restore.Status });
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(restore => restore.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<BackupExecution>()
+                .WithMany()
+                .HasForeignKey(restore => restore.BackupExecutionId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<BackupDestination>()
+                .WithMany()
+                .HasForeignKey(restore => restore.ImportDestinationId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
+            builder.HasOne<DatabaseResource>()
+                .WithMany()
+                .HasForeignKey(restore => restore.TargetDatabaseResourceId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(restore => restore.RequestedByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
     }
@@ -776,6 +972,13 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(deployment => deployment.ArtifactReference).HasMaxLength(512);
             builder.Property(deployment => deployment.ConfigurationSnapshotReference).HasMaxLength(512);
             builder.Property(deployment => deployment.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(deployment => deployment.Trigger).HasConversion<string>().HasMaxLength(32)
+                .HasDefaultValue(DeploymentTrigger.Manual).IsRequired();
+            builder.Property(deployment => deployment.ParentDeploymentId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new DeploymentId(value.Value) : null);
+            builder.Property(deployment => deployment.RollbackImage).HasMaxLength(512);
+            builder.Property(deployment => deployment.CancellationReason).HasMaxLength(512);
             builder.Property(deployment => deployment.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(deployment => deployment.DomainEvents);
             builder.HasMany(deployment => deployment.LogLines)
@@ -784,6 +987,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .OnDelete(DeleteBehavior.Cascade);
             builder.Navigation(deployment => deployment.LogLines).UsePropertyAccessMode(PropertyAccessMode.Field);
             builder.HasIndex(deployment => new { deployment.ApplicationId, deployment.CreatedAt });
+            // Queue admission and advancement scan active deployments per server.
+            builder.HasIndex(deployment => new { deployment.ServerId, deployment.Status, deployment.CreatedAt });
             builder.HasOne<AppEntity>()
                 .WithMany()
                 .HasForeignKey(deployment => deployment.ApplicationId)
@@ -889,6 +1094,9 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(session => session.Command).HasMaxLength(240).IsRequired();
             builder.Property(session => session.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(session => session.FailureReason).HasMaxLength(512);
+            builder.Property(session => session.Mode).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(TerminalMode.Shell).HasSentinel((TerminalMode)(-1)).IsRequired();
+            builder.Property(session => session.ResourceKind).HasConversion<string>().HasMaxLength(32);
             builder.Property(session => session.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(session => session.DomainEvents);
             builder.HasIndex(session => new { session.TeamId, session.Status, session.StartedAt });
@@ -940,6 +1148,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new SecretReferenceId(value.Value) : null);
             builder.Property(variable => variable.Comment).HasMaxLength(1000);
+            // DEP-10: new variables use exact values; the migration sets existing rows to true (legacy escaping).
+            builder.Property(variable => variable.UsesLegacyEscaping).HasDefaultValue(false);
+            builder.Property(variable => variable.PreserveComposeNull).HasDefaultValue(false);
+            builder.Property(variable => variable.SortOrder).HasDefaultValue(0);
             builder.Property(variable => variable.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(variable => variable.DomainEvents);
             builder.HasIndex(variable => new
@@ -951,8 +1163,9 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 variable.ServerId,
                 variable.ApplicationId,
                 variable.DatabaseResourceId,
-                variable.Key
-            }).IsUnique();
+                variable.Key,
+                variable.IsPreview
+            }).IsUnique().AreNullsDistinct(false);
             builder.HasOne<Team>()
                 .WithMany()
                 .HasForeignKey(variable => variable.TeamId)
@@ -961,6 +1174,37 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(variable => variable.SecretReferenceId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureSshKeys(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SshKey>(builder =>
+        {
+            builder.ToTable("ssh_keys");
+            builder.HasKey(key => key.Id);
+            builder.Property(key => key.Id).HasSshKeyIdConversion();
+            builder.Property(key => key.TeamId).HasTeamIdConversion();
+            builder.Property(key => key.Name).HasConversion(ValueObjectConversions.ResourceName).HasMaxLength(120)
+                .IsRequired();
+            builder.Property(key => key.Description).HasConversion(ValueObjectConversions.NullableDescription)
+                .HasMaxLength(1000);
+            builder.Property(key => key.PrivateKeyReferenceId).HasSecretReferenceIdConversion();
+            builder.Property(key => key.PublicKey).HasMaxLength(SshKey.MaxPublicKeyLength).IsRequired();
+            builder.Property(key => key.Fingerprint).HasMaxLength(SshKey.MaxFingerprintLength).IsRequired();
+            builder.Property(key => key.Algorithm).HasMaxLength(SshKey.MaxAlgorithmLength).IsRequired();
+            builder.Property(key => key.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(key => key.DomainEvents);
+            builder.HasIndex(key => new { key.TeamId, key.Name }).IsUnique();
+            builder.HasIndex(key => new { key.TeamId, key.Fingerprint }).IsUnique();
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(key => key.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(key => key.PrivateKeyReferenceId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 
@@ -1134,8 +1378,27 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .IsRequired();
             builder.Property(audit => audit.CorrelationId).HasMaxLength(120);
             builder.Property(audit => audit.RedactedMetadataJson).HasColumnType("jsonb").IsRequired();
+            // IAM-08 context, classification and change set.
+            builder.Property(audit => audit.Source).HasMaxLength(32).IsRequired();
+            builder.Property(audit => audit.Level).HasConversion<string>().HasMaxLength(16).IsRequired();
+            builder.Property(audit => audit.ActorType).HasMaxLength(32).IsRequired();
+            builder.Property(audit => audit.ActorName).HasMaxLength(120);
+            builder.Property(audit => audit.ActorTokenId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new PersonalAccessTokenId(value.Value) : null);
+            builder.Property(audit => audit.ActorTokenName).HasMaxLength(255);
+            builder.Property(audit => audit.IpAddress).HasMaxLength(AuditLog.IpAddressMaxLength);
+            builder.Property(audit => audit.UserAgent).HasMaxLength(AuditLog.UserAgentMaxLength);
+            builder.Property(audit => audit.ResourceName).HasMaxLength(AuditLog.ResourceNameMaxLength);
+            builder.Property(audit => audit.Description).HasMaxLength(AuditLog.DescriptionMaxLength);
+            builder.Property(audit => audit.ChangesJson).HasColumnType("jsonb");
             builder.Ignore(audit => audit.DomainEvents);
-            builder.HasIndex(audit => new { audit.TeamId, audit.CreatedAt });
+            // Team audit queries page newest-first by (created_at, id); retention deletes by created_at.
+            builder.HasIndex(audit => new { audit.TeamId, audit.CreatedAt, audit.Id });
+            builder.HasIndex(audit => new { audit.TeamId, audit.Action, audit.CreatedAt });
+            builder.HasIndex(audit => new { audit.TeamId, audit.Source, audit.CreatedAt });
+            builder.HasIndex(audit => audit.CreatedAt);
+            builder.HasIndex(audit => audit.ActorUserId);
             builder.HasOne<Team>()
                 .WithMany()
                 .HasForeignKey(audit => audit.TeamId)
@@ -1203,6 +1466,14 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(webhook => webhook.SignatureStatus).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(webhook => webhook.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(webhook => webhook.FailureReason).HasMaxLength(512);
+            // Applications whose own secret verified the delivery (SEC-01); stored as a PostgreSQL uuid[] column.
+            builder.PrimitiveCollection(webhook => webhook.VerifiedApplicationIds).IsRequired();
+            // Per-application fan-out results (DEP-12), stored as jsonb.
+            builder.Property(webhook => webhook.ApplicationOutcomes)
+                .HasConversion(WebhookOutcomeConversions.Converter, WebhookOutcomeConversions.Comparer)
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'[]'::jsonb")
+                .IsRequired();
             builder.Property(webhook => webhook.ApplicationId)
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new AppId(value.Value) : null);
@@ -1257,6 +1528,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(preview => preview.PullRequestUrl).HasMaxLength(2048);
             builder.Property(preview => preview.Title).HasMaxLength(255);
             builder.Property(preview => preview.PreviewUrl).HasMaxLength(2048);
+            builder.Property(preview => preview.SourceRepository).HasMaxLength(512);
+            builder.Property(preview => preview.IsSameRepository).IsRequired();
             builder.Property(preview => preview.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(preview => preview.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(preview => preview.DomainEvents);

@@ -30,6 +30,17 @@ public sealed class TerminalsController(TerminalSessionManager terminalSessionMa
         return AcceptedAtAction(nameof(Get), new { sessionId = result.Id }, result);
     }
 
+    /// <summary>Issues a new single-use attach token for a live session of the caller (reconnect).</summary>
+    [HttpPost("{sessionId:guid}/token")]
+    [Authorize(Policy = VesselPermissions.TerminalsOpen)]
+    public ActionResult<TerminalSessionDetails> Token(Guid sessionId)
+    {
+        return Ok(terminalSessionManager.IssueAttachToken(
+            User.GetUserId(),
+            User.GetTeamId(),
+            new TerminalSessionId(sessionId)));
+    }
+
     [HttpGet("{sessionId:guid}")]
     [Authorize(Policy = VesselPermissions.TerminalsOpen)]
     public ActionResult<TerminalSessionDetails> Get(Guid sessionId)

@@ -31,6 +31,12 @@ internal static class StronglyTypedIdConversions
     public static readonly ValueConverter<BackupExecutionId, Guid> BackupExecutionId =
         new(id => id.Value, value => new BackupExecutionId(value));
 
+    public static readonly ValueConverter<DatabaseRestoreId, Guid> DatabaseRestoreId =
+        new(id => id.Value, value => new DatabaseRestoreId(value));
+
+    public static readonly ValueConverter<BackupDestinationId, Guid> BackupDestinationId =
+        new(id => id.Value, value => new BackupDestinationId(value));
+
     public static readonly ValueConverter<DeploymentId, Guid> DeploymentId = new(id => id.Value,
         value => new DeploymentId(value));
 
@@ -63,6 +69,9 @@ internal static class StronglyTypedIdConversions
 
     public static readonly ValueConverter<RegistryCredentialId, Guid> RegistryCredentialId =
         new(id => id.Value, value => new RegistryCredentialId(value));
+
+    public static readonly ValueConverter<SshKeyId, Guid> SshKeyId =
+        new(id => id.Value, value => new SshKeyId(value));
 
     public static readonly ValueConverter<ServerStatusSnapshotId, Guid> ServerStatusSnapshotId =
         new(id => id.Value, value => new ServerStatusSnapshotId(value));
@@ -146,6 +155,18 @@ internal static class StronglyTypedIdConversions
         return propertyBuilder.HasConversion(BackupExecutionId);
     }
 
+    public static PropertyBuilder<BackupDestinationId> HasBackupDestinationIdConversion(
+        this PropertyBuilder<BackupDestinationId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(BackupDestinationId);
+    }
+
+    public static PropertyBuilder<DatabaseRestoreId> HasDatabaseRestoreIdConversion(
+        this PropertyBuilder<DatabaseRestoreId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(DatabaseRestoreId);
+    }
+
     public static PropertyBuilder<DeploymentId> HasDeploymentIdConversion(
         this PropertyBuilder<DeploymentId> propertyBuilder)
     {
@@ -204,6 +225,11 @@ internal static class StronglyTypedIdConversions
         this PropertyBuilder<EnvironmentVariableId> propertyBuilder)
     {
         return propertyBuilder.HasConversion(EnvironmentVariableId);
+    }
+
+    public static PropertyBuilder<SshKeyId> HasSshKeyIdConversion(this PropertyBuilder<SshKeyId> propertyBuilder)
+    {
+        return propertyBuilder.HasConversion(SshKeyId);
     }
 
     public static PropertyBuilder<RegistryCredentialId> HasRegistryCredentialIdConversion(

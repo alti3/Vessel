@@ -22,10 +22,11 @@
                 <InputText @bind-Value="Model.Branch" name="branch"/>
             </label>
             <label>Build pack<select @bind="Model.BuildPack" name="buildPack">
-                    <option value="@ApplicationBuildPack.Nixpacks">Nixpacks</option>
-                    <option value="@ApplicationBuildPack.Dockerfile">Dockerfile</option>
-                    <option value="@ApplicationBuildPack.DockerCompose">Docker Compose</option>
-                    <option value="@ApplicationBuildPack.Static">Static</option>
+                    <option value="@ApplicationBuildPack.Railpack">@ApplicationBuildPacks.DisplayName(ApplicationBuildPack.Railpack)</option>
+                    <option value="@ApplicationBuildPack.Dockerfile">@ApplicationBuildPacks.DisplayName(ApplicationBuildPack.Dockerfile)</option>
+                    <option value="@ApplicationBuildPack.DockerCompose">@ApplicationBuildPacks.DisplayName(ApplicationBuildPack.DockerCompose)</option>
+                    <option value="@ApplicationBuildPack.Static">@ApplicationBuildPacks.DisplayName(ApplicationBuildPack.Static)</option>
+                    <option value="@ApplicationBuildPack.Nixpacks">@ApplicationBuildPacks.DisplayName(ApplicationBuildPack.Nixpacks)</option>
                 </select></label>
             <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects)
                     {
@@ -102,7 +103,7 @@
         public string Name { get; set; } = string.Empty;
         public string RepositoryUrl { get; set; } = string.Empty;
         public string Branch { get; set; } = "main";
-        public ApplicationBuildPack BuildPack { get; set; } = ApplicationBuildPack.Nixpacks;
+        public ApplicationBuildPack BuildPack { get; set; } = ApplicationBuildPacks.Recommended;
         public string BaseDirectory { get; set; } = "/";
         public string? Domain { get; set; }
     }

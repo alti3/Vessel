@@ -2,6 +2,7 @@
 @attribute [AllowAnonymous]
 @layout AuthLayout
 @inject NavigationManager Navigation
+@inject Vessel.Application.Auth.External.ExternalLoginService ExternalLogin
 
 <PageTitle>Login | Vessel</PageTitle>
 
@@ -18,7 +19,7 @@
         <p>Use your Vessel account to manage teams, servers, applications, and deployments.</p>
         @if (HasError)
         {
-            <div class="form-alert">The credentials were not accepted, or a second factor is required.</div>
+            <div class="form-alert">@ErrorMessage</div>
         }
         <form class="form-stack" method="post" action="/auth/login">
             <input type="hidden" name="ReturnUrl" value="@ReturnUrl"/>
@@ -27,6 +28,18 @@
             <label>2FA code<input name="TwoFactorCode" inputmode="numeric" autocomplete="one-time-code"/></label>
             <button class="button button-primary button-full" type="submit">Sign in</button>
         </form>
+        @if (Providers.Count > 0)
+        {
+            <div class="form-stack">
+                @foreach (var provider in Providers)
+                {
+                    <a class="button button-secondary button-full"
+                       href="@($"/auth/oauth/{provider.Id.Value:D}/start?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}")">
+                        Continue with @provider.Name
+                    </a>
+                }
+            </div>
+        }
         <div class="auth-links">
             <a href="/register">Create account</a>
             <a href="/password-reset">Reset password</a>
@@ -41,4 +54,34 @@
     public string? Error { get; set; }
 
     private bool HasError => !string.IsNullOrWhiteSpace(Error);
+
+    private IReadOnlyList<Vessel.Application.Auth.External.AuthProviderButton> Providers { get; set; } = [];
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            Providers = ExternalLogin.ListSignInProviders();
+        }
+        catch (InvalidOperationException)
+        {
+            Providers = [];
+        }
+    }
+
+    // IAM-07 reason codes (Coolify auth.failed.* parity); unknown codes fall back to the generic message.
+    private string ErrorMessage => Error switch
+    {
+        "oauth_email_unverified" => "The sign-in provider did not verify your email address.",
+        "oauth_already_linked" => "This account is already linked to another sign-in provider.",
+        "registration_disabled" => "Registration is closed. Ask an administrator for an invitation.",
+        "oauth_domain_not_allowed" => "Your account's domain is not allowed for this provider.",
+        "oauth_issuer_mismatch" => "The provider's issuer changed; ask an administrator to check its settings.",
+        "oauth_state_mismatch" or "oauth_two_factor_expired" => "The sign-in attempt expired. Please try again.",
+        "oauth_instance_url_missing" => "External sign-in needs the instance URL to be configured.",
+        "oauth_provider_unavailable" or "oauth_provider_error" or "oauth_email_missing" =>
+            "Sign-in with the external provider failed. Please try again.",
+        "locked_out" => "The account is temporarily locked.",
+        _ => "The credentials were not accepted, or a second factor is required."
+    };
 }

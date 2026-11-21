@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -54,9 +55,17 @@ public sealed class InboundWebhooksController(WebhookReceiptService receipts) : 
         var headers = Request.Headers
             .ToDictionary(header => header.Key, header => header.Value.ToString(), StringComparer.OrdinalIgnoreCase);
 
+        // RemoteIpAddress is the real client only when rewritten by ForwardedHeaders from a trusted proxy (SEC-07).
         WebhookReceiptResult result = await receipts.ReceiveAsync(
-            new WebhookReceiptRequest(provider, headers, string.IsNullOrWhiteSpace(rawBody) ? "{}" : rawBody),
+            new WebhookReceiptRequest(provider, headers, string.IsNullOrWhiteSpace(rawBody) ? "{}" : rawBody,
+                HttpContext.Connection.RemoteIpAddress?.ToString()),
             cancellationToken);
+
+        if (result.Throttled)
+        {
+            Response.Headers.RetryAfter = result.RetryAfterSeconds!.Value.ToString(CultureInfo.InvariantCulture);
+            return StatusCode(StatusCodes.Status429TooManyRequests, result);
+        }
 
         return result.Status switch
         {

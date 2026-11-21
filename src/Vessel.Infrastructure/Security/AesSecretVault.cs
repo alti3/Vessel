@@ -1,6 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
-using Microsoft.Extensions.Options;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Persistence;
@@ -8,7 +5,6 @@ using Vessel.Application.Security;
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Secrets;
-using Vessel.Infrastructure.Configuration;
 
 namespace Vessel.Infrastructure.Security;
 
@@ -17,7 +13,7 @@ public sealed class AesSecretVault(
     VesselAuthorizationService authorization,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
-    IOptions<SecretStorageOptions> options) : ISecretVault
+    ISecretCipher cipher) : ISecretVault
 {
     public async Task<SecretReference> StoreAsync(
         TeamId teamId,
@@ -32,9 +28,9 @@ public sealed class AesSecretVault(
         var reference = SecretReference.Create(teamId, scope, key, SecretProvider.Vessel,
             $"vessel://secrets/{Guid.NewGuid():D}", policy, now);
         ApplyTarget(reference, target);
-        EncryptedSecret encrypted = Encrypt(plaintext, reference.Id);
+        SecretCipherText encrypted = Encrypt(plaintext, reference.Id);
         var secretValue = SecretValue.Create(reference.Id, encrypted.CipherText, encrypted.Nonce, encrypted.Tag,
-            options.Value.KeyVersion, now);
+            encrypted.KeyVersion, now);
 
         await dbContext.SecretReferenceRepository.AddAsync(reference, cancellationToken);
         await dbContext.SecretValueRepository.AddAsync(secretValue, cancellationToken);
@@ -51,8 +47,8 @@ public sealed class AesSecretVault(
         CancellationToken cancellationToken = default)
     {
         SecretValue secretValue = dbContext.SecretValues.Single(value => value.SecretReferenceId == secretReferenceId);
-        EncryptedSecret encrypted = Encrypt(plaintext, secretReferenceId);
-        secretValue.Replace(encrypted.CipherText, encrypted.Nonce, encrypted.Tag, options.Value.KeyVersion,
+        SecretCipherText encrypted = Encrypt(plaintext, secretReferenceId);
+        secretValue.Replace(encrypted.CipherText, encrypted.Nonce, encrypted.Tag, encrypted.KeyVersion,
             timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -95,48 +91,21 @@ public sealed class AesSecretVault(
         return Decrypt(secretValue);
     }
 
-    private EncryptedSecret Encrypt(string plaintext, SecretReferenceId secretReferenceId)
+    private SecretCipherText Encrypt(string plaintext, SecretReferenceId secretReferenceId)
     {
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        if (string.IsNullOrWhiteSpace(plaintext) || plaintext.Length > 12000)
-            throw new InvalidOperationException("Secret value is required and cannot exceed 12000 characters.");
-
-        var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
-        var cipherText = new byte[plaintextBytes.Length];
-        var tag = new byte[16];
-        using var aes = new AesGcm(GetKey(), 16);
-        aes.Encrypt(nonce, plaintextBytes, cipherText, tag, AssociatedData(secretReferenceId));
-
-        return new EncryptedSecret(Convert.ToBase64String(cipherText), Convert.ToBase64String(nonce),
-            Convert.ToBase64String(tag));
+        return cipher.Encrypt(plaintext, AssociatedData(secretReferenceId));
     }
 
     private string Decrypt(SecretValue secretValue)
     {
-        var cipherText = Convert.FromBase64String(secretValue.CipherText);
-        var nonce = Convert.FromBase64String(secretValue.Nonce);
-        var tag = Convert.FromBase64String(secretValue.Tag);
-        var plaintextBytes = new byte[cipherText.Length];
-        using var aes = new AesGcm(GetKey(), 16);
-        aes.Decrypt(nonce, cipherText, tag, plaintextBytes, AssociatedData(secretValue.SecretReferenceId));
-
-        return Encoding.UTF8.GetString(plaintextBytes);
+        return cipher.Decrypt(
+            new SecretCipherText(secretValue.CipherText, secretValue.Nonce, secretValue.Tag, secretValue.KeyVersion),
+            AssociatedData(secretValue.SecretReferenceId));
     }
 
-    private byte[] GetKey()
+    private static string AssociatedData(SecretReferenceId secretReferenceId)
     {
-        if (!string.IsNullOrWhiteSpace(options.Value.MasterKey))
-        {
-            var configured = Convert.FromBase64String(options.Value.MasterKey);
-            if (configured.Length == 32) return configured;
-        }
-
-        return SHA256.HashData(Encoding.UTF8.GetBytes("vessel-alpha-development-secret-storage-key"));
-    }
-
-    private static byte[] AssociatedData(SecretReferenceId secretReferenceId)
-    {
-        return Encoding.UTF8.GetBytes(secretReferenceId.Value.ToString("D"));
+        return SecretValueAssociatedData.For(secretReferenceId);
     }
 
     private static void ApplyTarget(SecretReference reference, SecretTarget target)
@@ -167,5 +136,4 @@ public sealed class AesSecretVault(
             reference.TargetServer(target.ServerId.Value);
     }
 
-    private sealed record EncryptedSecret(string CipherText, string Nonce, string Tag);
 }

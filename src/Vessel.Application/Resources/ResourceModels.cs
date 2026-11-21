@@ -1,3 +1,4 @@
+using Vessel.Application.ManagedServices;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Databases;
 using Vessel.Domain.EnvironmentVariables;
@@ -61,7 +62,8 @@ public sealed record ApplicationSummary(
     string RepositoryUrl,
     string Branch,
     ApplicationBuildPack BuildPack,
-    IReadOnlyList<string> Domains);
+    IReadOnlyList<string> Domains,
+    Guid? SourceId = null);
 
 public sealed record DatabaseSummary(
     Guid Id,
@@ -73,7 +75,10 @@ public sealed record DatabaseSummary(
     DatabaseEngine Engine,
     string Version,
     DatabaseHealthState HealthState,
-    Guid CredentialsReferenceId);
+    Guid CredentialsReferenceId,
+    string? Image = null,
+    DatabaseLifecycleState LifecycleState = DatabaseLifecycleState.NotProvisioned,
+    bool HealthCheckEnabled = true);
 
 public sealed record EnvironmentVariableSummary(
     Guid Id,
@@ -112,7 +117,8 @@ public sealed record CreateServerRequest(
     string? User,
     ServerConnectionType ConnectionType,
     ContainerRuntimeKind Runtime,
-    string? Labels);
+    string? Labels,
+    Guid? SshKeyId = null);
 
 public sealed record UpdateServerRequest(
     string Name,
@@ -136,7 +142,8 @@ public sealed record CreateApplicationRequest(
     string BaseDirectory,
     string? DockerfilePath,
     int? ExposedPort,
-    string[] Domains);
+    string[] Domains,
+    Guid? SourceId = null);
 
 public sealed record UpdateApplicationRequest(
     string Name,
@@ -159,7 +166,9 @@ public sealed record CreateDatabaseRequest(
     string Version,
     string VolumeName,
     string MountPath,
-    string Credentials);
+    string Credentials,
+    string? Image = null,
+    RedisFlavor RedisFlavor = RedisFlavor.Valkey);
 
 public sealed record CreateEnvironmentVariableRequest(
     EnvironmentVariableTargetType TargetType,

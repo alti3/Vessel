@@ -9,8 +9,21 @@ public sealed class LocalObjectStorage(string rootDirectory, IPathSafetyService 
     {
         var path = ToPath(request.Location);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await using FileStream file = File.Create(path);
-        await request.Content.CopyToAsync(file, cancellationToken);
+        // Write to a sibling temporary file and move it into place so readers never see a partial object.
+        var temporary = paths.EnsureOwnedPath(rootDirectory, $"{path}.{Guid.NewGuid():N}.partial");
+        try
+        {
+            await using (FileStream file = File.Create(temporary))
+            {
+                await request.Content.CopyToAsync(file, cancellationToken);
+            }
+
+            File.Move(temporary, path, true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
     }
 
     public Task<Stream> OpenReadAsync(ObjectStorageKey location, CancellationToken cancellationToken = default)

@@ -1,6 +1,7 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
 using Vessel.Application.Authorization;
 using Vessel.Web.Controllers.Api.V1;
 using Vessel.Web.Hubs;
@@ -25,6 +26,7 @@ public sealed class ApiRouteConventionTests
             typeof(NotificationsController),
             typeof(SettingsController),
             typeof(ProxyConfigurationsController),
+            typeof(ServerProxyController),
             typeof(TerminalsController),
             typeof(ServerHealthController)
         ];
@@ -46,7 +48,7 @@ public sealed class ApiRouteConventionTests
             VesselPermissions.ApplicationsWrite);
         AssertActionPolicy<ApplicationDomainsController>(
             nameof(ApplicationDomainsController.Remove),
-            VesselPermissions.ApplicationsWrite);
+            VesselPermissions.ApplicationsDelete);
         AssertActionPolicy<ApplicationDomainsController>(
             nameof(ApplicationDomainsController.QueueCertificate),
             VesselPermissions.ApplicationsWrite);
@@ -58,6 +60,50 @@ public sealed class ApiRouteConventionTests
         AssertActionPolicy<ProxyConfigurationsController>(
             nameof(ProxyConfigurationsController.Rollback),
             VesselPermissions.ServersWrite);
+
+        AssertControllerPolicy<ServerProxyController>(VesselPermissions.ServersRead);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Update), VesselPermissions.ServersWrite);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Start), VesselPermissions.ServersWrite);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Stop), VesselPermissions.ServersWrite);
+        AssertActionPolicy<ServerProxyController>(nameof(ServerProxyController.Restart),
+            VesselPermissions.ServersWrite);
+    }
+
+    [Fact]
+    public void RoutingControllersProtectSensitiveAndMutatingEndpoints()
+    {
+        AssertActionPolicy<ApplicationDomainsController>(nameof(ApplicationDomainsController.ConfigureByUrl),
+            VesselPermissions.ApplicationsWrite);
+        AssertActionPolicy<ApplicationDomainsController>(nameof(ApplicationDomainsController.RemoveByUrl),
+            VesselPermissions.ApplicationsWrite);
+
+        // Configuration text is sensitive (basic-auth hashes, topology): reading it needs write access.
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.ReadContent),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.Restore),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.GetDynamic),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.SaveDynamic),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.DeleteDynamic),
+            VesselPermissions.ServersWrite);
+
+        AssertControllerPolicy<ServerCertificatesController>(VesselPermissions.ServersRead);
+        foreach (var action in new[]
+                 {
+                     nameof(ServerCertificatesController.Sync), nameof(ServerCertificatesController.Delete),
+                     nameof(ServerCertificatesController.DeleteUnused),
+                     nameof(ServerCertificatesController.RestoreBackup),
+                     nameof(ServerCertificatesController.DeleteBackup)
+                 })
+            AssertActionPolicy<ServerCertificatesController>(action, VesselPermissions.ServersWrite);
+
+        AssertControllerPolicy<ServiceDomainsController>(VesselPermissions.ProjectsRead);
+        AssertActionPolicy<ServiceDomainsController>(nameof(ServiceDomainsController.Configure),
+            VesselPermissions.ProjectsWrite);
+        AssertActionPolicy<ServiceDomainsController>(nameof(ServiceDomainsController.Remove),
+            VesselPermissions.ProjectsWrite);
     }
 
     [Fact]
@@ -71,6 +117,27 @@ public sealed class ApiRouteConventionTests
         AssertActionPolicy<ServerHealthController>(nameof(ServerHealthController.Poll), VesselPermissions.ServersWrite);
         AssertActionPolicy<DeploymentsController>(nameof(DeploymentsController.Logs), VesselPermissions.DeploymentsReadLogs);
         AssertActionPolicy<DeploymentsController>(nameof(DeploymentsController.ExportLogs), VesselPermissions.DeploymentsReadLogs);
+    }
+
+    [Fact]
+    public void NotificationEndpointsRequireNotificationPermissions()
+    {
+        AssertControllerPolicy<NotificationsController>(VesselPermissions.NotificationsRead);
+        AssertActionPolicy<NotificationsController>(nameof(NotificationsController.UpsertTarget),
+            VesselPermissions.NotificationsWrite);
+        AssertActionPolicy<NotificationsController>(nameof(NotificationsController.SendTest),
+            VesselPermissions.NotificationsWrite);
+    }
+
+    [Fact]
+    public void NotificationEventsCannotBeRaisedThroughThePublicApi()
+    {
+        IEnumerable<string?> templates = typeof(NotificationsController).GetMethods()
+            .SelectMany(method => method.GetCustomAttributes<HttpMethodAttribute>(true))
+            .Select(attribute => attribute.Template);
+
+        Assert.DoesNotContain(templates, template => template is not null &&
+                                                     template.StartsWith("events", StringComparison.Ordinal));
     }
 
     [Fact]
