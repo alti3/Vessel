@@ -38,6 +38,7 @@ using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.ManagedServices;
 using Vessel.Infrastructure.Notifications;
+using Vessel.Infrastructure.Operations;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
 using Vessel.Infrastructure.Proxy;
@@ -168,6 +169,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));
         services.AddSingleton<IBackupStorageProvider, BackupStorageProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
+        services.AddVesselSchedulingInfrastructure(configuration);
+        services.AddVesselOperationsInfrastructure(configuration);
 
         RedisOptions redisOptions = configuration
             .GetSection(RedisOptions.SectionName)
