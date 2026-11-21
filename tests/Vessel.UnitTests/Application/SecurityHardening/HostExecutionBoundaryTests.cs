@@ -91,8 +91,11 @@ public sealed class HostExecutionBoundaryTests
         Server server = AddServer(team, ServerConnectionType.Local);
         var bridge = new RecordingTerminalBridge();
 
-        await Terminals(bridge).OpenAsync(admin.Id, team.Id, new OpenTerminalSessionRequest(server.Id.Value),
-            cancellationToken: TestContext.Current.CancellationToken);
+        TerminalSessionManager terminals = Terminals(bridge);
+        TerminalSessionDetails opened = await terminals.OpenAsync(admin.Id, team.Id,
+            new OpenTerminalSessionRequest(server.Id.Value), cancellationToken: TestContext.Current.CancellationToken);
+        await terminals.AttachAsync(admin.Id, team.Id, new Vessel.Domain.TerminalSessionId(opened.Id),
+            opened.AttachToken, TestContext.Current.CancellationToken);
 
         TerminalBridgeOpenRequest request = Assert.Single(bridge.Opened);
         Assert.Equal(ServerConnectionType.Local, request.TargetConnection);
@@ -106,17 +109,23 @@ public sealed class HostExecutionBoundaryTests
     {
         (_, Team team) = AddUser("owner@example.com", instanceAdmin: false);
         Server server = AddServer(team, ServerConnectionType.Ssh, "203.0.113.10", user: "deploy", port: 2222);
-        var runtime = new CountingContainerRuntime();
-        var ssh = new RecordingSshClient(sshReachable);
+        var runtime = new CountingContainerRuntime { Fail = !sshReachable };
 
-        ServerHealthPollingResult result = await Polling(runtime, ssh)
+        ServerHealthPollingResult result = await Polling(runtime)
             .PollAsync(server.Id, TestContext.Current.CancellationToken);
 
-        Assert.Equal(0, runtime.Calls);
-        SshProbe(ssh, "203.0.113.10", 2222, "deploy");
+        // The remote runtime is probed over the server's own SSH connection, never the control-plane runtime.
+        Assert.NotEmpty(runtime.Targets);
+        Assert.All(runtime.Targets, target =>
+        {
+            Assert.NotNull(target.Remote);
+            Assert.Equal("203.0.113.10", target.Remote.Host);
+            Assert.Equal(2222, target.Remote.Port);
+            Assert.Equal("deploy", target.Remote.User);
+        });
         Assert.Equal(expected, result.Status);
         Assert.Equal(expected, server.Status);
-        Assert.False(result.RuntimeReachable);
+        Assert.Equal(sshReachable, result.RuntimeReachable);
     }
 
     [Fact]
@@ -124,12 +133,12 @@ public sealed class HostExecutionBoundaryTests
     {
         (_, Team team) = AddUser("owner@example.com", instanceAdmin: false);
         Server server = AddServer(team, ServerConnectionType.Ssh, "-oproxycommand=touch-pwned");
-        var ssh = new RecordingSshClient(true);
+        var runtime = new CountingContainerRuntime();
 
-        ServerHealthPollingResult result = await Polling(new CountingContainerRuntime(), ssh)
+        ServerHealthPollingResult result = await Polling(runtime)
             .PollAsync(server.Id, TestContext.Current.CancellationToken);
 
-        Assert.Empty(ssh.Probes);
+        Assert.Equal(0, runtime.Calls);
         Assert.Equal(ServerStatus.Unreachable, result.Status);
     }
 
@@ -140,7 +149,7 @@ public sealed class HostExecutionBoundaryTests
         Server server = AddServer(team, ServerConnectionType.Local);
         var runtime = new CountingContainerRuntime();
 
-        ServerHealthPollingResult result = await Polling(runtime, new RecordingSshClient(true))
+        ServerHealthPollingResult result = await Polling(runtime)
             .PollAsync(server.Id, TestContext.Current.CancellationToken);
 
         Assert.Equal(0, runtime.Calls);
@@ -153,15 +162,14 @@ public sealed class HostExecutionBoundaryTests
     {
         (User owner, Team team) = AddUser("owner@example.com", instanceAdmin: false);
         Server server = AddServer(team, ServerConnectionType.Ssh, "203.0.113.10");
-        var runtime = new CountingContainerRuntime();
-        var ssh = new RecordingSshClient(false);
+        var runtime = new CountingContainerRuntime { Fail = true };
 
-        ServerConnectivityResult result = await Resources(runtime, ssh).TestServerConnectivityAsync(owner.Id, team.Id,
+        ServerConnectivityResult result = await Resources(runtime).TestServerConnectivityAsync(owner.Id, team.Id,
             server.Id, TestContext.Current.CancellationToken);
 
         Assert.False(result.Reachable);
-        Assert.Single(ssh.Probes);
-        Assert.Equal(0, runtime.Calls);
+        Assert.NotEmpty(runtime.Targets);
+        Assert.All(runtime.Targets, target => Assert.True(target.IsRemote));
         ServerStatusSnapshot snapshot = Assert.Single(_db.ServerStatusSnapshotItems);
         Assert.Equal(ServerStatus.Unreachable, snapshot.Status);
         Assert.False(snapshot.ProxyHealthy);
@@ -228,15 +236,6 @@ public sealed class HostExecutionBoundaryTests
         Assert.DoesNotContain(_db.UserItems, user => user.Email.Value == "other@example.com");
     }
 
-    private static void SshProbe(RecordingSshClient ssh, string host, int port, string user)
-    {
-        var probe = Assert.Single(ssh.Probes);
-        Assert.Equal(host, probe.Host);
-        Assert.Equal(port, probe.Port);
-        Assert.Equal(user, probe.UserName);
-        Assert.Equal(Vessel.Application.Ssh.SshHostIdentityPolicy.RequireKnownHost, probe.HostIdentityPolicy);
-    }
-
     private (User User, Team Team) AddUser(string email, bool instanceAdmin)
     {
         User user = User.Create(new DisplayName(email.Split('@')[0]), new EmailAddress(email), _now);
@@ -269,13 +268,13 @@ public sealed class HostExecutionBoundaryTests
         return application;
     }
 
-    private ServerHealthPollingService Polling(CountingContainerRuntime runtime, RecordingSshClient ssh) =>
+    private ServerHealthPollingService Polling(CountingContainerRuntime runtime) =>
         new(_db, new VesselAuthorizationService(_db), runtime, new FixedProxyStatusProbe(true), new NullRealtimeNotifier(),
-            new RecordingAuditWriter(), TimeProvider.System, new RecordingNotificationEventPublisher(), ssh);
+            new RecordingAuditWriter(), TimeProvider.System, new RecordingNotificationEventPublisher());
 
-    private ResourceManagementService Resources(CountingContainerRuntime? runtime = null, RecordingSshClient? ssh = null) =>
+    private ResourceManagementService Resources(CountingContainerRuntime? runtime = null) =>
         new(_db, new VesselAuthorizationService(_db), new UnavailableSecretVault(), new RecordingAuditWriter(),
-            TimeProvider.System, Polling(runtime ?? new CountingContainerRuntime(), ssh ?? new RecordingSshClient(false)));
+            TimeProvider.System, Polling(runtime ?? new CountingContainerRuntime()));
 
     private TerminalSessionManager Terminals(RecordingTerminalBridge bridge) =>
         new(_db, new VesselAuthorizationService(_db), bridge, new NullRealtimeNotifier(), new RecordingAuditWriter(),

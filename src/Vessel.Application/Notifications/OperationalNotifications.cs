@@ -176,6 +176,28 @@ public static class OperationalNotifications
                 $"/servers/{serverId:D}", null);
     }
 
+    /// <summary>
+    ///     The SSH host key of a server changed. Carries only fingerprints (public data), so a changed key can be compared
+    ///     out of band before an operator trusts it.
+    /// </summary>
+    public static RaiseNotificationRequest ServerHostKeyChanged(Guid serverId, string serverName,
+        IReadOnlyList<string> presentedFingerprints, bool enforced)
+    {
+        var consequence = enforced
+            ? "Vessel refuses to connect until an administrator trusts the new key."
+            : "Vessel still connects (warn mode). Verify the new key and trust it, or investigate the server.";
+        return new RaiseNotificationRequest(NotificationEventTypes.ServerSshHostKeyChanged, NotificationSeverity.Critical,
+            NotificationTargetType.Server, serverId.ToString("D"), $"SSH host key changed: {serverName}",
+            $"The SSH host key of server '{serverName}' changed. {consequence}",
+            Payload(new Dictionary<string, object?>
+            {
+                ["serverId"] = serverId,
+                ["fingerprints"] = presentedFingerprints,
+                ["enforced"] = enforced
+            }),
+            $"/servers/{serverId:D}", null);
+    }
+
     public static RaiseNotificationRequest CertificateFailed(Guid certificateId, Guid applicationId, string host,
         bool renewal)
     {

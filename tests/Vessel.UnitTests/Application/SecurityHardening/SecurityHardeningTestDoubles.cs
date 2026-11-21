@@ -50,6 +50,7 @@ internal sealed class SecurityTestDbContext : IVesselDbContext
     public List<ProxyConfigurationVersion> ProxyConfigurationVersionItems { get; } = [];
     public List<ProxyDynamicConfiguration> ProxyDynamicConfigurationItems { get; } = [];
     public List<InstanceEmailSettings> InstanceEmailSettingsItems { get; } = [];
+    public List<Vessel.Domain.Ssh.SshKey> SshKeyItems { get; } = [];
     public int SaveCount { get; private set; }
 
     public IQueryable<User> Users => UserItems.AsQueryable();
@@ -87,6 +88,9 @@ internal sealed class SecurityTestDbContext : IVesselDbContext
     public IQueryable<Certificate> Certificates => Empty<Certificate>();
     public IQueryable<TerminalSession> TerminalSessions => TerminalSessionItems.AsQueryable();
     public IQueryable<ServerProxySettings> ServerProxySettings => Empty<ServerProxySettings>();
+    public IQueryable<Vessel.Domain.Ssh.SshKey> SshKeys => SshKeyItems.AsQueryable();
+    public IRepository<Vessel.Domain.Ssh.SshKey, SshKeyId> SshKeyRepository =>
+        new ListRepository<Vessel.Domain.Ssh.SshKey, SshKeyId>(SshKeyItems);
 
     public IRepository<User, UserId> UserRepository => new ListRepository<User, UserId>(UserItems);
     public IRepository<Team, TeamId> TeamRepository => new ListRepository<Team, TeamId>(TeamItems);
@@ -198,10 +202,12 @@ internal sealed class CountingContainerRuntime : IContainerRuntimeClient
 {
     public int Calls { get; private set; }
     public bool Fail { get; init; }
+    public List<ContainerRuntimeTarget> Targets { get; } = [];
 
     public Task<ContainerRuntimeInfo> GetInfoAsync(ContainerRuntimeTarget target, CancellationToken cancellationToken = default)
     {
         Calls++;
+        Targets.Add(target);
         if (Fail) throw new InvalidOperationException("runtime down");
         return Task.FromResult(new ContainerRuntimeInfo(ContainerRuntimeProvider.Docker, "27.0", "1.46", "linux", "x64"));
     }
@@ -209,6 +215,7 @@ internal sealed class CountingContainerRuntime : IContainerRuntimeClient
     public Task<IReadOnlyList<ContainerSummary>> ListContainersAsync(ContainerRuntimeTarget target, bool all, CancellationToken cancellationToken = default)
     {
         Calls++;
+        Targets.Add(target);
         return Task.FromResult<IReadOnlyList<ContainerSummary>>(
             [new ContainerSummary("1", ["app"], "image", "running", "Up", new Dictionary<string, string>())]);
     }

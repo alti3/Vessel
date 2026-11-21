@@ -116,7 +116,8 @@ public sealed record CreateServerRequest(
     string? User,
     ServerConnectionType ConnectionType,
     ContainerRuntimeKind Runtime,
-    string? Labels);
+    string? Labels,
+    Guid? SshKeyId = null);
 
 public sealed record UpdateServerRequest(
     string Name,

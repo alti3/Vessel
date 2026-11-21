@@ -1,3 +1,6 @@
+using Vessel.Application.Servers;
+using Vessel.Domain.Servers;
+
 using Vessel.Application.Processes;
 
 namespace Vessel.Application.Docker;
@@ -8,11 +11,29 @@ public enum ContainerRuntimeProvider
     Podman
 }
 
+/// <param name="Remote">
+///     Set for SSH servers: the runtime CLI runs on the remote host over SSH (through <c>IServerCommandRunner</c>), never
+///     against the control-plane host's runtime.
+/// </param>
 public sealed record ContainerRuntimeTarget(
     ContainerRuntimeProvider Provider,
     Uri? ApiEndpoint = null,
-    string? CliExecutable = null)
+    string? CliExecutable = null,
+    ServerExecutionTarget? Remote = null)
 {
+    public bool IsRemote => Remote is not null;
+
+    /// <summary>The runtime of a server, routed over its own connection (local runtime or SSH).</summary>
+    public static ContainerRuntimeTarget For(Server server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        var provider = server.Runtime == ContainerRuntimeKind.Podman
+            ? ContainerRuntimeProvider.Podman
+            : ContainerRuntimeProvider.Docker;
+        return new ContainerRuntimeTarget(provider,
+            Remote: server.ConnectionType == ServerConnectionType.Ssh ? ServerExecutionTarget.From(server) : null);
+    }
+
     /// <summary>
     /// The runtime CLI used for this target: an explicit <see cref="CliExecutable" />, otherwise the provider's
     /// default binary (<c>docker</c> or <c>podman</c>).

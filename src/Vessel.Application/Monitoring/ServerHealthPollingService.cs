@@ -21,18 +21,14 @@ public sealed class ServerHealthPollingService(
     IRealtimeNotifier realtime,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
-    INotificationEventPublisher notifications,
-    ISshClient sshClient)
+    INotificationEventPublisher notifications)
 {
     public const string HostRuntimeReachableReason = "Control-plane host container runtime responded.";
     public const string HostRuntimeUnreachableReason = "Control-plane host container runtime did not respond.";
-    public const string SshReachableReason =
-        "SSH connection succeeded. Remote container runtime probing is not supported yet.";
+    public const string SshReachableReason = "Remote container runtime responded over SSH.";
     public const string SshUnreachableReason =
-        "SSH connection failed. The host key must already be trusted and key-based authentication configured for the Vessel service user.";
+        "The remote container runtime did not respond over SSH. Check the server's SSH key, host key and runtime, then validate the server.";
     public const string UnsafeAddressReason = "Server address or user contains characters that are not allowed for SSH.";
-
-    private static readonly TimeSpan SshProbeTimeout = TimeSpan.FromSeconds(15);
 
     public async Task<IReadOnlyList<ServerHealthPollingResult>> PollAllAsync(
         CancellationToken cancellationToken = default)
@@ -209,6 +205,10 @@ public sealed class ServerHealthPollingService(
         }
     }
 
+    /// <summary>
+    ///     Probes an SSH server's own runtime over SSH (the runtime CLI runs on the remote host; the control-plane runtime
+    ///     is never consulted). Host and user are validated before any connection is attempted.
+    /// </summary>
     private async Task<ProbeOutcome> ProbeSshAsync(Server server, CancellationToken cancellationToken)
     {
         string user = server.Address.User ?? "root";
@@ -217,17 +217,13 @@ public sealed class ServerHealthPollingService(
 
         try
         {
-            bool reachable = await sshClient.TestConnectionAsync(
-                new SshConnectionOptions(
-                    server.Address.Host,
-                    server.Address.Port.Value,
-                    user,
-                    HostIdentityPolicy: SshHostIdentityPolicy.RequireKnownHost,
-                    ConnectTimeout: SshProbeTimeout),
-                cancellationToken);
-            return reachable
-                ? new ProbeOutcome(ServerStatus.Reachable, 0, false, SshReachableReason)
-                : new ProbeOutcome(ServerStatus.Unreachable, 0, false, SshUnreachableReason);
+            ContainerRuntimeTarget target = ContainerRuntimeTarget.For(server);
+            await runtimeClient.GetInfoAsync(target, cancellationToken);
+            IReadOnlyList<ContainerSummary> containers =
+                await runtimeClient.ListContainersAsync(target, all: false, cancellationToken);
+            int running = containers.Count(container =>
+                string.Equals(container.State, "running", StringComparison.OrdinalIgnoreCase));
+            return new ProbeOutcome(ServerStatus.Reachable, running, true, SshReachableReason);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

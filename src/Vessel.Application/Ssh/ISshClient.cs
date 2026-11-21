@@ -1,3 +1,5 @@
+using Vessel.Application.Processes;
+
 namespace Vessel.Application.Ssh;
 
 public interface ISshClient
@@ -11,6 +13,14 @@ public interface ISshClient
         SshCommandRequest request,
         Stream standardInput,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Runs <paramref name="request" /> and yields its output line by line (deployment logs, builds).</summary>
+    IAsyncEnumerable<ProcessOutputLine> StreamCommandAsync(
+        SshCommandRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support streaming SSH commands.");
+    }
 
     Task UploadAsync(SshFileTransferRequest request, CancellationToken cancellationToken = default);
 

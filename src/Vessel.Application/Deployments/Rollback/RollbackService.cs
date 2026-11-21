@@ -181,8 +181,7 @@ public sealed class RollbackService(
 
     private static ContainerRuntimeTarget Target(Server server)
     {
-        return new ContainerRuntimeTarget(server.Runtime == ContainerRuntimeKind.Podman
-            ? ContainerRuntimeProvider.Podman
-            : ContainerRuntimeProvider.Docker);
+        // The server's own runtime: local for host-local servers, the remote CLI over SSH for SSH servers.
+        return ContainerRuntimeTarget.For(server);
     }
 }

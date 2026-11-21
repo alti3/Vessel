@@ -15,6 +15,8 @@ using Vessel.Application.Proxy;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
+using Vessel.Application.Servers;
+using Vessel.Application.Servers.Files;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
@@ -48,9 +50,20 @@ public sealed partial class DeploymentRunner(
     VesselAuthorizationService authorization,
     DeploymentQueueService queue,
     IDeploymentCancellationRegistry cancellations,
-    IBackgroundJobDispatcher backgroundJobs)
+    IBackgroundJobDispatcher backgroundJobs,
+    IServerDirectoryTransfer? directoryTransfer = null,
+    IServerCommandRunner? serverCommands = null)
     : IDeploymentRunner
 {
+    /// <summary>
+    ///     HTTP probe run on an SSH server for its deployment health check (prints the status code, or <c>nohttp</c> when
+    ///     neither curl nor wget exists). The URL is passed as <c>$1</c>, never interpolated.
+    /// </summary>
+    public const string RemoteHealthCheckScript =
+        "url=$1; if command -v curl >/dev/null 2>&1; then curl -s -o /dev/null -w '%{http_code}' --max-time 5 \"$url\" || true; " +
+        "elif command -v wget >/dev/null 2>&1; then wget -q -S -O /dev/null -T 5 \"$url\" 2>&1 | awk '/^  HTTP\\//{c=$2} END{print c}'; " +
+        "else echo nohttp; fi";
+
     /// <summary>How long a deployment waits for the run lock of its application before it is retried.</summary>
     public static readonly TimeSpan ContentionRetryDelay = TimeSpan.FromSeconds(15);
 
@@ -159,6 +172,8 @@ public sealed partial class DeploymentRunner(
         DeploymentCancellationScope run = cancellations.Register(deploymentId, cancellationToken);
         CancellationToken buildToken = run.Token;
         DeploymentWorkspace? workspace = null;
+        ServerExecutionTarget? remoteTarget = null;
+        string? remoteWorkspace = null;
         try
         {
             await ThrowIfCanceledAsync(deploymentId, buildToken);
@@ -167,15 +182,19 @@ public sealed partial class DeploymentRunner(
                 LoadDeploymentContext(deploymentId);
             if (server.Status == ServerStatus.Unreachable)
                 throw new DomainException("Server is unreachable.");
-            if (!server.IsHostLocal)
-                throw new DomainException(
-                    "Phase 8 deployment runner currently supports local Docker/Podman targets; SSH runtime execution remains behind the runtime abstraction.");
+            if (server.ConnectionType == ServerConnectionType.Ssh)
+            {
+                // SSH servers: the workspace is prepared here, uploaded to the server, and the runtime CLI runs there.
+                if (directoryTransfer is null || serverCommands is null)
+                    throw new DomainException("Remote (SSH) deployments are not configured on this Vessel instance.");
+                remoteTarget = ServerExecutionTarget.From(server);
+            }
             // Defense in depth: host-local deployments run on the control-plane host and must be authorized by an
             // instance administrator (the triggering user, or for webhooks an instance-admin Owner/Admin of the team).
             if (!HostLocalExecutionGuard.IsAuthorized(authorization, server, deployment.ActorUserId))
                 throw new DomainException(HostLocalExecutionGuard.UnattendedNotAuthorizedMessage);
 
-            ContainerRuntimeTarget target = RuntimeTarget(server);
+            ContainerRuntimeTarget target = ContainerRuntimeTarget.For(server);
             if (preview is not null)
             {
                 if (preview.Status == ApplicationPreviewStatus.Archived)
@@ -207,8 +226,17 @@ public sealed partial class DeploymentRunner(
 
             await ThrowIfCanceledAsync(deploymentId, buildToken);
 
+            // Paths the runtime sees: the local workspace, or its mirror under the owned remote root of an SSH server.
+            DeploymentWorkspace runtimeWorkspace = workspace;
+            if (remoteTarget is not null)
+            {
+                var remoteRelative = RemoteWorkspacePath(deploymentId);
+                runtimeWorkspace = MapWorkspace(workspace,
+                    directoryTransfer!.ResolveHostPath(remoteTarget, remoteRelative));
+            }
+
             DeploymentRuntimePlan plan = await CreatePlanAsync(application, environment, server, teamId, deployment,
-                preview, workspace, buildToken);
+                preview, workspace, runtimeWorkspace, buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, ".env", plan.EnvironmentFile, true,
                 buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, false,
@@ -218,6 +246,16 @@ public sealed partial class DeploymentRunner(
             await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/env.redacted",
                 plan.RedactedEnvironmentFile, false, buildToken);
             await RecordSnapshotAsync(deploymentId, "snapshots/docker-compose.redacted.yml", buildToken);
+
+            if (remoteTarget is not null)
+            {
+                await AppendAsync(deploymentId, "system", "Uploading deployment files to the server over SSH.",
+                    buildToken);
+                remoteWorkspace = RemoteWorkspacePath(deploymentId);
+                await directoryTransfer!.UploadAsync(remoteTarget, workspace.RootDirectory, remoteWorkspace,
+                    buildToken);
+                await ThrowIfCanceledAsync(deploymentId, buildToken);
+            }
 
             await AppendAsync(deploymentId, "system", "Ensuring deployment network exists.", buildToken);
             await runtime.EnsureNetworkAsync(target, plan.NetworkName, Labels(deploymentId, application),
@@ -233,11 +271,11 @@ public sealed partial class DeploymentRunner(
                 var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "Dockerfile");
                 // The Dockerfile is read by the runtime CLI on this host: reject symlinks/escapes from the repository.
                 workspaces.EnsureRegularFile(workspace.RepositoryDirectory, dockerfile);
-                await StreamBuildAsync(target, plan, workspace, dockerfile, deployment, application, buildToken);
+                await StreamBuildAsync(target, plan, runtimeWorkspace, dockerfile, deployment, application, buildToken);
                 await ThrowIfCanceledAsync(deploymentId, buildToken);
             }
 
-            await StreamComposeAsync(target, plan, workspace, deploymentId, ["config", "--quiet"], buildToken);
+            await StreamComposeAsync(target, plan, runtimeWorkspace, deploymentId, ["config", "--quiet"], buildToken);
             await ThrowIfCanceledAsync(deploymentId, buildToken);
 
             // DEP-05: from here on containers are replaced; the deployment is never auto-cancelled any more.
@@ -246,15 +284,18 @@ public sealed partial class DeploymentRunner(
             run.Dispose();
             await AppendAsync(deploymentId, "system", "Deploy phase started; replacing containers.", cancellationToken);
 
-            await StreamComposeAsync(target, plan, workspace, deploymentId,
+            await StreamComposeAsync(target, plan, runtimeWorkspace, deploymentId,
                 reuseImage
                     ? ["up", "--detach", "--remove-orphans", "--no-build"]
                     : ["up", "--detach", "--remove-orphans", "--build"], cancellationToken);
 
             var healthCheckUrl = preview is null
                 ? plan.HealthCheckUrl
-                : await ResolvePreviewHealthCheckUrlAsync(target, plan, workspace, cancellationToken);
-            await RunHealthCheckAsync(healthCheckUrl, deploymentId, cancellationToken);
+                : await ResolvePreviewHealthCheckUrlAsync(target, plan, runtimeWorkspace, cancellationToken);
+            if (remoteTarget is null)
+                await RunHealthCheckAsync(healthCheckUrl, deploymentId, cancellationToken);
+            else
+                await RunRemoteHealthCheckAsync(remoteTarget, healthCheckUrl, deploymentId, cancellationToken);
             if (preview is not null)
                 await RecordPreviewRouteAsync(deploymentId, application, preview, cancellationToken);
             await AppendAsync(deploymentId, "system", "Applying reverse proxy routes.", cancellationToken);
@@ -287,6 +328,8 @@ public sealed partial class DeploymentRunner(
         finally
         {
             run.Dispose();
+            if (remoteTarget is not null && remoteWorkspace is not null)
+                await CleanupRemoteWorkspaceAsync(remoteTarget, remoteWorkspace, deploymentId);
             if (workspace is not null)
                 await workspaces.CleanupAsync(deploymentId, CancellationToken.None);
             activity?.SetTag("vessel.deployment_status", finalStatus.ToString());
@@ -447,6 +490,7 @@ public sealed partial class DeploymentRunner(
         Deployment deployment,
         ApplicationPreview? preview,
         DeploymentWorkspace workspace,
+        DeploymentWorkspace runtimeWorkspace,
         CancellationToken cancellationToken)
     {
         DeploymentId deploymentId = deployment.Id;
@@ -477,7 +521,8 @@ public sealed partial class DeploymentRunner(
         string compose;
         ComposeNormalizationResult? normalized =
             application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
-                ? await CreateComposePassthroughAsync(workspace, application, naming, port, labels, cancellationToken)
+                ? await CreateComposePassthroughAsync(workspace, runtimeWorkspace, application, naming, port, labels,
+                    cancellationToken)
                 : null;
         if (normalized is null)
         {
@@ -508,6 +553,7 @@ public sealed partial class DeploymentRunner(
 
     private async Task<ComposeNormalizationResult?> CreateComposePassthroughAsync(
         DeploymentWorkspace workspace,
+        DeploymentWorkspace runtimeWorkspace,
         AppEntity application,
         DeploymentNaming naming,
         int port,
@@ -534,7 +580,10 @@ public sealed partial class DeploymentRunner(
             naming.UpstreamAlias,
             port,
             labels,
-            naming.PreviewSuffix));
+            naming.PreviewSuffix,
+            string.Equals(runtimeWorkspace.RepositoryDirectory, workspace.RepositoryDirectory, StringComparison.Ordinal)
+                ? null
+                : runtimeWorkspace.RepositoryDirectory));
     }
 
     private string CreateDockerfileCompose(
@@ -865,11 +914,73 @@ public sealed partial class DeploymentRunner(
             new RealtimeMessage("deployment.status", payload), cancellationToken);
     }
 
-    private static ContainerRuntimeTarget RuntimeTarget(Server server)
+    private static string RemoteWorkspacePath(DeploymentId deploymentId)
     {
-        return new ContainerRuntimeTarget(server.Runtime == ContainerRuntimeKind.Podman
-            ? ContainerRuntimeProvider.Podman
-            : ContainerRuntimeProvider.Docker);
+        return $"deployments/{deploymentId.Value:N}";
+    }
+
+    /// <summary>The same workspace layout rooted at <paramref name="remoteRoot" /> (POSIX paths on the server).</summary>
+    private static DeploymentWorkspace MapWorkspace(DeploymentWorkspace local, string remoteRoot)
+    {
+        string Map(string path)
+        {
+            var relative = Path.GetRelativePath(local.RootDirectory, path).Replace('\\', '/');
+            if (relative.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
+                throw new DomainException("Deployment workspace layout is invalid.");
+            return relative == "." ? remoteRoot : $"{remoteRoot}/{relative}";
+        }
+
+        return new DeploymentWorkspace(remoteRoot, Map(local.RepositoryDirectory), Map(local.ComposeFilePath),
+            Map(local.EnvironmentFilePath));
+    }
+
+    private async Task CleanupRemoteWorkspaceAsync(ServerExecutionTarget target, string remoteWorkspace,
+        DeploymentId deploymentId)
+    {
+        try
+        {
+            await directoryTransfer!.DeleteAsync(target, remoteWorkspace, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await AppendAsync(deploymentId, "stderr",
+                $"Could not remove the deployment files from the server: {redactor.Redact(ex.Message)}",
+                CancellationToken.None);
+        }
+    }
+
+    /// <summary>The deployment health check of an SSH server runs on that server (curl or wget), like the containers.</summary>
+    private async Task RunRemoteHealthCheckAsync(
+        ServerExecutionTarget target,
+        string healthCheckUrl,
+        DeploymentId deploymentId,
+        CancellationToken cancellationToken)
+    {
+        await AppendAsync(deploymentId, "system", "Running deployment health check on the server.", cancellationToken);
+        DateTimeOffset deadline = timeProvider.GetUtcNow().Add(TimeSpan.FromSeconds(30));
+        string? last = null;
+        while (timeProvider.GetUtcNow() < deadline)
+        {
+            ServerCommandResult result = await serverCommands!.RunAsync(target,
+                ["sh", "-c", RemoteHealthCheckScript, "vessel", healthCheckUrl], TimeSpan.FromSeconds(20), null,
+                cancellationToken);
+            var output = result.StandardOutput.Trim();
+            if (output == "nohttp")
+                throw new DomainException(
+                    "Health check failed: the server has neither curl nor wget. Install one of them on the server.");
+            if (int.TryParse(output, NumberStyles.None, CultureInfo.InvariantCulture, out var status) &&
+                status is > 0 and < 500)
+            {
+                await AppendAsync(deploymentId, "system", $"Health check passed: {status}.", cancellationToken);
+                return;
+            }
+
+            last = output.Length == 0 ? "no response" : $"status {output}";
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            await ThrowIfCanceledAsync(deploymentId, cancellationToken);
+        }
+
+        throw new DomainException($"Health check failed before timeout ({last ?? "no response"}).");
     }
 
     private static Dictionary<string, string> Labels(DeploymentId deploymentId, AppEntity application,

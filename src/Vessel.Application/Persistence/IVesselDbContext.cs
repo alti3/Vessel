@@ -14,6 +14,7 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
+using Vessel.Domain.Ssh;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
@@ -110,6 +111,8 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<ServerProxySettings> ServerProxySettings { get; }
 
+    IQueryable<SshKey> SshKeys => Enumerable.Empty<SshKey>().AsQueryable();
+
     IQueryable<ProxyDynamicConfiguration> ProxyDynamicConfigurations =>
         Enumerable.Empty<ProxyDynamicConfiguration>().AsQueryable();
 
@@ -193,6 +196,9 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
 
     IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; }
+
+    IRepository<SshKey, SshKeyId> SshKeyRepository =>
+        throw new InvalidOperationException("SSH key persistence is not available.");
 
     IRepository<SettingEntry, SettingId> SettingRepository =>
         throw new InvalidOperationException("Setting persistence is not available.");

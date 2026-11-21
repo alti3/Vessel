@@ -16,6 +16,7 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
+using Vessel.Domain.Ssh;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
@@ -66,6 +67,8 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             new EfRepository<ProxyConfigurationVersion, ProxyConfigurationVersionId>(this);
         CertificateRepository = new EfRepository<Certificate, CertificateId>(this);
         ServerProxySettingsRepository = new EfRepository<ServerProxySettings, ServerId>(this);
+        SshKeyRepository = new EfRepository<SshKey, SshKeyId>(this);
+
         SettingRepository = new EfRepository<SettingEntry, SettingId>(this);
     }
 
@@ -140,6 +143,8 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
 
     public DbSet<ServerProxySettings> ServerProxySettingsSet => Set<ServerProxySettings>();
 
+    public DbSet<SshKey> SshKeySet => Set<SshKey>();
+
     public IQueryable<User> Users => UserSet;
 
     public IQueryable<PersonalAccessToken> PersonalAccessTokens => PersonalAccessTokenSet;
@@ -213,6 +218,8 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<ServerProxySettings> ServerProxySettings => ServerProxySettingsSet;
 
+    public IQueryable<SshKey> SshKeys => SshKeySet;
+
     public IRepository<User, UserId> UserRepository { get; }
 
     public IRepository<PersonalAccessToken, PersonalAccessTokenId> PersonalAccessTokenRepository { get; }
@@ -285,6 +292,8 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
 
+    public IRepository<SshKey, SshKeyId> SshKeyRepository { get; }
+
     public IRepository<SettingEntry, SettingId> SettingRepository { get; }
 
     public async Task RefreshAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default)
@@ -303,6 +312,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         ConfigureTeams(modelBuilder);
         ConfigureProjects(modelBuilder);
         ConfigureServers(modelBuilder);
+        ConfigureSshKeys(modelBuilder);
         ConfigureApplications(modelBuilder);
         ConfigureDatabases(modelBuilder);
         ConfigureManagedServices(modelBuilder);
@@ -489,6 +499,42 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(server => server.Capabilities).HasConversion<int>().IsRequired();
             builder.Property(server => server.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(server => server.Labels).HasMaxLength(1000).IsRequired();
+            builder.Property(server => server.SshKeyId).HasConversion(
+                id => id.HasValue ? id.Value.Value : (Guid?)null,
+                value => value.HasValue ? new SshKeyId(value.Value) : null);
+            builder.Property(server => server.HostKeyChecking).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(SshHostKeyCheckingMode.Enforce).HasSentinel((SshHostKeyCheckingMode)(-1)).IsRequired();
+            builder.Property(server => server.PinnedHostKey).HasMaxLength(Server.MaxHostKeyLength);
+            builder.Property(server => server.PendingHostKey).HasMaxLength(Server.MaxHostKeyLength);
+            builder.Property(server => server.TerminalAccessEnabled).HasDefaultValue(true).HasSentinel(true)
+                .IsRequired();
+            builder.OwnsOne(server => server.Validation, validation =>
+            {
+                validation.Property(item => item.Succeeded).HasColumnName("validation_succeeded");
+                validation.Property(item => item.OsId).HasColumnName("validation_os_id")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.OsIdLike).HasColumnName("validation_os_id_like")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.OsVersion).HasColumnName("validation_os_version")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.PackageManager).HasColumnName("validation_package_manager")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.RuntimeVersion).HasColumnName("validation_runtime_version")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.ComposeVersion).HasColumnName("validation_compose_version")
+                    .HasMaxLength(ServerValidation.MaxFieldLength);
+                validation.Property(item => item.IsRootUser).HasColumnName("validation_is_root_user");
+                validation.Property(item => item.HasPasswordlessSudo).HasColumnName("validation_has_passwordless_sudo");
+                validation.Property(item => item.Message).HasColumnName("validation_message")
+                    .HasMaxLength(ServerValidation.MaxMessageLength);
+                validation.Property(item => item.ValidatedAt).HasColumnName("validation_validated_at");
+            });
+            builder.HasIndex(server => server.SshKeyId);
+            builder.HasOne<SshKey>()
+                .WithMany()
+                .HasForeignKey(server => server.SshKeyId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             builder.Property(server => server.ConcurrentBuilds).HasDefaultValue(Server.DefaultConcurrentBuilds)
                 .IsRequired();
             builder.Property(server => server.DeploymentQueueLimit)
@@ -1016,6 +1062,9 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(session => session.Command).HasMaxLength(240).IsRequired();
             builder.Property(session => session.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(session => session.FailureReason).HasMaxLength(512);
+            builder.Property(session => session.Mode).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(TerminalMode.Shell).HasSentinel((TerminalMode)(-1)).IsRequired();
+            builder.Property(session => session.ResourceKind).HasConversion<string>().HasMaxLength(32);
             builder.Property(session => session.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(session => session.DomainEvents);
             builder.HasIndex(session => new { session.TeamId, session.Status, session.StartedAt });
@@ -1089,6 +1138,37 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(variable => variable.SecretReferenceId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureSshKeys(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SshKey>(builder =>
+        {
+            builder.ToTable("ssh_keys");
+            builder.HasKey(key => key.Id);
+            builder.Property(key => key.Id).HasSshKeyIdConversion();
+            builder.Property(key => key.TeamId).HasTeamIdConversion();
+            builder.Property(key => key.Name).HasConversion(ValueObjectConversions.ResourceName).HasMaxLength(120)
+                .IsRequired();
+            builder.Property(key => key.Description).HasConversion(ValueObjectConversions.NullableDescription)
+                .HasMaxLength(1000);
+            builder.Property(key => key.PrivateKeyReferenceId).HasSecretReferenceIdConversion();
+            builder.Property(key => key.PublicKey).HasMaxLength(SshKey.MaxPublicKeyLength).IsRequired();
+            builder.Property(key => key.Fingerprint).HasMaxLength(SshKey.MaxFingerprintLength).IsRequired();
+            builder.Property(key => key.Algorithm).HasMaxLength(SshKey.MaxAlgorithmLength).IsRequired();
+            builder.Property(key => key.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(key => key.DomainEvents);
+            builder.HasIndex(key => new { key.TeamId, key.Name }).IsUnique();
+            builder.HasIndex(key => new { key.TeamId, key.Fingerprint }).IsUnique();
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(key => key.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(key => key.PrivateKeyReferenceId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 
