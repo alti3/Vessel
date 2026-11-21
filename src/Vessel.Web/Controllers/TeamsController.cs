@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Vessel.Application.Auth;
+using Vessel.Application.Auth.Sessions;
 using Vessel.Domain;
 using Vessel.Domain.Common;
 using Vessel.Domain.Teams;
@@ -33,16 +34,26 @@ public sealed class TeamsController : ControllerBase
 
     [HttpPost("{teamId:guid}/switch")]
     [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
-    public async Task<IActionResult> Switch(Guid teamId)
+    public async Task<IActionResult> Switch(Guid teamId, CancellationToken cancellationToken)
     {
         var selectedTeamId = new TeamId(teamId);
         if (!_teamService.IsTeamMember(User.GetUserId(), selectedTeamId)) return Forbid();
+
+        // IAM-09: the server-side session holds the active team (so a concurrent stale request cannot restore the old
+        // one) and the user remembers it for the next login.
+        if (User.GetSessionId() is not { } sessionId
+            || !await HttpContext.RequestServices.GetRequiredService<UserSessionService>().SwitchTeamAsync(sessionId,
+                User.GetUserId(), selectedTeamId, CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+                cancellationToken))
+            return Forbid();
+        HttpContext.RequestServices.GetRequiredService<VesselSessionManager>().Forget(sessionId);
 
         // Re-issue the session from an explicit claim allow-list; never copy the caller's claims wholesale.
         await HttpContext.SignInAsync(
             VesselAuthenticationSchemes.Cookie,
             VesselSessionPrincipal.WithTeam(User, selectedTeamId));
-        return NoContent();
+        // Form posts from the Teams page land on the dashboard (Coolify v4.3.22); API callers get 204.
+        return Request.HasFormContentType ? LocalRedirect("/") : NoContent();
     }
 
     [HttpGet("{teamId:guid}/members")]

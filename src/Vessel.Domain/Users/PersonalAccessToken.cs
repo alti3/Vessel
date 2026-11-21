@@ -55,6 +55,9 @@ public sealed class PersonalAccessToken : Entity<PersonalAccessTokenId>
 
     public DateTimeOffset? LastUsedAt { get; private set; }
 
+    /// <summary>When the "token expires soon" warning was sent (IAM-04); cleared when the expiry is edited.</summary>
+    public DateTimeOffset? ExpirationWarningSentAt { get; private set; }
+
     public DateTimeOffset? RevokedAt { get; private set; }
 
     public bool IsRevoked => RevokedAt.HasValue;
@@ -101,8 +104,30 @@ public sealed class PersonalAccessToken : Entity<PersonalAccessTokenId>
         Name = DomainValidation.Required(name, nameof(Name), 255);
         Scopes = DomainValidation.Required(scopes, nameof(Scopes), 512);
         AccessGrants = AccessGrant.Normalize(accessGrants);
+        if (ExpiresAt != expiresAt) ExpirationWarningSentAt = null;
         ExpiresAt = expiresAt;
         Touch(now);
+    }
+
+    /// <summary>
+    ///     Whether the expiry warning is due (Coolify <c>ApiTokenExpirationWarningJob</c>): 7 days before expiry, or 24
+    ///     hours before for tokens that live 7 days or less, so a short-lived token is not warned right after creation.
+    ///     Revoked, paused-and-expired or already-warned tokens are never due.
+    /// </summary>
+    public bool IsExpirationWarningDue(DateTimeOffset now)
+    {
+        if (IsRevoked || ExpirationWarningSentAt.HasValue || ExpiresAt is not { } expiresAt || expiresAt <= now)
+            return false;
+
+        TimeSpan warningWindow = expiresAt - CreatedAt > ExpirationWarningWindow ? ExpirationWarningWindow : TimeSpan.FromDays(1);
+        return expiresAt <= now.Add(warningWindow);
+    }
+
+    public static readonly TimeSpan ExpirationWarningWindow = TimeSpan.FromDays(7);
+
+    public void MarkExpirationWarningSent(DateTimeOffset now)
+    {
+        ExpirationWarningSentAt = now;
     }
 
     public void Pause(DateTimeOffset now)

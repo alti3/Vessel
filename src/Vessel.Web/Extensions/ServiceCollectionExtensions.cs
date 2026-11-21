@@ -20,7 +20,10 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Vessel.Application.Auditing;
+using Microsoft.AspNetCore.Components.Authorization;
 using Vessel.Application.Auth;
+using Vessel.Application.Auth.External;
+using Vessel.Application.Auth.Sessions;
 using Vessel.Application.Authorization;
 using Vessel.Application.Backups;
 using Vessel.Application.Common;
@@ -60,6 +63,7 @@ using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
 using Vessel.Web.Diagnostics;
 using Vessel.Web.Middleware;
+using Vessel.Web.OpenApi;
 using Vessel.Web.Realtime;
 using Vessel.Web.Security;
 
@@ -83,6 +87,8 @@ public static class ServiceCollectionExtensions
         services.AddSignalR();
         services.AddHttpContextAccessor();
         services.AddCascadingAuthenticationState();
+        // IAM-09: Blazor circuits re-check their server-side session every minute.
+        services.AddScoped<AuthenticationStateProvider, VesselRevalidatingAuthenticationStateProvider>();
 
         services.AddVesselWebOptions(configuration);
         services.AddVesselApplicationServices(configuration);
@@ -91,6 +97,7 @@ public static class ServiceCollectionExtensions
         services.AddVesselForwardedHeaders(configuration);
         services.AddVesselOpenTelemetry(configuration, environment);
         services.AddVesselHealthChecks();
+        services.AddVesselOpenApi();
 
         return services;
     }
@@ -121,6 +128,21 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IUnitOfWork>(provider => provider.GetRequiredService<IVesselDbContext>());
         services.TryAddScoped<IAuditWriter, NoopAuditWriter>();
         services.AddScoped<VesselAuthenticationService>();
+        // IAM-07/IAM-08/IAM-09: external sign-in, audit context/query/retention, sessions, token expiry warnings.
+        services.AddOptions<AuditOptions>().Bind(configuration.GetSection(AuditOptions.SectionName));
+        services.AddScoped<IAuditContextAccessor, HttpAuditContextAccessor>();
+        services.AddScoped<AuditQueryService>();
+        services.AddScoped<AuditRetentionService>();
+        services.AddScoped<AuditRetentionJob>();
+        services.AddScoped<AuditAnonymizationService>();
+        services.AddScoped<UserSessionService>();
+        services.AddScoped<SessionPruneJob>();
+        services.AddScoped<VesselSessionManager>();
+        services.AddScoped<ExternalLoginService>();
+        services.AddScoped<AuthProviderAdminService>();
+        services.AddScoped<TokenExpiryWarningService>();
+        services.AddScoped<TokenExpiryWarningJob>();
+        services.AddMemoryCache();
         services.AddScoped<VesselTokenService>();
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
@@ -291,6 +313,8 @@ public static class ServiceCollectionExtensions
                     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
                     options.LoginPath = "/api/auth/login";
                     options.LogoutPath = "/api/auth/logout";
+                    // IAM-09: every request re-validates the server-side session (revocation, active team).
+                    options.EventsType = typeof(VesselCookieAuthenticationEvents);
                 })
             .AddScheme<AuthenticationSchemeOptions, VesselBearerAuthenticationHandler>(
                 VesselAuthenticationSchemes.Bearer,
@@ -312,6 +336,7 @@ public static class ServiceCollectionExtensions
                     VesselAuthorizationPolicies.IsInteractiveSessionOrRootToken(context.User)));
         });
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddScoped<VesselCookieAuthenticationEvents>();
 
         return services;
     }

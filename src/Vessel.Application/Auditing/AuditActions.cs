@@ -126,4 +126,25 @@ public static class AuditActions
     public const string InstanceEmailSettingsUpdated = "settings.email_updated";
     public const string InstanceEmailTestSent = "settings.email_test_sent";
     public const string EmailVerified = "auth.email_verified";
+
+    // IAM-07 external sign-in.
+    public const string OAuthLoginSucceeded = "auth.oauth_login";
+    public const string OAuthLoginDenied = "auth.oauth_login_denied";
+    public const string OAuthIdentityLinked = "auth.oauth_identity_linked";
+    public const string OAuthTwoFactorChallenged = "auth.oauth_two_factor_challenged";
+    public const string AuthProviderCreated = "instance.auth_provider_created";
+    public const string AuthProviderUpdated = "instance.auth_provider_updated";
+    public const string AuthProviderDeleted = "instance.auth_provider_deleted";
+
+    // IAM-09 sessions and the active team.
+    public const string SessionRevoked = "auth.session_revoked";
+    public const string SessionsRevoked = "auth.sessions_revoked";
+    public const string TeamSwitched = "team.switched";
+
+    // IAM-08 audit housekeeping.
+    public const string AuditEventsPruned = "audit.events_pruned";
+    public const string AuditUserAnonymized = "audit.user_anonymized";
+
+    // IAM-04 token expiry warning.
+    public const string TokenExpiryWarningSent = "auth.token_expiry_warning_sent";
 }

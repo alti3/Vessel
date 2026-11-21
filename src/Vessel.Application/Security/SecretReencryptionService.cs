@@ -89,6 +89,7 @@ public sealed class SecretReencryptionService(
         await ReencryptTwoFactorSecretsAsync(dryRun, batchSize, counters, cancellationToken);
         await ReencryptProxyConfigurationsAsync(dryRun, batchSize, counters, cancellationToken);
         await ReencryptInstanceEmailSecretsAsync(dryRun, counters, cancellationToken);
+        await ReencryptAuthProviderSecretsAsync(dryRun, counters, cancellationToken);
 
         var result = new SecretReencryptionResult(
             active,
@@ -314,6 +315,46 @@ public sealed class SecretReencryptionService(
             timeProvider.GetUtcNow());
         counters.EnvelopesReencrypted += needing;
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>External sign-in client secrets (IAM-07).</summary>
+    private async Task ReencryptAuthProviderSecretsAsync(
+        bool dryRun,
+        Counters counters,
+        CancellationToken cancellationToken)
+    {
+        var providers = dbContext.AuthProviders
+            .Where(provider => provider.ProtectedClientSecret != null)
+            .AsEnumerable()
+            .Where(provider => IsStale(provider.ProtectedClientSecret!))
+            .ToArray();
+        if (providers.Length == 0) return;
+        counters.EnvelopesNeedingUpgrade += providers.Length;
+
+        var changed = false;
+        foreach (var provider in providers)
+        {
+            string plaintext;
+            try
+            {
+                plaintext = cipher.Unprotect(provider.ProtectedClientSecret!,
+                    Vessel.Application.Auth.External.ExternalLoginService.ClientSecretPurpose);
+            }
+            catch (SecretDecryptionException)
+            {
+                counters.Undecryptable++;
+                continue;
+            }
+
+            if (dryRun) continue;
+            provider.ReplaceClientSecret(
+                cipher.Protect(plaintext, Vessel.Application.Auth.External.ExternalLoginService.ClientSecretPurpose),
+                timeProvider.GetUtcNow());
+            counters.EnvelopesReencrypted++;
+            changed = true;
+        }
+
+        if (changed) await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private bool IsStale(string protectedValue)

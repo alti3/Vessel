@@ -14,7 +14,7 @@ Supported server-side flows:
 - personal/API token creation, listing (active team), editing, pausing, rolling, revocation, abilities, scope limits, expiration, and bearer authentication
 - team invitations, acceptance, member removal, role changes, and team switching
 
-OIDC, GitHub, and GitLab settings are represented in configuration without exposing client secrets from APIs or logs. External login callbacks should link to `User.ExternalSubject`.
+External sign-in (OIDC, GitHub, GitLab, Google) is described in [External Sign-In (IAM-07)](#external-sign-in-iam-07). `User.ExternalSubject` is deprecated and no longer used.
 
 ## Identity-Management Endpoints
 
@@ -123,6 +123,38 @@ Unattended work (webhook deployments, scheduled health polling) on a host-local 
 - **Webhooks:** new or changed manual webhook secrets need 16-512 characters (existing rows keep working). Distinct failed signature/token attempts are counted per provider + client address + repository + branch (repeats count once; markers are keyed hashes); after 30 per minute further failures get `429`, but correctly signed deliveries are always processed.
 - **Real client address:** `Vessel:ForwardedHeaders` (`Enabled`, `KnownProxies`, `KnownNetworks` in CIDR, `ForwardLimit`). Forwarded headers are honoured only from the listed proxies; the framework's loopback defaults are cleared, so nothing is trusted unless configured. Counters live in Redis when enabled, otherwise in-process.
 
-## Audit
+## External Sign-In (IAM-07)
 
-The Application layer records security events through `IAuditWriter`. Metadata keys containing `password`, `token`, or `secret` are redacted before persistence.
+Instance administrators configure providers at `GET/POST/PUT/DELETE /api/v1/instance/auth-providers[/{id}]` (interactive session + `instance.manage`). Kinds: `Oidc` (any issuer with discovery), `GitHub` (github.com or a GitHub Enterprise base URL), `GitLab` (gitlab.com or self-managed, through OIDC), `Google` (OIDC).
+
+- **Secrets:** the client secret is write-only. It is stored as a key-ring envelope (`ISecretCipher.Protect`, purpose `auth-provider.client-secret`), included in secret re-encryption, and never returned or audited. Provider URLs must pass the outbound URL policy (`Vessel:OutboundRequests`); internal identity providers have to be allow-listed there.
+- **Flow:** `GET /auth/oauth/{id}/start` redirects to the provider with authorization code + PKCE (S256), `state` and (OIDC) `nonce`, kept in a 10-minute data-protected cookie. The callback `GET /auth/oauth/{id}/callback` is built from `Vessel:Host:PublicUrl` and never from the Host header; without a public URL external sign-in is unavailable. OIDC endpoints come from discovery and the discovered issuer must equal the configured one. The ID token comes straight from the token endpoint over TLS; `iss`, `aud`, `exp` (60 s skew) and `nonce` are validated (OIDC Core 3.1.3.7 (6)). GitHub uses the primary email of `/user/emails` and its `verified` flag.
+- **Identities:** `oauth_identities` is keyed by provider instance + subject (unique), stores the issuer, and allows one linked identity per account. A known subject signs in whatever email the provider reports now; an identity seen under a different issuer is refused (`oauth_issuer_mismatch`).
+- **Linking:** an existing account (matched by email) is linked only when the provider verified the email (`oauth_email_unverified`), and only when it has no linked identity yet (`oauth_already_linked`). With `requireVerifiedEmail` (default on) every sign-in needs a verified email.
+- **Registration:** new accounts are created only when instance registration is open, the address has a pending invitation, or the provider's `allowRegistration` is on; otherwise `registration_disabled`. Invitations are never accepted implicitly. `autoJoinTeamId` adds new accounts to that team as **members**.
+- **Domains:** `allowedDomains` restricts Google to those Workspace (`hd`) domains (`*` = any Workspace, no consumer accounts) and other providers to verified emails in those domains (`oauth_domain_not_allowed`).
+- **Second factor:** accounts with 2FA get no session after the provider callback; a 5-minute pending cookie leads to `/login/two-factor`, and the TOTP or a recovery code is checked (`POST /auth/oauth/two-factor`, wrong codes count towards lockout).
+- Denials redirect to `/login?error=<reason>` and are audited at warning level. The enabled providers are listed anonymously at `GET /api/auth/providers` for the login page.
+
+## Sessions and the Active Team (IAM-09)
+
+- Every interactive sign-in creates a server-side `user_sessions` row; the cookie carries its id (`vessel:session_id`). Each request re-validates the row (cached for 15 seconds per session); Blazor circuits re-check every minute. Cookies issued before this change have no session id and must sign in again.
+- Sessions slide for `Vessel:Auth:SessionIdleDays` (14). Revoked and expired rows are deleted after `SessionRetentionDays` (30) by the daily `auth.sessions.prune` job.
+- `GET /api/auth/sessions`, `DELETE /api/auth/sessions/{id}` and `POST /api/auth/sessions/revoke-others` (interactive sessions only) list and revoke the caller's sessions. Logout revokes the current session.
+- A password reset revokes every session and every API token of the user. Enabling or disabling 2FA revokes the user's other sessions.
+- The active team lives on the session row. Login lands in `users.CurrentTeamId` while the user is still a member, otherwise in the personal team (never a team the user is only invited to). Switching teams updates the session and remembers the team on the user, so a request that started before the switch cannot restore the old team. When a member is removed, their remembered team is cleared and their sessions move to their home team on the next request.
+
+## Audit (IAM-08)
+
+The Application layer records events through `IAuditWriter`:
+
+- **Transactions:** `StageAsync` adds the row to the current unit of work so it commits with the change it records (and disappears if the change rolls back). `RecordAsync` stages and saves at once, for events without their own change (failed logins, denials). Auth, team, token, session and provider services stage their audit rows.
+- **Context:** `source` (`ui`, `api` for bearer tokens, `webhook`, `job`, `system`), `actor_type` (`user`, `api_token`, `webhook`, `job`, `system`), actor name, API token id/name, trusted client address (forwarded headers only from configured proxies) and user agent (200 characters), level (`info`/`warning`/`error`; failures, denials, rejections and throttling default to warning), resource name, description and a `changes` before/after diff.
+- **Redaction** (by key and by value): credential-like keys keep no value, content keys (command, compose, env, log, output, script, payload...) are omitted, email addresses are masked, and every string has URL credentials, bearer tokens, private keys, JWTs and known token formats removed. Sensitive fields in `changes` are recorded as changed without values. Failed logins and password-reset requests for unknown accounts use a one-way `email_hash` subject instead of the address.
+- **Query:** `GET /api/v1/audit-events` (`audit.read`: owners and admins of the active/token team) with `search`, `action`, `source`, `level`, `actor_id`, `from`, `to`, `page`, `per_page` (≤ 100). Token id, client address, user agent, metadata, changes and correlation id are returned only to callers that may read sensitive data (sessions of owners/admins, `read:sensitive`/`root` tokens).
+- **Retention:** the daily `audit.retention` job deletes events older than `Vessel:Audit:RetentionDays` (90; `0` keeps them).
+- **Deleted users:** `AuditAnonymizationService.AnonymizeUserAsync` replaces the actor name, client address and user agent of the user's events, and their name in events about them, with `[deleted user]`; account deletion (IAM-13) must call it.
+
+## API Token Expiry Warnings (IAM-04)
+
+The hourly `auth.token-expiry-warnings` job raises `api_token.expiring` (Coolify `api_token_expiring`) for the token's team 7 days before a token expires, or 24 hours before for tokens that live 7 days or less. Each token is warned once (`ExpirationWarningSentAt`); editing the expiry re-arms it. Tokens whose owner left the team are skipped.

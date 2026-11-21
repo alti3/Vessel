@@ -1,6 +1,7 @@
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
+using Vessel.Domain.Auth;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
@@ -251,6 +252,24 @@ public partial interface IVesselDbContext : IUnitOfWork
     IRepository<SettingEntry, SettingId> SettingRepository =>
         throw new InvalidOperationException("Setting persistence is not available.");
 
+    // IAM-07/IAM-08/IAM-09 identity additions.
+    IQueryable<UserSession> UserSessions => Enumerable.Empty<UserSession>().AsQueryable();
+
+    IQueryable<AuthProvider> AuthProviders => Enumerable.Empty<AuthProvider>().AsQueryable();
+
+    IQueryable<OauthIdentity> OauthIdentities => Enumerable.Empty<OauthIdentity>().AsQueryable();
+
+    IRepository<UserSession, UserSessionId> UserSessionRepository =>
+        throw new InvalidOperationException("Session persistence is not available.");
+
+    IRepository<AuthProvider, AuthProviderId> AuthProviderRepository =>
+        throw new InvalidOperationException("Authentication provider persistence is not available.");
+
+    IRepository<OauthIdentity, OauthIdentityId> OauthIdentityRepository =>
+        throw new InvalidOperationException("External identity persistence is not available.");
+
+    IRepository<AuditLog, AuditLogId> AuditLogRepository =>
+        throw new InvalidOperationException("Audit log persistence is not available.");
     // Server monitoring, runtime status and Docker cleanup (SRV-03/04/07/08).
     IQueryable<ServerMetricSample> ServerMetricSamples => Enumerable.Empty<ServerMetricSample>().AsQueryable();
 
