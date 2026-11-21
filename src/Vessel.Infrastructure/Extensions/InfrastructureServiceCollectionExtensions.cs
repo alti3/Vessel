@@ -1,5 +1,9 @@
 using Vessel.Application.Monitoring.HostMetrics;
 using Vessel.Infrastructure.Monitoring;
+using Vessel.Application.Backups.Volumes;
+using Vessel.Application.ManagedServices.DatabaseImports;
+using Vessel.Infrastructure.Backups.Volumes;
+using Vessel.Infrastructure.ManagedServices.DatabaseImports;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
@@ -174,6 +178,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IProxyRuntimeRenderer, TraefikRuntimeRenderer>();
         services.TryAddSingleton<ITraefikAcmeStore, TraefikAcmeStore>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
+        // DATA-09 volume archives (helper container) and DATA-10 import staging.
+        services.TryAddSingleton<IVolumeArchiveRunner, ContainerVolumeArchiveRunner>();
+        services.AddOptions<DatabaseImportOptions>().Bind(configuration.GetSection(DatabaseImportOptions.SectionName));
+        services.TryAddSingleton<IDatabaseImportStaging, FileDatabaseImportStaging>();
         services.AddVesselNotificationInfrastructure(configuration);
         services.AddVesselGitSourceInfrastructure();
         services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));

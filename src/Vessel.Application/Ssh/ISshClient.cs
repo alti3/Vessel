@@ -22,6 +22,15 @@ public interface ISshClient
         throw new NotSupportedException($"{GetType().Name} does not support streaming SSH commands.");
     }
 
+    /// <summary>Runs <paramref name="request" /> with binary standard input/output piped through caller-owned streams.</summary>
+    Task<SshCommandResult> RunCommandStreamingAsync(
+        SshCommandRequest request,
+        ProcessStreams streams,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support streaming SSH commands.");
+    }
+
     Task UploadAsync(SshFileTransferRequest request, CancellationToken cancellationToken = default);
 
     Task DownloadAsync(SshFileTransferRequest request, CancellationToken cancellationToken = default);

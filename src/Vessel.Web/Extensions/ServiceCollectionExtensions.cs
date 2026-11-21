@@ -3,6 +3,9 @@ using Vessel.Application.Resources.RuntimeLogs;
 using Vessel.Application.Resources.Status;
 using Vessel.Application.Servers.Alerts;
 using Vessel.Application.Servers.DockerCleanup;
+using Vessel.Application.Backups.Volumes;
+using Vessel.Application.ManagedServices.DatabaseImports;
+using Vessel.Application.Storage.Persistent;
 using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
@@ -183,6 +186,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BackupArtifactReader>();
         services.AddScoped<CheckMissingBackupsJob>();
         services.AddScoped<RevalidateBackupDestinationsJob>();
+        // DATA-12 persistent storage, DATA-09 volume backups, DATA-10 database imports.
+        services.AddScoped<StorageOwnerAccess>();
+        services.AddScoped<ResourceStorageService>();
+        services.AddScoped<ResourceStorageProvisioner>();
+        services.AddScoped<VolumeBackupService>();
+        services.AddScoped<RunVolumeBackupJob>();
+        services.AddScoped<RunVolumeBackupExecutionJob>();
+        services.AddScoped<RunVolumeRestoreJob>();
+        services.AddScoped<VolumeBackupRecoveryJob>();
+        services.AddScoped<CheckMissingVolumeBackupsJob>();
+        services.AddScoped<DatabaseImportService>();
+        services.AddScoped<DatabaseImportArtifactSource>();
+        services.AddScoped<CleanupDatabaseImportUploadsJob>();
         services.AddSingleton(provider => ServiceTemplateCatalog.Create(
             provider.GetService<IServiceTemplateComposeProcessor>(), provider.GetService<IServiceTemplateSource>()));
         services.AddScoped<DomainRoutingService>();

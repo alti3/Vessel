@@ -123,9 +123,13 @@ public sealed record QueueDatabaseRestoreRequest(
     bool ReplaceExisting = false,
     bool KeepOwners = false);
 
+/// <summary>
+///     A restore or import. <see cref="BackupExecutionId" /> is <see langword="null" /> for imports, which report their
+///     <see cref="ImportSource" /> and <see cref="ImportReference" /> (upload ID, server path or object key) instead.
+/// </summary>
 public sealed record DatabaseRestoreSummary(
     Guid Id,
-    Guid BackupExecutionId,
+    Guid? BackupExecutionId,
     Guid TargetDatabaseId,
     DatabaseRestoreStatus Status,
     bool DryRun,
@@ -136,4 +140,6 @@ public sealed record DatabaseRestoreSummary(
     DateTimeOffset CreatedAt,
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
-    string Log);
+    string Log,
+    DatabaseImportSourceKind ImportSource = DatabaseImportSourceKind.None,
+    string? ImportReference = null);

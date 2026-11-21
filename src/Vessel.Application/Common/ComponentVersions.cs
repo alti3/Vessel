@@ -59,4 +59,11 @@ public static class ComponentVersions
     public const string QdrantImage = "qdrant/qdrant:v1.20.1";
 
     public const string ChromaImage = "chromadb/chroma:1.5.9";
+
+    /// <summary>
+    ///     Short-lived helper container for volume and directory backups and restores (DATA-09): BusyBox provides
+    ///     <c>tar</c> with built-in gzip and <c>find</c>. Upstream Coolify uses its own helper image; Vessel pins a small
+    ///     public image instead.
+    /// </summary>
+    public const string VolumeBackupHelperImage = "busybox:1.37.0";
 }

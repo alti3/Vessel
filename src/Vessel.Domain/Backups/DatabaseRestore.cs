@@ -13,6 +13,8 @@ public enum DatabaseRestoreStatus
 /// <summary>
 /// One queued restore (or dry-run validation) of a backup artifact into a target database. Restores run as
 /// background jobs; this record carries their state transitions, options and an incrementally persisted log.
+/// An import (DATA-10) is a restore whose artifact comes from an external source (<see cref="ImportSource" />)
+/// instead of a Vessel backup execution; it runs through the same verification, safety scanning and restore steps.
 /// </summary>
 public sealed class DatabaseRestore : Entity<DatabaseRestoreId>
 {
@@ -26,10 +28,12 @@ public sealed class DatabaseRestore : Entity<DatabaseRestoreId>
     {
     }
 
+    public const int MaxImportReferenceLength = 1024;
+
     private DatabaseRestore(
         DatabaseRestoreId id,
         TeamId teamId,
-        BackupExecutionId backupExecutionId,
+        BackupExecutionId? backupExecutionId,
         DatabaseResourceId targetDatabaseResourceId,
         UserId? requestedByUserId,
         bool dryRun,
@@ -49,7 +53,20 @@ public sealed class DatabaseRestore : Entity<DatabaseRestoreId>
 
     public TeamId TeamId { get; private set; }
 
-    public BackupExecutionId BackupExecutionId { get; private set; }
+    /// <summary>The restored backup; <see langword="null" /> for imports.</summary>
+    public BackupExecutionId? BackupExecutionId { get; private set; }
+
+    public DatabaseImportSourceKind ImportSource { get; private set; } = DatabaseImportSourceKind.None;
+
+    /// <summary>Upload ID, validated server path, or destination object key, per <see cref="ImportSource" />.</summary>
+    public string? ImportReference { get; private set; }
+
+    public BackupDestinationId? ImportDestinationId { get; private set; }
+
+    /// <summary>Logical database an import restores into (PostgreSQL); <see langword="null" /> for the default.</summary>
+    public string? ImportDatabaseName { get; private set; }
+
+    public bool IsImport => ImportSource != DatabaseImportSourceKind.None;
 
     public DatabaseResourceId TargetDatabaseResourceId { get; private set; }
 
@@ -89,6 +106,34 @@ public sealed class DatabaseRestore : Entity<DatabaseRestoreId>
     {
         return new DatabaseRestore(DatabaseRestoreId.New(), teamId, backupExecutionId, targetDatabaseResourceId,
             requestedByUserId, dryRun, replaceExisting, keepOwners, now);
+    }
+
+    /// <summary>Queues an import of an external dump into <paramref name="targetDatabaseResourceId" />.</summary>
+    public static DatabaseRestore QueueImport(
+        TeamId teamId,
+        DatabaseResourceId targetDatabaseResourceId,
+        UserId requestedByUserId,
+        DatabaseImportSourceKind source,
+        string reference,
+        BackupDestinationId? destinationId,
+        string? databaseName,
+        bool dryRun,
+        bool replaceExisting,
+        bool keepOwners,
+        DateTimeOffset now)
+    {
+        if (source == DatabaseImportSourceKind.None) throw new DomainException("Import source is required.");
+        if ((source == DatabaseImportSourceKind.Destination) != destinationId.HasValue)
+            throw new DomainException("A destination import needs a backup destination.");
+        var restore = new DatabaseRestore(DatabaseRestoreId.New(), teamId, null, targetDatabaseResourceId,
+            requestedByUserId, dryRun, replaceExisting, keepOwners, now)
+        {
+            ImportSource = source,
+            ImportReference = DomainValidation.Required(reference, "Import source", MaxImportReferenceLength),
+            ImportDestinationId = destinationId,
+            ImportDatabaseName = databaseName is null ? null : BackupDatabaseSelection.ValidateName(databaseName)
+        };
+        return restore;
     }
 
     public void Start(DateTimeOffset now)

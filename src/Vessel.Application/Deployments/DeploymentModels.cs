@@ -83,7 +83,11 @@ public sealed record DeploymentRuntimePlan(
     string HealthCheckUrl,
     DeploymentNaming? Naming = null,
     int Port = DeploymentPlanBuilder.DefaultPort,
-    string HealthCheckPath = "/");
+    string HealthCheckPath = "/")
+{
+    /// <summary>The application has persistent storage (DATA-12) to prepare on the server before compose up.</summary>
+    public bool HasStorage { get; init; }
+}
 
 public interface IDeploymentRunner
 {

@@ -67,6 +67,37 @@ public sealed partial class ServerCommandExecutor(
         return RunRemoteAsync(target, keyId, arguments, timeout, null, cancellationToken);
     }
 
+    public async Task<ServerCommandResult> RunStreamingAsync(
+        ServerExecutionTarget target,
+        IReadOnlyList<string> arguments,
+        TimeSpan timeout,
+        ProcessStreams streams,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(streams);
+        ValidateArguments(arguments);
+
+        if (!target.IsRemote)
+        {
+            ProcessResult result = await processRunner.RunStreamingAsync(new ProcessCommand(
+                arguments[0],
+                arguments.Skip(1).ToArray(),
+                Timeout: timeout,
+                OutputMode: ProcessOutputMode.Stream,
+                MaxOutputBytes: 1024 * 1024), streams, cancellationToken);
+            var exitCode = result.Succeeded ? 0 : result.ExitInfo.ExitCode == 0 ? -1 : result.ExitInfo.ExitCode;
+            return new ServerCommandResult(exitCode, result.StandardOutput, result.StandardError);
+        }
+
+        SshConnectionFor(target);
+        await using SshConnectionLease lease = await AcquireAsync(target, null, cancellationToken);
+        SshCommandResult remote = await sshClient.RunCommandStreamingAsync(
+            new SshCommandRequest(lease.Options, PosixShell.Join(arguments), timeout), streams, cancellationToken);
+        await ObserveAsync(target, remote.StandardError);
+        return new ServerCommandResult(remote.ExitCode, remote.StandardOutput, remote.StandardError);
+    }
+
     public async IAsyncEnumerable<ProcessOutputLine> StreamAsync(
         ServerExecutionTarget target,
         IReadOnlyList<string> arguments,

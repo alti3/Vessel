@@ -17,6 +17,7 @@ using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
 using Vessel.Domain.Sources;
 using Vessel.Domain.Ssh;
+using Vessel.Domain.Storage;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
@@ -136,6 +137,40 @@ public interface IVesselDbContext : IUnitOfWork
 
     IRepository<ServiceDomain, ServiceDomainId> ServiceDomainRepository =>
         throw new InvalidOperationException("Service domain persistence is not available.");
+
+    // DATA-12 persistent storage, DATA-09 volume backups and DATA-10 import uploads.
+
+    IQueryable<PersistentVolume> PersistentVolumes => Enumerable.Empty<PersistentVolume>().AsQueryable();
+
+    IQueryable<FileMount> FileMounts => Enumerable.Empty<FileMount>().AsQueryable();
+
+    IQueryable<ScheduledVolumeBackup> ScheduledVolumeBackups =>
+        Enumerable.Empty<ScheduledVolumeBackup>().AsQueryable();
+
+    IQueryable<VolumeBackupExecution> VolumeBackupExecutions =>
+        Enumerable.Empty<VolumeBackupExecution>().AsQueryable();
+
+    IQueryable<VolumeBackupRestore> VolumeBackupRestores => Enumerable.Empty<VolumeBackupRestore>().AsQueryable();
+
+    IQueryable<DatabaseImportUpload> DatabaseImportUploads => Enumerable.Empty<DatabaseImportUpload>().AsQueryable();
+
+    IRepository<PersistentVolume, PersistentVolumeId> PersistentVolumeRepository =>
+        throw new InvalidOperationException("Persistent volume persistence is not available.");
+
+    IRepository<FileMount, FileMountId> FileMountRepository =>
+        throw new InvalidOperationException("File mount persistence is not available.");
+
+    IRepository<ScheduledVolumeBackup, ScheduledVolumeBackupId> ScheduledVolumeBackupRepository =>
+        throw new InvalidOperationException("Volume backup schedule persistence is not available.");
+
+    IRepository<VolumeBackupExecution, VolumeBackupExecutionId> VolumeBackupExecutionRepository =>
+        throw new InvalidOperationException("Volume backup execution persistence is not available.");
+
+    IRepository<VolumeBackupRestore, VolumeBackupRestoreId> VolumeBackupRestoreRepository =>
+        throw new InvalidOperationException("Volume backup restore persistence is not available.");
+
+    IRepository<DatabaseImportUpload, DatabaseImportUploadId> DatabaseImportUploadRepository =>
+        throw new InvalidOperationException("Database import upload persistence is not available.");
 
     IRepository<User, UserId> UserRepository { get; }
 
