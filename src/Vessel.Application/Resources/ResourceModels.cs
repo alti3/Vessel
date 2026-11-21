@@ -1,3 +1,4 @@
+using Vessel.Application.ManagedServices;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Databases;
 using Vessel.Domain.EnvironmentVariables;
@@ -73,7 +74,10 @@ public sealed record DatabaseSummary(
     DatabaseEngine Engine,
     string Version,
     DatabaseHealthState HealthState,
-    Guid CredentialsReferenceId);
+    Guid CredentialsReferenceId,
+    string? Image = null,
+    DatabaseLifecycleState LifecycleState = DatabaseLifecycleState.NotProvisioned,
+    bool HealthCheckEnabled = true);
 
 public sealed record EnvironmentVariableSummary(
     Guid Id,
@@ -159,7 +163,9 @@ public sealed record CreateDatabaseRequest(
     string Version,
     string VolumeName,
     string MountPath,
-    string Credentials);
+    string Credentials,
+    string? Image = null,
+    RedisFlavor RedisFlavor = RedisFlavor.Valkey);
 
 public sealed record CreateEnvironmentVariableRequest(
     EnvironmentVariableTargetType TargetType,

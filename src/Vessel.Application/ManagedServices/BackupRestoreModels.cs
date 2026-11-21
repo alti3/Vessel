@@ -9,7 +9,8 @@ namespace Vessel.Application.ManagedServices;
 
 /// <summary>
 /// Lock keys shared by every operation that changes or reads a managed database's data: lifecycle actions
-/// (start, stop, restart, delete), backups and restores all take the same key so they never overlap.
+/// (start, stop, restart, delete), backups and restores all take the same key so they never overlap. Backups that
+/// find the key held record a <see cref="BackupExecutionStatus.Skipped" /> execution instead of waiting.
 /// </summary>
 public static class DatabaseOperationLocks
 {
@@ -38,18 +39,29 @@ public static class ManagedRuntimeTargets
 /// <summary>Raised when a database operation is requested while another one is queued or running (HTTP 409).</summary>
 public sealed class DatabaseOperationConflictException(string message) : InvalidOperationException(message);
 
+/// <summary>
+///     One dump. <see cref="DatabaseName" /> selects a logical database (PostgreSQL defaults to <c>postgres</c>;
+///     MySQL/MariaDB default to every user database); <see cref="Format" /> picks the dump format.
+/// </summary>
 public sealed record DatabaseBackupRequest(
     DatabaseResource Database,
     ContainerRuntimeTarget Runtime,
     string Credentials,
-    BackupExecutionId ExecutionId);
+    BackupExecutionId ExecutionId,
+    string? DatabaseName = null,
+    BackupDumpFormat Format = BackupDumpFormat.Native);
+
+/// <summary>Lists the logical user databases of a running managed database.</summary>
+public sealed record DatabaseListRequest(
+    DatabaseResource Database,
+    ContainerRuntimeTarget Runtime,
+    string Credentials);
 
 /// <summary>
 /// A finished backup artifact on owned local storage. <see cref="OpenRead" /> streams it for upload; disposing
 /// the artifact deletes the temporary file.
 /// </summary>
 public sealed class BackupArtifactFile(
-    string bucket,
     string key,
     long sizeBytes,
     string sha256,
@@ -60,8 +72,7 @@ public sealed class BackupArtifactFile(
 {
     private bool _disposed;
 
-    public string Bucket { get; } = bucket;
-
+    /// <summary>Object key used for every copy (local and remote) of this artifact.</summary>
     public string Key { get; } = key;
 
     public long SizeBytes { get; } = sizeBytes;
@@ -101,7 +112,8 @@ public sealed record DatabaseRestoreRequest(
     string? ExpectedSha256,
     DatabaseEngine SourceEngine,
     DatabaseRestoreOptions Options,
-    Func<string, CancellationToken, Task> Log);
+    Func<string, CancellationToken, Task> Log,
+    string? DatabaseName = null);
 
 public sealed record DatabaseRestoreOutcome(string Format, string Summary);
 

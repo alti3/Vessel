@@ -237,6 +237,34 @@ public sealed class VesselDbContextModelTests
             ?.FindProperty(nameof(BackupExecution.HasRestorableArtifact)));
     }
 
+    [Fact]
+    public void Model_MapsBackupDestinationsSchedulesReplicasAndHealthChecks()
+    {
+        using VesselDbContext context = CreateContext();
+
+        IEntityType? destination = context.Model.FindEntityType(typeof(BackupDestination));
+        IEntityType? join = context.Model.FindEntityType(typeof(BackupScheduleDestination));
+        IEntityType? replica = context.Model.FindEntityType(typeof(BackupArtifactReplica));
+        IEntityType? schedule = context.Model.FindEntityType(typeof(BackupSchedule));
+        IEntityType? execution = context.Model.FindEntityType(typeof(BackupExecution));
+        IEntityType? database = context.Model.FindEntityType(typeof(DatabaseResource));
+
+        Assert.Equal("backup_destinations", destination?.GetTableName());
+        Assert.Equal(63, destination?.FindProperty(nameof(BackupDestination.Bucket))?.GetMaxLength());
+        Assert.Equal("backup_schedule_destinations", join?.GetTableName());
+        Assert.Equal("backup_artifact_replicas", replica?.GetTableName());
+        Assert.Equal("*", schedule?.FindProperty(nameof(BackupSchedule.DatabaseSelection))?.GetDefaultValue());
+        Assert.Null(schedule?.FindProperty(nameof(BackupSchedule.LocalRetention)));
+        Assert.Equal(DeleteBehavior.Cascade, execution?.GetForeignKeys()
+            .Single(key => key.PrincipalEntityType.ClrType == typeof(BackupSchedule)).DeleteBehavior);
+        Assert.Equal(DeleteBehavior.SetNull, replica?.GetForeignKeys()
+            .Single(key => key.PrincipalEntityType.ClrType == typeof(BackupDestination)).DeleteBehavior);
+        Assert.Equal(true, database?.FindProperty(nameof(DatabaseResource.HealthCheckEnabled))?.GetDefaultValue());
+        Assert.Equal(DatabaseImage.MaxLength, database?.FindProperty(nameof(DatabaseResource.Image))?.GetMaxLength());
+        Assert.DoesNotContain(context.Model.GetEntityTypes(),
+            entity => entity.GetTableName() == "database_backup_policies");
+    }
+
     private static VesselDbContext CreateContext()
     {
         DbContextOptions<VesselDbContext> options = new DbContextOptionsBuilder<VesselDbContext>()

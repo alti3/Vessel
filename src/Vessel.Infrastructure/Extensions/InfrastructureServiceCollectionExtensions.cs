@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Vessel.Application.Auditing;
+using Vessel.Application.Backups;
 using Vessel.Application.Dashboard;
 using Vessel.Application.Deployments;
 using Vessel.Application.Docker;
@@ -150,6 +151,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ITraefikAcmeStore, TraefikAcmeStore>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddVesselNotificationInfrastructure(configuration);
+        services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));
+        services.AddSingleton<IBackupStorageProvider, BackupStorageProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
 
         RedisOptions redisOptions = configuration

@@ -1,9 +1,153 @@
 @page "/storages"
 @attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@inject BackupDestinationService Destinations
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>S3 Storages | Vessel</PageTitle>
 <PageHeader Kicker="Storage" Title="S3 Storages"
-            Description="S3-compatible targets for backups, artifacts, and exported state."/>
+            Description="Team-owned S3-compatible destinations for backup copies. Credentials are stored in the secret vault and never shown again."/>
 
-<EmptyState Title="No S3 storages found"
-            Description="Storage targets will appear here when object storage management is implemented."/>
+@if (Items.Count == 0)
+{
+    <EmptyState Title="No S3 storages found"
+                Description="Add an S3-compatible storage below, then select it on a database backup schedule."/>
+}
+else
+{
+    <SettingsPanel Title="Storages" Description="Unusable storages are re-tested every hour.">
+        <table class="data-table">
+            <thead><tr><th>Name</th><th>Endpoint</th><th>Bucket</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>@item.Name</td>
+                    <td><code>@item.Endpoint</code>@(item.SkipTlsVerification ? " (TLS not verified)" : string.Empty)</td>
+                    <td>@item.Bucket</td>
+                    <td>
+                        <StatusBadge Text="@(item.IsUsable ? "Usable" : "Unusable")" Tone="@(item.IsUsable ? "success" : "danger")"/>
+                        @if (!item.IsUsable && item.LastValidationError is not null)
+                        {
+                            <div>@item.LastValidationError</div>
+                        }
+                    </td>
+                    <td class="button-row">
+                        <button class="button button-secondary" type="button" @onclick="() => ValidateAsync(item.Id)">Test</button>
+                        <button class="button button-secondary" type="button" @onclick="() => DeleteAsync(item.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </SettingsPanel>
+}
+
+<SettingsPanel Title="Add S3 storage" Description="The connection is tested when you save.">
+    <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-backup-destination">
+        <DataAnnotationsValidator/>
+        <ValidationSummary/>
+        <div class="form-grid">
+            <label>Name<InputText @bind-Value="Model.Name" name="name"/></label>
+            <label>Endpoint<InputText @bind-Value="Model.Endpoint" name="endpoint" placeholder="https://s3.eu-central-1.amazonaws.com"/></label>
+            <label>Region<InputText @bind-Value="Model.Region" name="region"/></label>
+            <label>Bucket<InputText @bind-Value="Model.Bucket" name="bucket"/></label>
+            <label>Access key ID<InputText @bind-Value="Model.AccessKeyId" name="accessKeyId"/></label>
+            <label>Secret access key<SecretInput Name="secretAccessKey" @bind-Value="Model.SecretAccessKey"/></label>
+            <label><InputCheckbox @bind-Value="Model.UsePathStyle" name="pathStyle"/> Path-style addressing</label>
+            <label><InputCheckbox @bind-Value="Model.SkipTlsVerification" name="skipTls"/> Skip TLS certificate verification (self-signed stores only; audited)</label>
+            <button class="button button-primary" type="submit">Save storage</button>
+        </div>
+    </EditForm>
+</SettingsPanel>
+
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <div class="form-alert">@Message</div>
+}
+
+@code {
+    private IReadOnlyList<BackupDestinationSummary> Items { get; set; } = [];
+    private DestinationForm Model { get; set; } = new();
+    private string? Message { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        try
+        {
+            Items = Destinations.List(user.GetUserId(), user.GetTeamId());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Items = [];
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+            var created = await Destinations.CreateAsync(user.GetUserId(), user.GetTeamId(),
+                new CreateBackupDestinationRequest(Model.Name, Model.Endpoint, Model.Bucket, Model.AccessKeyId,
+                    Model.SecretAccessKey, Model.Region, Model.UsePathStyle, Model.SkipTlsVerification));
+            Message = created.IsUsable
+                ? $"Storage {created.Name} saved and validated."
+                : $"Storage {created.Name} saved but the connection test failed: {created.LastValidationError}";
+            Model = new DestinationForm();
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is Vessel.Domain.Common.DomainException or UnauthorizedAccessException)
+        {
+            Message = exception.Message;
+        }
+    }
+
+    private async Task ValidateAsync(Guid id)
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        try
+        {
+            var result = await Destinations.ValidateAsync(user.GetUserId(), user.GetTeamId(), new BackupDestinationId(id));
+            Message = result.IsUsable ? $"{result.Name} is usable." : $"{result.Name}: {result.LastValidationError}";
+            await LoadAsync();
+        }
+        catch (Exception exception) when (exception is Vessel.Domain.Common.DomainException or UnauthorizedAccessException)
+        {
+            Message = exception.Message;
+        }
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        try
+        {
+            await Destinations.DeleteAsync(user.GetUserId(), user.GetTeamId(), new BackupDestinationId(id));
+            Message = "Storage deleted.";
+            await LoadAsync();
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            Message = exception.Message;
+        }
+    }
+
+    private sealed class DestinationForm
+    {
+        [Required, StringLength(80)] public string Name { get; set; } = string.Empty;
+        [Required] public string Endpoint { get; set; } = string.Empty;
+        public string Region { get; set; } = "us-east-1";
+        [Required] public string Bucket { get; set; } = string.Empty;
+        [Required] public string AccessKeyId { get; set; } = string.Empty;
+        [Required] public string SecretAccessKey { get; set; } = string.Empty;
+        public bool UsePathStyle { get; set; } = true;
+        public bool SkipTlsVerification { get; set; }
+    }
+}

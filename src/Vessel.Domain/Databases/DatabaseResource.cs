@@ -5,8 +5,6 @@ namespace Vessel.Domain.Databases;
 
 public sealed class DatabaseResource : Entity<DatabaseResourceId>
 {
-    private readonly List<BackupPolicy> _backupPolicies = [];
-
     private DatabaseResource()
     {
     }
@@ -56,7 +54,27 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
 
     public string? ComposeSnapshotReference { get; private set; }
 
-    public IReadOnlyCollection<BackupPolicy> BackupPolicies => _backupPolicies.AsReadOnly();
+    /// <summary>
+    ///     Full container image reference (repository plus explicit tag or digest). <see langword="null" /> for databases
+    ///     created before images were pinned; those keep their legacy <c>{engine image}:{Version}</c> reference.
+    /// </summary>
+    public DatabaseImage? Image { get; private set; }
+
+    public bool HealthCheckEnabled { get; private set; } = true;
+
+    public int HealthCheckIntervalSeconds { get; private set; } = DatabaseHealthCheckPolicy.DefaultIntervalSeconds;
+
+    public int HealthCheckTimeoutSeconds { get; private set; } = DatabaseHealthCheckPolicy.DefaultTimeoutSeconds;
+
+    public int HealthCheckRetries { get; private set; } = DatabaseHealthCheckPolicy.DefaultRetries;
+
+    public int HealthCheckStartPeriodSeconds { get; private set; } =
+        DatabaseHealthCheckPolicy.DefaultStartPeriodSeconds;
+
+    public DateTimeOffset? LastHealthCheckAt { get; private set; }
+
+    public DatabaseHealthCheckPolicy HealthCheck => new(HealthCheckEnabled, HealthCheckIntervalSeconds,
+        HealthCheckTimeoutSeconds, HealthCheckRetries, HealthCheckStartPeriodSeconds);
 
     public static DatabaseResource Create(
         EnvironmentId environmentId,
@@ -66,15 +84,50 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
         VersionLabel version,
         StorageConfiguration storage,
         SecretReferenceId credentialsReferenceId,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        DatabaseImage? image = null)
     {
         return new DatabaseResource(DatabaseResourceId.New(), environmentId, serverId, name, engine, version, storage,
-            credentialsReferenceId, now);
+            credentialsReferenceId, now)
+        {
+            Image = image
+        };
     }
 
     public void ChangeHealth(DatabaseHealthState healthState, DateTimeOffset now)
     {
         HealthState = healthState;
+        Touch(now);
+    }
+
+    /// <summary>
+    ///     Records the result of a runtime health probe. Only running databases take probe results; the lifecycle
+    ///     transitions own the health state of stopped, deleted or failed databases.
+    /// </summary>
+    public bool RecordHealthProbe(DatabaseHealthState observed, DateTimeOffset now)
+    {
+        if (LifecycleState != DatabaseLifecycleState.Running) return false;
+        LastHealthCheckAt = now;
+        if (HealthState == observed) return false;
+        HealthState = observed;
+        Touch(now);
+        return true;
+    }
+
+    public void ChangeHealthCheck(DatabaseHealthCheckPolicy policy, DateTimeOffset now)
+    {
+        HealthCheckEnabled = policy.Enabled;
+        HealthCheckIntervalSeconds = policy.IntervalSeconds;
+        HealthCheckTimeoutSeconds = policy.TimeoutSeconds;
+        HealthCheckRetries = policy.Retries;
+        HealthCheckStartPeriodSeconds = policy.StartPeriodSeconds;
+        Touch(now);
+    }
+
+    public void ChangeImage(DatabaseImage image, DateTimeOffset now)
+    {
+        Image = image;
+        Version = new VersionLabel(image.Tag ?? image.Digest ?? Version.Value);
         Touch(now);
     }
 
@@ -96,7 +149,8 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
         ComposeSnapshotReference = DomainValidation.Required(composeSnapshotReference, nameof(composeSnapshotReference),
             512);
         LifecycleState = DatabaseLifecycleState.Running;
-        HealthState = DatabaseHealthState.Healthy;
+        // A started container is not healthy until its probe says so; the health poller records the probe result.
+        HealthState = HealthCheckEnabled ? DatabaseHealthState.Starting : DatabaseHealthState.Unknown;
         Touch(now);
     }
 
@@ -152,12 +206,6 @@ public sealed class DatabaseResource : Entity<DatabaseResourceId>
         Version = version;
         Storage = storage;
         CredentialsReferenceId = credentialsReferenceId;
-        Touch(now);
-    }
-
-    public void AddBackupPolicy(string cronExpression, int retentionCount, DateTimeOffset now)
-    {
-        _backupPolicies.Add(new BackupPolicy(Id, cronExpression, retentionCount));
         Touch(now);
     }
 

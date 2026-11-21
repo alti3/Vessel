@@ -1,4 +1,5 @@
 using Vessel.Application.Auditing;
+using Vessel.Application.ManagedServices;
 using Vessel.Application.Authorization;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
@@ -315,19 +316,41 @@ public sealed class ResourceManagementService(
         RequireServer(actorUserId, teamId, serverId, VesselPermissions.ProjectsWrite);
         RequireHostLocalTargetAllowed(actorUserId, serverId);
         EnsureEnvironmentBelongsToProject(environmentId, projectId);
+        // New databases always run a pinned image (engine default, a tag for the engine image, or an explicit image).
+        // A bare "latest" version from older clients means "use the pinned default".
+        DatabaseImage image = DatabaseEngineProfiles.ResolveNewImage(request.Engine, request.Image,
+            string.Equals(request.Version, "latest", StringComparison.OrdinalIgnoreCase) ? null : request.Version,
+            request.RedisFlavor);
+        var mountPath = string.IsNullOrWhiteSpace(request.MountPath)
+            ? DatabaseEngineProfiles.DefaultMountPath(request.Engine, image)
+            : request.MountPath;
+        var volumeName = string.IsNullOrWhiteSpace(request.VolumeName) ? "data" : request.VolumeName;
+        EnsureComposeSafeCredentials(request.Credentials);
         SecretReference secret = await secretVault.StoreAsync(teamId, SecretScope.Database,
             $"{request.Name}:credentials",
             request.Credentials, SecretPolicy.Default, new SecretTarget(projectId, environmentId, serverId),
             cancellationToken);
         var database = DatabaseResource.Create(environmentId, serverId, new ResourceName(request.Name), request.Engine,
-            new VersionLabel(request.Version), new StorageConfiguration(request.VolumeName, request.MountPath),
-            secret.Id, Now());
+            new VersionLabel(image.Tag ?? image.Digest ?? "pinned"), new StorageConfiguration(volumeName, mountPath),
+            secret.Id, Now(), image);
         await dbContext.DatabaseResourceRepository.AddAsync(database, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.DatabaseCreated, "database", database.Id.Value,
             cancellationToken);
 
         return ToSummary(database);
+    }
+
+    private static void EnsureComposeSafeCredentials(string credentials)
+    {
+        try
+        {
+            ComposeEnvironmentFile.Quote(credentials);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new DomainException(exception.Message.Split(" (Parameter", 2)[0]);
+        }
     }
 
     public IReadOnlyList<EnvironmentVariableSummary> ListEnvironmentVariables(UserId actorUserId, TeamId teamId)
@@ -611,7 +634,8 @@ public sealed class ResourceManagementService(
         return new DatabaseSummary(database.Id.Value, database.Name.Value,
             database.Description == null ? null : database.Description.Value.Value, projectId.Value,
             database.EnvironmentId.Value, database.ServerId.Value, database.Engine, database.Version.Value,
-            database.HealthState, database.CredentialsReferenceId.Value);
+            database.HealthState, database.CredentialsReferenceId.Value, DatabaseEngineProfiles.EffectiveImage(database),
+            database.LifecycleState, database.HealthCheckEnabled);
     }
 
     private static ServerSummary ToSummary(Server server)

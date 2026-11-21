@@ -16,6 +16,8 @@ public static class NotificationEventTypes
     public const string BackupSucceeded = NotificationEventCatalog.BackupSucceeded;
     public const string BackupFailed = NotificationEventCatalog.BackupFailed;
     public const string BackupMissing = NotificationEventCatalog.BackupMissing;
+    public const string BackupRecovered = NotificationEventCatalog.BackupRecovered;
+    public const string BackupDestinationUnusable = NotificationEventCatalog.BackupDestinationUnusable;
     public const string RestoreFailed = NotificationEventCatalog.RestoreFailed;
     public const string ServerUnreachable = NotificationEventCatalog.ServerUnreachable;
     public const string ServerReachable = NotificationEventCatalog.ServerReachable;
@@ -101,6 +103,47 @@ public static class OperationalNotifications
                 ["databaseId"] = databaseId
             }),
             $"/databases/{databaseId:D}", null);
+    }
+
+    public static RaiseNotificationRequest BackupRecovered(Guid scheduleId, Guid databaseId, string databaseName,
+        string scheduleName)
+    {
+        return new RaiseNotificationRequest(NotificationEventTypes.BackupRecovered, NotificationSeverity.Info,
+            NotificationTargetType.Database, databaseId.ToString("D"), $"Backups work again: {databaseName}",
+            $"Backup schedule '{scheduleName}' of database '{databaseName}' succeeded again after failing.",
+            Payload(new Dictionary<string, object?>
+            {
+                ["backupScheduleId"] = scheduleId,
+                ["databaseId"] = databaseId
+            }),
+            $"/databases/{databaseId:D}", null);
+    }
+
+    public static RaiseNotificationRequest BackupMissing(Guid scheduleId, Guid databaseId, string databaseName,
+        string scheduleName, int days)
+    {
+        return new RaiseNotificationRequest(NotificationEventTypes.BackupMissing, NotificationSeverity.Warning,
+            NotificationTargetType.Database, databaseId.ToString("D"), $"Backup missing: {databaseName}",
+            $"Backup schedule '{scheduleName}' of database '{databaseName}' has not produced a successful backup " +
+            $"in {days} day(s).",
+            Payload(new Dictionary<string, object?>
+            {
+                ["backupScheduleId"] = scheduleId,
+                ["databaseId"] = databaseId,
+                ["days"] = days
+            }),
+            $"/databases/{databaseId:D}", null);
+    }
+
+    public static RaiseNotificationRequest BackupDestinationUnusable(Guid destinationId, string destinationName)
+    {
+        return new RaiseNotificationRequest(NotificationEventTypes.BackupDestinationUnusable,
+            NotificationSeverity.Error, NotificationTargetType.Team, destinationId.ToString("D"),
+            $"Backup destination unusable: {destinationName}",
+            $"Backup destination '{destinationName}' failed its connection test. Backups cannot be copied to it " +
+            "until it validates again; Vessel retries every hour.",
+            Payload(new Dictionary<string, object?> { ["backupDestinationId"] = destinationId }),
+            "/storages", null);
     }
 
     public static RaiseNotificationRequest RestoreFailed(Guid backupExecutionId, Guid targetDatabaseId,

@@ -6,6 +6,7 @@ using Vessel.Application.Docker;
 using Vessel.Application.ManagedServices;
 using Vessel.Application.Processes;
 using Vessel.Domain;
+using Vessel.Domain.Backups;
 using Vessel.Domain.Databases;
 using Vessel.Domain.ValueObjects;
 using Vessel.Infrastructure.Files;
@@ -93,6 +94,77 @@ public sealed class ProcessDatabaseBackupProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task BackupAsync_DumpsTheSelectedPostgresDatabaseKeepingOwnersInTheArchive()
+    {
+        var runner = new FakeProcessRunner { DumpBytes = 1024 };
+
+        await using BackupArtifactFile artifact = await CreateProvider(runner).BackupAsync(
+            new DatabaseBackupRequest(CreateRunningDatabase(DatabaseEngine.PostgreSql), Docker, "secret",
+                BackupExecutionId.New(), "app"), TestContext.Current.CancellationToken);
+
+        ProcessCommand dump = Assert.Single(runner.StreamingCommands);
+        Assert.Contains("--dbname=app", dump.Arguments);
+        Assert.Contains("--format=custom", dump.Arguments);
+        Assert.DoesNotContain("--no-owner", dump.Arguments);
+        Assert.Equal("postgresql-custom", artifact.Format);
+    }
+
+    [Fact]
+    public async Task BackupAsync_PlainSqlFormatIsGzipped()
+    {
+        var runner = new FakeProcessRunner { DumpText = "-- PostgreSQL database dump\n" };
+
+        await using BackupArtifactFile artifact = await CreateProvider(runner).BackupAsync(
+            new DatabaseBackupRequest(CreateRunningDatabase(DatabaseEngine.PostgreSql), Docker, "secret",
+                BackupExecutionId.New(), null, BackupDumpFormat.PlainSql), TestContext.Current.CancellationToken);
+
+        Assert.Equal("postgresql-sql+gzip", artifact.Format);
+        Assert.EndsWith(".sql.gz", artifact.Key, StringComparison.Ordinal);
+        Assert.Contains("--format=plain", Assert.Single(runner.StreamingCommands).Arguments);
+    }
+
+    [Fact]
+    public async Task BackupAsync_DumpsOnlyTheSelectedMySqlDatabase()
+    {
+        var runner = new FakeProcessRunner { DumpText = "-- MySQL dump 10.13\n" };
+
+        await using BackupArtifactFile artifact = await CreateProvider(runner).BackupAsync(
+            new DatabaseBackupRequest(CreateRunningDatabase(DatabaseEngine.MySql), Docker, "secret",
+                BackupExecutionId.New(), "shop"), TestContext.Current.CancellationToken);
+
+        Assert.Empty(runner.TextCommands);
+        ProcessCommand dump = Assert.Single(runner.StreamingCommands);
+        Assert.Equal(["shop"], dump.Arguments.SkipWhile(argument => argument != "--databases").Skip(1).ToArray());
+    }
+
+    [Fact]
+    public async Task BackupAsync_RejectsUnsafeSelectedDatabaseNames()
+    {
+        var runner = new FakeProcessRunner();
+
+        await Assert.ThrowsAsync<Vessel.Domain.Common.DomainException>(() => CreateProvider(runner).BackupAsync(
+            new DatabaseBackupRequest(CreateRunningDatabase(DatabaseEngine.PostgreSql), Docker, "secret",
+                BackupExecutionId.New(), "--file=/etc/passwd"), TestContext.Current.CancellationToken));
+        Assert.Empty(runner.StreamingCommands);
+    }
+
+    [Fact]
+    public async Task ListDatabasesAsync_ListsConnectablePostgresDatabasesWithThePasswordInTheEnvironment()
+    {
+        var runner = new FakeProcessRunner { TextOutput = "app\npostgres\n" };
+
+        IReadOnlyList<string> names = await CreateProvider(runner).ListDatabasesAsync(
+            new DatabaseListRequest(CreateRunningDatabase(DatabaseEngine.PostgreSql), Docker, "secret"),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(["app", "postgres"], names);
+        ProcessCommand list = Assert.Single(runner.TextCommands);
+        Assert.Contains("psql", list.Arguments);
+        Assert.DoesNotContain("secret", list.Arguments);
+        Assert.Equal("secret", list.Environment?["PGPASSWORD"]);
+    }
+
+    [Fact]
     public async Task BackupAsync_PropagatesCancellationAndCleansUp()
     {
         var runner = new FakeProcessRunner { CancelDump = true };
@@ -103,6 +175,19 @@ public sealed class ProcessDatabaseBackupProviderTests : IDisposable
             new DatabaseBackupRequest(CreateRunningDatabase(DatabaseEngine.PostgreSql), Docker, "secret",
                 BackupExecutionId.New()), cancellation.Token));
         Assert.Empty(Directory.Exists(_scratchRoot) ? Directory.GetFileSystemEntries(_scratchRoot) : []);
+    }
+
+    [Fact]
+    public async Task RestoreAsync_TargetsTheDatabaseTheBackupWasTakenFrom()
+    {
+        const string dump = "--\n-- PostgreSQL database dump\n--\nCREATE TABLE t (id int);\n";
+        var runner = new FakeProcessRunner();
+
+        await CreateProvider(runner).RestoreAsync(
+            RestoreRequest(DatabaseEngine.PostgreSql, Encoding.UTF8.GetBytes(dump)) with { DatabaseName = "app" },
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("--dbname=app", Assert.Single(runner.StreamingCommands).Arguments);
     }
 
     [Fact]

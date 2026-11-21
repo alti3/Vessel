@@ -10,21 +10,31 @@
             Description="Create a managed database resource record with encrypted credential storage."/>
 
 <SettingsPanel Title="Database resource"
-               Description="Provisioning containers and backup execution are handled by later deployment phases.">
+               Description="New databases run a pinned image; floating 'latest' tags are rejected so a recreate never crosses a major version.">
     <EditForm Model="Model" OnValidSubmit="CreateAsync" FormName="create-database">
         <div class="form-grid">
             <label>Name
                 <InputText @bind-Value="Model.Name" name="name" placeholder="postgres-main"/>
             </label>
-            <label>Engine<select @bind="Model.Engine" name="engine">
+            <label>Engine<select @bind="Model.Engine" @bind:after="ApplyEngineDefaults" name="engine">
                     <option value="@DatabaseEngine.PostgreSql">PostgreSQL</option>
                     <option value="@DatabaseEngine.MySql">MySQL</option>
                     <option value="@DatabaseEngine.MariaDb">MariaDB</option>
-                    <option value="@DatabaseEngine.Redis">Redis</option>
+                    <option value="@DatabaseEngine.Redis">Redis-compatible (Valkey or Redis)</option>
+                    <option value="@DatabaseEngine.KeyDb">KeyDB</option>
+                    <option value="@DatabaseEngine.Dragonfly">Dragonfly</option>
                     <option value="@DatabaseEngine.MongoDb">MongoDB</option>
+                    <option value="@DatabaseEngine.ClickHouse">ClickHouse</option>
                 </select></label>
-            <label>Version
-                <InputText @bind-Value="Model.Version" name="version"/>
+            @if (Model.Engine == DatabaseEngine.Redis)
+            {
+                <label>Flavor<select @bind="Model.RedisFlavor" @bind:after="ApplyEngineDefaults" name="redisFlavor">
+                        <option value="@RedisFlavor.Valkey">Valkey (default)</option>
+                        <option value="@RedisFlavor.Redis">Redis</option>
+                    </select></label>
+            }
+            <label>Image
+                <InputText @bind-Value="Model.Image" name="image"/>
             </label>
             <label>Project<select @bind="Model.ProjectId" name="project">@foreach (var project in Projects)
                     {
@@ -71,10 +81,15 @@
         Model.Engine = EngineSlug switch
         {
             "mysql" => DatabaseEngine.MySql,
-            "redis" => DatabaseEngine.Redis,
+            "mariadb" => DatabaseEngine.MariaDb,
+            "redis" or "valkey" => DatabaseEngine.Redis,
+            "keydb" => DatabaseEngine.KeyDb,
+            "dragonfly" => DatabaseEngine.Dragonfly,
             "mongodb" => DatabaseEngine.MongoDb,
+            "clickhouse" => DatabaseEngine.ClickHouse,
             _ => DatabaseEngine.PostgreSql
         };
+        ApplyEngineDefaults();
         var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
         Projects = Resources.ListProjects(user.GetUserId(), user.GetTeamId()).Where(project => !project.IsArchived).ToArray();
         Servers = Resources.ListServers(user.GetUserId(), user.GetTeamId());
@@ -88,6 +103,12 @@
         Model.ServerId = Servers.FirstOrDefault()?.Id ?? Guid.Empty;
     }
 
+    private void ApplyEngineDefaults()
+    {
+        Model.Image = DatabaseEngineProfiles.DefaultImage(Model.Engine, Model.RedisFlavor);
+        Model.MountPath = DatabaseEngineProfiles.DefaultMountPath(Model.Engine, DatabaseImage.Parse(Model.Image));
+    }
+
     private async Task CreateAsync()
     {
         try
@@ -95,7 +116,8 @@
             var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
             var database = await Resources.CreateDatabaseAsync(user.GetUserId(), user.GetTeamId(),
                 new CreateDatabaseRequest(Model.ProjectId, Model.EnvironmentId, Model.ServerId, Model.Name, null,
-                    Model.Engine, Model.Version, Model.VolumeName, Model.MountPath, Model.Credentials));
+                    Model.Engine, string.Empty, Model.VolumeName, Model.MountPath, Model.Credentials, Model.Image,
+                    Model.RedisFlavor));
             Navigation.NavigateTo($"/databases/{database.Id}");
         }
         catch (Exception exception)
@@ -111,9 +133,10 @@
         public Guid ServerId { get; set; }
         public string Name { get; set; } = string.Empty;
         public DatabaseEngine Engine { get; set; } = DatabaseEngine.PostgreSql;
-        public string Version { get; set; } = "latest";
+        public RedisFlavor RedisFlavor { get; set; } = RedisFlavor.Valkey;
+        public string Image { get; set; } = string.Empty;
         public string VolumeName { get; set; } = "data";
-        public string MountPath { get; set; } = "/data";
+        public string MountPath { get; set; } = string.Empty;
         public string Credentials { get; set; } = string.Empty;
     }
 

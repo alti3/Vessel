@@ -1,4 +1,5 @@
 using Vessel.Application.Auditing;
+using Vessel.Application.Backups;
 using Vessel.Application.Authorization;
 using Vessel.Application.Jobs;
 using Vessel.Application.Notifications;
@@ -29,7 +30,7 @@ public sealed class DatabaseRestoreService(
     ISecretVault secretVault,
     ISecretRedactor redactor,
     IDatabaseBackupProvider backupProvider,
-    IObjectStorage objectStorage,
+    BackupArtifactReader artifacts,
     IAuditWriter auditWriter,
     IRealtimeNotifier realtime,
     INotificationEventPublisher notifications,
@@ -150,8 +151,7 @@ public sealed class DatabaseRestoreService(
             credentials = await secretVault.RevealForDeploymentAsync(restore.TeamId, target.CredentialsReferenceId,
                 deadline.Token);
             var secrets = new RedactionContext([credentials]);
-            await using Stream artifact = await objectStorage.OpenReadAsync(
-                new ObjectStorageKey(execution.ArtifactBucket!, execution.ArtifactKey!), deadline.Token);
+            await using Stream artifact = await artifacts.OpenAsync(execution, deadline.Token);
             DatabaseRestoreOutcome outcome = await backupProvider.RestoreAsync(new DatabaseRestoreRequest(
                 target,
                 ManagedRuntimeTargets.For(server),
@@ -165,7 +165,7 @@ public sealed class DatabaseRestoreService(
                     restore.AppendLog(redactor.Redact(line, secrets), timeProvider.GetUtcNow());
                     await dbContext.SaveChangesAsync(token);
                     await PublishAsync(restore, token);
-                }), deadline.Token);
+                }, execution.DatabaseName), deadline.Token);
 
             restore.RecordDetectedFormat(outcome.Format, timeProvider.GetUtcNow());
             restore.AppendLog(redactor.Redact(outcome.Summary, secrets), timeProvider.GetUtcNow());

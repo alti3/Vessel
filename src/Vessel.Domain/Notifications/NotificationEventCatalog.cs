@@ -83,6 +83,8 @@ public static class NotificationEventCatalog
     public const string BackupFailed = "backup.failed";
     public const string BackupMissing = "backup.missing";
     public const string RestoreFailed = "backup.restore_failed";
+    public const string BackupRecovered = "backup.recovered";
+    public const string BackupDestinationUnusable = "backup.destination_unusable";
     public const string ServerUnreachable = "server.unreachable";
     public const string ServerReachable = "server.reachable";
     public const string ServerDiskUsageHigh = "server.disk_usage_high";
@@ -121,6 +123,12 @@ public static class NotificationEventCatalog
             NotificationThrottlePolicy.Every(Daily)),
         new(RestoreFailed, "backup_failure", NotificationEventCategory.Backup, true, false, true,
             NotificationThrottlePolicy.None),
+        // "Backups work again" notice after a failure streak (the producer sends it once per streak).
+        new(BackupRecovered, "backup_success", NotificationEventCategory.Backup, true, false, true,
+            NotificationThrottlePolicy.None, Releases: BackupFailed),
+        // A team backup destination failed its connection test (the producer notifies once until it validates).
+        new(BackupDestinationUnusable, "backup_failure", NotificationEventCategory.Backup, true, false, true,
+            NotificationThrottlePolicy.Every(Daily)),
         // Unreachable alerts once per incident; "reachable" is sent only when it closes an alerted incident.
         new(ServerUnreachable, "server_unreachable", NotificationEventCategory.Server, true, false, true,
             NotificationThrottlePolicy.OncePerIncident),

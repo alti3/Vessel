@@ -6,6 +6,7 @@ using Vessel.Application.Files;
 using Vessel.Application.ManagedServices;
 using Vessel.Application.Processes;
 using Vessel.Application.Security;
+using Vessel.Domain.Backups;
 using Vessel.Domain.Databases;
 using Vessel.Infrastructure.ManagedServices.Backups;
 
@@ -24,8 +25,6 @@ namespace Vessel.Infrastructure.ManagedServices;
 /// </remarks>
 public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvider
 {
-    public const string ArtifactBucket = "vessel-backups";
-
     /// <summary>Hard upper bound for any single tool invocation; callers pass a tighter deadline token.</summary>
     private static readonly TimeSpan MaxProcessDuration = TimeSpan.FromHours(24);
 
@@ -73,7 +72,7 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
         var container = RequireContainerName(database);
         var cli = request.Runtime.ResolveCliExecutable();
         BackupPlan plan = await CreateBackupPlanAsync(cli, container, database, request.Credentials,
-            cancellationToken);
+            request.DatabaseName, request.Format, cancellationToken);
         BackupScratchDirectory scratch =
             BackupScratchDirectory.Create(_scratchRoot, "backup", request.ExecutionId.Value, _paths);
         try
@@ -114,7 +113,7 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
             if (size == 0) throw new InvalidOperationException($"{plan.Tool} produced an empty backup.");
             var key =
                 $"database/{database.Id.Value:D}/{_timeProvider.GetUtcNow():yyyyMMddHHmmss}-{request.ExecutionId.Value:N}{plan.Extension}";
-            return new BackupArtifactFile(ArtifactBucket, key, size, sha256, plan.ContentType, plan.Format,
+            return new BackupArtifactFile(key, size, sha256, plan.ContentType, plan.Format,
                 () => scratch.OpenRead(fileName), scratch.DisposeAsync);
         }
         catch
@@ -256,24 +255,68 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
         return new DatabaseRestoreOutcome(description, "Restore completed.");
     }
 
-    private async Task<BackupPlan> CreateBackupPlanAsync(string cli, string container, DatabaseResource database,
-        string credentials, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>> ListDatabasesAsync(DatabaseListRequest request,
+        CancellationToken cancellationToken = default)
     {
+        DatabaseResource database = request.Database;
+        var container = RequireContainerName(database);
+        var cli = request.Runtime.ResolveCliExecutable();
         switch (database.Engine)
         {
             case DatabaseEngine.PostgreSql:
-                // The custom archive format is compressed by pg_dump itself and restores through pg_restore,
-                // which supports single-transaction, clean and owner options.
+                {
+                    ProcessResult result = await _processes.RunTextAsync(new ProcessCommand(
+                        cli,
+                        [
+                            "exec", "--env", "PGPASSWORD", container, "psql", "--username=postgres", "--dbname=postgres",
+                            "--no-psqlrc", "--tuples-only", "--no-align",
+                            "--command=SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn ORDER BY datname"
+                        ],
+                        Environment: CreateEnvironment(database, request.Credentials),
+                        Timeout: ControlCommandTimeout,
+                        Redaction: new ProcessRedactionProfile([request.Credentials], [])), cancellationToken);
+                    EnsureSucceeded(result, "psql", cancellationToken);
+                    return result.StandardOutput
+                        .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .ToArray();
+                }
+            case DatabaseEngine.MySql or DatabaseEngine.MariaDb:
+                return await ListUserDatabasesAsync(cli, container, database, MySqlBinaries(database.Engine).Client,
+                    request.Credentials, cancellationToken);
+            default:
+                return [];
+        }
+    }
+
+    private async Task<BackupPlan> CreateBackupPlanAsync(string cli, string container, DatabaseResource database,
+        string credentials, string? databaseName, BackupDumpFormat format, CancellationToken cancellationToken)
+    {
+        if (databaseName is not null) BackupDatabaseSelection.ValidateName(databaseName);
+        switch (database.Engine)
+        {
+            case DatabaseEngine.PostgreSql when format == BackupDumpFormat.PlainSql:
+                // Plain SQL keeps owners and privileges; it restores through psql in a single transaction.
                 return new BackupPlan("pg_dump",
                 [
-                    "exec", "--env", "PGPASSWORD", container, "pg_dump", "--username=postgres", "--dbname=postgres",
-                    "--format=custom"
+                    "exec", "--env", "PGPASSWORD", container, "pg_dump", "--username=postgres",
+                    $"--dbname={databaseName ?? "postgres"}", "--format=plain"
+                ], true, "postgresql-sql+gzip", ".sql.gz", "application/gzip");
+            case DatabaseEngine.PostgreSql:
+                // The custom archive format is compressed by pg_dump itself and restores through pg_restore,
+                // which supports single-transaction, clean and owner options. Owners and privileges are kept in
+                // the archive; restores apply them only on request.
+                return new BackupPlan("pg_dump",
+                [
+                    "exec", "--env", "PGPASSWORD", container, "pg_dump", "--username=postgres",
+                    $"--dbname={databaseName ?? "postgres"}", "--format=custom"
                 ], false, "postgresql-custom", ".pgdump", "application/octet-stream");
             case DatabaseEngine.MySql or DatabaseEngine.MariaDb:
                 {
                     var (client, dump) = MySqlBinaries(database.Engine);
-                    IReadOnlyList<string> databases =
-                        await ListUserDatabasesAsync(cli, container, database, client, credentials, cancellationToken);
+                    IReadOnlyList<string> databases = databaseName is not null
+                        ? [databaseName]
+                        : await ListUserDatabasesAsync(cli, container, database, client, credentials,
+                            cancellationToken);
                     if (databases.Count == 0)
                         return new BackupPlan(dump, null, true, "mysql-sql+gzip", ".sql.gz", "application/gzip");
                     var arguments = new List<string>
@@ -368,8 +411,8 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
         var arguments = new List<string> { "exec", "--interactive", "--env", "PGPASSWORD", container };
         if (archive)
         {
-            arguments.AddRange(["pg_restore", "--username=postgres", "--dbname=postgres", "--exit-on-error",
-                "--single-transaction"]);
+            arguments.AddRange(["pg_restore", "--username=postgres", $"--dbname={RestoreDatabase(request)}",
+                "--exit-on-error", "--single-transaction"]);
             if (!request.Options.KeepOwners) arguments.AddRange(["--no-owner", "--no-privileges"]);
             if (request.Options.ReplaceExisting) arguments.AddRange(["--clean", "--if-exists"]);
         }
@@ -377,7 +420,8 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
         {
             // The script was scanned for meta-commands; ON_ERROR_STOP and a single transaction make the restore
             // all-or-nothing, and --no-psqlrc keeps container-side psqlrc files out of the session.
-            arguments.AddRange(["psql", "--username=postgres", "--dbname=postgres", "--no-psqlrc", "--quiet",
+            arguments.AddRange(["psql", "--username=postgres", $"--dbname={RestoreDatabase(request)}", "--no-psqlrc",
+                "--quiet",
                 "--variable=ON_ERROR_STOP=1", "--single-transaction", "--file=-"]);
         }
 
@@ -540,6 +584,17 @@ public sealed partial class ProcessDatabaseBackupProvider : IDatabaseBackupProvi
     {
         var trimmed = value.Trim();
         return trimmed.Length <= LogTailLength ? trimmed : "..." + trimmed[^LogTailLength..];
+    }
+
+    /// <summary>
+    ///     PostgreSQL restores target the database the backup was taken from (it must exist in the target); backups
+    ///     of the default database restore into <c>postgres</c>.
+    /// </summary>
+    private static string RestoreDatabase(DatabaseRestoreRequest request)
+    {
+        return request.DatabaseName is null
+            ? "postgres"
+            : BackupDatabaseSelection.ValidateName(request.DatabaseName);
     }
 
     private static (string Client, string Dump) MySqlBinaries(DatabaseEngine engine)

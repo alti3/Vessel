@@ -21,4 +21,15 @@ public interface IDatabaseBackupProvider
     Task<DatabaseRestoreOutcome> RestoreAsync(
         DatabaseRestoreRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Lists the logical user databases (PostgreSQL: every connectable non-template database), used to expand an
+    ///     "all databases" schedule into one backup per database. Engines without logical databases return none.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListDatabasesAsync(
+        DatabaseListRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<string>>([]);
+    }
 }

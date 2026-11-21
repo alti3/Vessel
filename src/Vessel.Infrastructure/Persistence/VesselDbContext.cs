@@ -44,6 +44,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         BackupScheduleRepository = new EfRepository<BackupSchedule, BackupScheduleId>(this);
         BackupExecutionRepository = new EfRepository<BackupExecution, BackupExecutionId>(this);
         DatabaseRestoreRepository = new EfRepository<DatabaseRestore, DatabaseRestoreId>(this);
+        BackupDestinationRepository = new EfRepository<BackupDestination, BackupDestinationId>(this);
         DeploymentRepository = new EfRepository<Deployment, DeploymentId>(this);
         TerminalSessionRepository = new EfRepository<TerminalSession, TerminalSessionId>(this);
         SecretReferenceRepository = new EfRepository<SecretReference, SecretReferenceId>(this);
@@ -96,6 +97,8 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
     public DbSet<BackupExecution> BackupExecutionSet => Set<BackupExecution>();
 
     public DbSet<DatabaseRestore> DatabaseRestoreSet => Set<DatabaseRestore>();
+
+    public DbSet<BackupDestination> BackupDestinationSet => Set<BackupDestination>();
 
     public DbSet<Deployment> DeploymentSet => Set<Deployment>();
 
@@ -166,6 +169,8 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
 
     public IQueryable<DatabaseRestore> DatabaseRestores => DatabaseRestoreSet;
 
+    public IQueryable<BackupDestination> BackupDestinations => BackupDestinationSet;
+
     public IQueryable<Deployment> Deployments => DeploymentSet;
 
     public IQueryable<TerminalSession> TerminalSessions => TerminalSessionSet;
@@ -232,6 +237,8 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
     public IRepository<BackupExecution, BackupExecutionId> BackupExecutionRepository { get; }
 
     public IRepository<DatabaseRestore, DatabaseRestoreId> DatabaseRestoreRepository { get; }
+
+    public IRepository<BackupDestination, BackupDestinationId> BackupDestinationRepository { get; }
 
     public IRepository<Deployment, DeploymentId> DeploymentRepository { get; }
 
@@ -601,13 +608,21 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(database => database.LifecycleState).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(database => database.ContainerName).HasMaxLength(160);
             builder.Property(database => database.ComposeSnapshotReference).HasMaxLength(512);
+            // Null for databases created before images were pinned; they keep their legacy {repo}:{Version} image.
+            builder.Property(database => database.Image).HasConversion(ValueObjectConversions.NullableDatabaseImage)
+                .HasMaxLength(DatabaseImage.MaxLength);
+            builder.Property(database => database.HealthCheckEnabled).HasDefaultValue(true).IsRequired();
+            builder.Property(database => database.HealthCheckIntervalSeconds)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultIntervalSeconds).IsRequired();
+            builder.Property(database => database.HealthCheckTimeoutSeconds)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultTimeoutSeconds).IsRequired();
+            builder.Property(database => database.HealthCheckRetries)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultRetries).IsRequired();
+            builder.Property(database => database.HealthCheckStartPeriodSeconds)
+                .HasDefaultValue(DatabaseHealthCheckPolicy.DefaultStartPeriodSeconds).IsRequired();
             builder.Property(database => database.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(database => database.DomainEvents);
-            builder.HasMany(database => database.BackupPolicies)
-                .WithOne()
-                .HasForeignKey(policy => policy.DatabaseResourceId)
-                .OnDelete(DeleteBehavior.Cascade);
-            builder.Navigation(database => database.BackupPolicies).UsePropertyAccessMode(PropertyAccessMode.Field);
+            builder.Ignore(database => database.HealthCheck);
             builder.HasOne<EnvironmentEntity>()
                 .WithMany()
                 .HasForeignKey(database => database.EnvironmentId)
@@ -620,14 +635,6 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(database => database.CredentialsReferenceId)
                 .OnDelete(DeleteBehavior.Restrict);
-        });
-
-        modelBuilder.Entity<BackupPolicy>(builder =>
-        {
-            builder.ToTable("database_backup_policies");
-            builder.HasKey(policy => new { policy.DatabaseResourceId, policy.CronExpression });
-            builder.Property(policy => policy.DatabaseResourceId).HasDatabaseResourceIdConversion();
-            builder.Property(policy => policy.CronExpression).HasMaxLength(120);
         });
     }
 
@@ -681,8 +688,24 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(schedule => schedule.StorageKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(schedule => schedule.TimeoutSeconds).HasDefaultValue(BackupSchedule.DefaultTimeoutSeconds)
                 .IsRequired();
+            // Existing schedules move to "all databases" so application databases are no longer skipped.
+            builder.Property(schedule => schedule.DatabaseSelection)
+                .HasMaxLength(BackupDatabaseSelection.MaxStoredLength).HasDefaultValue("*").IsRequired();
+            builder.Property(schedule => schedule.DumpFormat).HasConversion<string>().HasMaxLength(32)
+                .HasDefaultValue(BackupDumpFormat.Native).IsRequired();
             builder.Property(schedule => schedule.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(schedule => schedule.DomainEvents);
+            builder.Ignore(schedule => schedule.Databases);
+            builder.Ignore(schedule => schedule.LocalRetention);
+            builder.Ignore(schedule => schedule.RemoteRetention);
+            builder.Ignore(schedule => schedule.DestinationIds);
+            builder.HasMany(schedule => schedule.Destinations)
+                .WithOne()
+                .HasForeignKey(destination => destination.BackupScheduleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.Navigation(schedule => schedule.Destinations).UsePropertyAccessMode(PropertyAccessMode.Field)
+                .AutoInclude();
+            builder.HasIndex(schedule => new { schedule.Enabled, schedule.MissingAlertDays });
             builder.HasIndex(schedule => new { schedule.TeamId, schedule.DatabaseResourceId, schedule.Name })
                 .IsUnique();
             builder.HasOne<Team>()
@@ -712,9 +735,32 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(execution => execution.ChecksumSha256).HasMaxLength(128);
             builder.Property(execution => execution.FailureReason).HasMaxLength(1000);
             builder.Property(execution => execution.LastRestoreFailureReason).HasMaxLength(1000);
+            builder.Property(execution => execution.DatabaseName).HasMaxLength(BackupExecution.MaxDatabaseNameLength);
+            builder.Property(execution => execution.ArtifactFormat).HasMaxLength(64);
             builder.Property(execution => execution.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(execution => execution.DomainEvents);
             builder.Ignore(execution => execution.HasRestorableArtifact);
+            builder.Ignore(execution => execution.HasLocalCopy);
+            builder.OwnsMany(execution => execution.Replicas, replica =>
+            {
+                replica.ToTable("backup_artifact_replicas");
+                replica.WithOwner().HasForeignKey(item => item.BackupExecutionId);
+                replica.HasKey(item => item.Id);
+                replica.Property(item => item.Id).ValueGeneratedNever();
+                replica.Property(item => item.BackupExecutionId).HasBackupExecutionIdConversion();
+                replica.Property(item => item.BackupDestinationId)
+                    .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                        value => value.HasValue ? new BackupDestinationId(value.Value) : null);
+                replica.Property(item => item.Bucket).HasMaxLength(63).IsRequired();
+                replica.Property(item => item.Message).HasMaxLength(BackupArtifactReplica.MaxMessageLength);
+                replica.Ignore(item => item.IsAvailable);
+                replica.HasIndex(item => item.BackupDestinationId);
+                replica.HasOne<BackupDestination>()
+                    .WithMany()
+                    .HasForeignKey(item => item.BackupDestinationId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+            builder.Navigation(execution => execution.Replicas).UsePropertyAccessMode(PropertyAccessMode.Field);
             builder.HasIndex(execution => new { execution.TeamId, execution.DatabaseResourceId, execution.CreatedAt });
             builder.HasOne<Team>()
                 .WithMany()
@@ -724,10 +770,55 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
                 .WithMany()
                 .HasForeignKey(execution => execution.DatabaseResourceId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Deleting a schedule deletes its executions (upstream main ce06a7981).
             builder.HasOne<BackupSchedule>()
                 .WithMany()
                 .HasForeignKey(execution => execution.ScheduleId)
-                .OnDelete(DeleteBehavior.SetNull);
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BackupScheduleDestination>(builder =>
+        {
+            builder.ToTable("backup_schedule_destinations");
+            builder.HasKey(destination => new { destination.BackupScheduleId, destination.BackupDestinationId });
+            builder.Property(destination => destination.BackupScheduleId).HasBackupScheduleIdConversion();
+            builder.Property(destination => destination.BackupDestinationId).HasBackupDestinationIdConversion();
+            builder.HasIndex(destination => destination.BackupDestinationId);
+            builder.HasOne<BackupDestination>()
+                .WithMany()
+                .HasForeignKey(destination => destination.BackupDestinationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BackupDestination>(builder =>
+        {
+            builder.ToTable("backup_destinations");
+            builder.HasKey(destination => destination.Id);
+            builder.Property(destination => destination.Id).HasBackupDestinationIdConversion();
+            builder.Property(destination => destination.TeamId).HasTeamIdConversion();
+            builder.Property(destination => destination.Name).HasConversion(ValueObjectConversions.ResourceName)
+                .HasMaxLength(120).IsRequired();
+            builder.Property(destination => destination.Description)
+                .HasConversion(ValueObjectConversions.NullableDescription).HasMaxLength(1000);
+            builder.Property(destination => destination.Kind).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(destination => destination.Endpoint).HasMaxLength(500).IsRequired();
+            builder.Property(destination => destination.Region).HasMaxLength(64).IsRequired();
+            builder.Property(destination => destination.Bucket).HasMaxLength(63).IsRequired();
+            builder.Property(destination => destination.CredentialsReferenceId).HasSecretReferenceIdConversion();
+            builder.Property(destination => destination.LastValidationError)
+                .HasMaxLength(BackupDestination.MaxValidationErrorLength);
+            builder.Property(destination => destination.ConcurrencyStamp).IsConcurrencyToken();
+            builder.Ignore(destination => destination.DomainEvents);
+            builder.HasIndex(destination => new { destination.TeamId, destination.Name }).IsUnique();
+            builder.HasIndex(destination => destination.IsUsable);
+            builder.HasOne<Team>()
+                .WithMany()
+                .HasForeignKey(destination => destination.TeamId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<SecretReference>()
+                .WithMany()
+                .HasForeignKey(destination => destination.CredentialsReferenceId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<DatabaseRestore>(builder =>
