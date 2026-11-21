@@ -127,4 +127,63 @@ public interface IContainerRuntimeClient
     {
         throw new NotSupportedException("This container runtime client cannot remove images.");
     }
+
+    /// <summary>
+    ///     Every container (running or not) with its labels, image id, health and restart count, from one structured
+    ///     <c>inspect</c> that never reads environment variables or commands.
+    /// </summary>
+    Task<IReadOnlyList<ContainerStateReading>> ListContainerStatesAsync(
+        ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot inspect containers.");
+    }
+
+    /// <summary>Every local image with its size, creation time and labels.</summary>
+    Task<IReadOnlyList<ImageDetails>> ListImageDetailsAsync(
+        ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot list image details.");
+    }
+
+    /// <summary>
+    ///     Streams one container's log (stdout and stderr). Every line starts with the runtime's RFC 3339 timestamp
+    ///     (<c>--timestamps</c>), so callers can merge replica streams.
+    /// </summary>
+    IAsyncEnumerable<ProcessOutputLine> StreamContainerLogsAsync(
+        ContainerRuntimeTarget target,
+        string containerId,
+        ContainerLogOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot read container logs.");
+    }
+
+    /// <summary>Stops containers (they stay visible; never removed). False when the runtime reported a failure.</summary>
+    Task<bool> StopContainersAsync(
+        ContainerRuntimeTarget target,
+        IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot stop containers.");
+    }
+
+    /// <summary>Removes stopped containers (never forced, never their volumes). Returns the number removed.</summary>
+    Task<int> RemoveContainersAsync(
+        ContainerRuntimeTarget target,
+        IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot remove containers.");
+    }
+
+    /// <summary>Runs one prune step and reports the reclaimed space when the runtime prints it.</summary>
+    Task<RuntimePruneResult> PruneAsync(
+        ContainerRuntimeTarget target,
+        RuntimePruneKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("This container runtime client cannot prune.");
+    }
 }

@@ -22,13 +22,15 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
             args.AddRange(["--recurse-submodules", "--shallow-submodules"]);
         args.AddRange(["--", request.RepositoryUrl.ToString(), target]);
 
+        using GitAuthenticationScope authentication = GitAuthenticationScope.Create(request.Authentication);
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
             "git",
             args,
-            Environment: NonInteractiveEnvironment(request.Environment),
+            Environment: NonInteractiveEnvironment(request.Environment, authentication),
             Timeout: TimeSpan.FromMinutes(30),
-            Redaction: Redaction(request.RepositoryUrl)), cancellationToken);
+            Redaction: Redaction(request.RepositoryUrl, authentication)), cancellationToken);
         ThrowIfFailed(result);
+        await authentication.ReportFirstUseAsync(cancellationToken);
     }
 
     public async Task CheckoutAsync(GitCheckoutRequest request, CancellationToken cancellationToken = default)
@@ -39,7 +41,8 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
         if (Directory.EnumerateFileSystemEntries(target).Any())
             throw new InvalidOperationException("Checkout target directory must be empty.");
 
-        var context = new CheckoutContext(request, target);
+        using GitAuthenticationScope authentication = GitAuthenticationScope.Create(request.Authentication);
+        var context = new CheckoutContext(request, target, authentication);
         await RunAsync(context, ["init", "--quiet"], LocalCommandTimeout, cancellationToken);
         await RunAsync(context, ["remote", "add", "origin", "--", request.RepositoryUrl.ToString()],
             LocalCommandTimeout, cancellationToken);
@@ -57,6 +60,7 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
         if (request.RecurseSubmodules)
             await RunAsync(context, ["submodule", "update", "--init", "--recursive", "--depth", "1"], FetchTimeout(request),
                 cancellationToken);
+        await authentication.ReportFirstUseAsync(cancellationToken);
     }
 
     public async Task FetchAsync(string repositoryDirectory, string? remote,
@@ -100,16 +104,24 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
             parts.ElementAtOrDefault(4) ?? string.Empty);
     }
 
-    public async Task<IReadOnlyList<GitRepositoryRef>> ListRefsAsync(Uri repositoryUrl,
+    public Task<IReadOnlyList<GitRepositoryRef>> ListRefsAsync(Uri repositoryUrl,
         CancellationToken cancellationToken = default)
     {
+        return ListRefsAsync(repositoryUrl, null, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<GitRepositoryRef>> ListRefsAsync(Uri repositoryUrl,
+        GitAuthentication? authentication, CancellationToken cancellationToken = default)
+    {
+        using GitAuthenticationScope scope = GitAuthenticationScope.Create(authentication);
         ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
             "git",
             ["ls-remote", "--heads", "--tags", "--", repositoryUrl.ToString()],
-            Environment: NonInteractiveEnvironment(null),
+            Environment: NonInteractiveEnvironment(null, scope),
             Timeout: TimeSpan.FromMinutes(2),
-            Redaction: Redaction(repositoryUrl)), cancellationToken);
+            Redaction: Redaction(repositoryUrl, scope)), cancellationToken);
         ThrowIfFailed(result);
+        await scope.ReportFirstUseAsync(cancellationToken);
         return result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(ParseRef)
             .ToArray();
@@ -223,9 +235,9 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
             "git",
             args,
             context.TargetDirectory,
-            NonInteractiveEnvironment(context.Request.Environment),
+            NonInteractiveEnvironment(context.Request.Environment, context.Authentication),
             timeout,
-            Redaction: Redaction(context.Request.RepositoryUrl));
+            Redaction: Redaction(context.Request.RepositoryUrl, context.Authentication));
     }
 
     public static void ValidateCheckout(GitCheckoutRequest request)
@@ -259,14 +271,28 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
         return values;
     }
 
+    /// <summary>
+    ///     The non-interactive environment plus the credential and host-trust
+    ///     entries of <paramref name="authentication" /> (DEP-08), which callers cannot override.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string?> NonInteractiveEnvironment(
+        IReadOnlyDictionary<string, string?>? environment, GitAuthenticationScope authentication)
+    {
+        var values = new Dictionary<string, string?>(NonInteractiveEnvironment(environment), StringComparer.Ordinal);
+        foreach (var (key, value) in authentication.Environment)
+            values[key] = value;
+        values["GIT_TERMINAL_PROMPT"] = "0";
+        return values;
+    }
+
     private static TimeSpan FetchTimeout(GitCheckoutRequest request)
     {
         return request.FetchTimeout ?? DefaultFetchTimeout;
     }
 
-    private static ProcessRedactionProfile Redaction(Uri repositoryUrl)
+    private static ProcessRedactionProfile Redaction(Uri repositoryUrl, GitAuthenticationScope? authentication = null)
     {
-        return new ProcessRedactionProfile([repositoryUrl.ToString()], []);
+        return new ProcessRedactionProfile([repositoryUrl.ToString(), .. authentication?.SecretValues ?? []], []);
     }
 
     private static ProcessCommand Command(string repositoryDirectory, IReadOnlyList<string> args)
@@ -290,5 +316,8 @@ public sealed class GitProcessClient(IProcessRunner processRunner, IPathSafetySe
         if (!result.Succeeded) throw new ProcessExecutionException(result);
     }
 
-    private sealed record CheckoutContext(GitCheckoutRequest Request, string TargetDirectory);
+    private sealed record CheckoutContext(
+        GitCheckoutRequest Request,
+        string TargetDirectory,
+        GitAuthenticationScope Authentication);
 }

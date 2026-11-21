@@ -25,3 +25,5 @@ Use `ADR-0000-template.md` for new decisions.
 - `ADR-0005-postgresql.md`
 - `ADR-0006-signalr.md`
 - `ADR-0007-executable-first-distribution.md`
+- `ADR-0008-custom-identity-model.md`
+- `ADR-0009-host-metrics-collection.md`

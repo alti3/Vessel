@@ -133,7 +133,9 @@ public static class DeploymentPlanBuilder
     public static GitCheckoutRequest Checkout(AppEntity application, Deployment deployment,
         ApplicationPreview? preview, string targetDirectory)
     {
-        var repositoryUrl = new Uri(application.GitSource.RepositoryUrl.Value);
+        // SEC-10: the persisted source is validated again at start (it may predate stricter validation).
+        application.GitSource.EnsureSafeForGit();
+        Uri repositoryUrl = application.GitSource.RepositoryUrl.ToTransportUri();
         GitRef branch = GitRef.Parse(application.GitSource.Branch, "application branch");
 
         if (preview is not null)

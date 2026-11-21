@@ -232,6 +232,22 @@ public sealed class Server : Entity<ServerId>
         Touch(now);
     }
 
+    /// <summary>
+    ///     Health checks that failed in a row (upstream Coolify <c>unreachable_count</c>). The unreachable alert fires once
+    ///     this reaches <see cref="UnreachableAlertThreshold" />; a successful check resets it.
+    /// </summary>
+    public int ConsecutiveFailedHealthChecks { get; private set; }
+
+    /// <summary>Consecutive failed checks before the server-unreachable notification (upstream: 2).</summary>
+    public const int UnreachableAlertThreshold = 2;
+
+    /// <summary>Records one health check outcome and returns the consecutive failure count (0 after a success).</summary>
+    public int RecordHealthCheck(bool reachable)
+    {
+        ConsecutiveFailedHealthChecks = reachable ? 0 : Math.Min(ConsecutiveFailedHealthChecks + 1, 1_000_000);
+        return ConsecutiveFailedHealthChecks;
+    }
+
     public void ChangeStatus(ServerStatus status, DateTimeOffset now)
     {
         if (Status == status) return;

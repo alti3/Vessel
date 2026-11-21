@@ -91,7 +91,10 @@ public sealed class ServerHealthPollingService(
                 (certificate, _) => certificate)
             .Any(certificate => certificate.Status != CertificateStatus.Issued);
 
-        ServerStatus previousStatus = server.Status;
+        var failuresBefore = server.ConsecutiveFailedHealthChecks;
+        // Unknown outcomes (for example unattended host-local polling without authorization) do not count either way.
+        if (nextStatus is ServerStatus.Reachable or ServerStatus.Unreachable)
+            server.RecordHealthCheck(nextStatus == ServerStatus.Reachable);
         server.ChangeStatus(nextStatus, now);
         ServerStatusSnapshot snapshot = ServerStatusSnapshot.Create(
             server.Id,
@@ -137,27 +140,20 @@ public sealed class ServerHealthPollingService(
                     now)),
             cancellationToken);
 
-        // Notify on reachability transitions only, never on every poll, so a down server raises one alert.
-        if (IsReachabilityTransition(previousStatus, nextStatus))
+        // Unreachable is announced once the server failed Server.UnreachableAlertThreshold checks in a row (upstream
+        // unreachable_count >= 2), so one dropped poll is not an outage; "reachable again" only follows an announced
+        // outage (the catalog releases the incident). Never on every poll, so a down server raises one alert.
+        if (nextStatus == ServerStatus.Unreachable && failuresBefore + 1 == Server.UnreachableAlertThreshold)
             await notifications.PublishAsync(server.TeamId,
-                OperationalNotifications.ServerReachabilityChanged(server.Id.Value, server.Name.Value,
-                    nextStatus == ServerStatus.Reachable),
+                OperationalNotifications.ServerReachabilityChanged(server.Id.Value, server.Name.Value, false),
+                CancellationToken.None);
+        else if (nextStatus == ServerStatus.Reachable && failuresBefore >= Server.UnreachableAlertThreshold)
+            await notifications.PublishAsync(server.TeamId,
+                OperationalNotifications.ServerReachabilityChanged(server.Id.Value, server.Name.Value, true),
                 CancellationToken.None);
 
         return new ServerHealthPollingResult(server.Id.Value, nextStatus, runningContainers, runtimeReachable,
             probe.Reason);
-    }
-
-    private static bool IsReachabilityTransition(ServerStatus previous, ServerStatus next)
-    {
-        return next switch
-        {
-            // Became unreachable from any monitored state (a brand-new server failing its first poll included).
-            ServerStatus.Unreachable => previous is not (ServerStatus.Unreachable or ServerStatus.Disabled),
-            // Recovered: only announce when we previously announced it was down.
-            ServerStatus.Reachable => previous == ServerStatus.Unreachable,
-            _ => false
-        };
     }
 
     /// <summary>

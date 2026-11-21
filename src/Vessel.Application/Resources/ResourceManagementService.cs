@@ -7,6 +7,7 @@ using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Security;
+using Vessel.Application.Sources;
 using Vessel.Application.Ssh;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
@@ -18,6 +19,7 @@ using Vessel.Domain.Projects;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Sources;
 using Vessel.Domain.ValueObjects;
 using ApplicationId = Vessel.Domain.ApplicationId;
 using EnvironmentEntity = Vessel.Domain.Projects.Environment;
@@ -313,8 +315,13 @@ public sealed class ResourceManagementService(
         DateTimeOffset now = Now();
         var application = Domain.Applications.Application.Create(environmentId, serverId,
             new ResourceName(request.Name),
-            new GitSource(new RepositoryUrl(request.RepositoryUrl), request.Branch),
+            // SEC-10: repository URL (no embedded credentials) and branch are validated at the API/UI boundary.
+            GitSource.FromInput(request.RepositoryUrl, request.Branch),
             BuildConfig(request.BuildPack, request.BaseDirectory, request.DockerfilePath), now);
+        // DEP-08: a private Git source must be usable by the team and accept the repository host.
+        GitSourceConnection? source = GitSourceSelection.Resolve(dbContext, teamId, request.SourceId,
+            application.GitSource.RepositoryUrl);
+        application.AssignSource(source?.Id, now);
         application.UpdateSettings(application.Name, ToDescription(request.Description), application.GitSource,
             application.BuildConfiguration, RuntimeConfig(request.ExposedPort), DeploymentSettings.Default, now);
         foreach (var domain in request.Domains.Where(domain => !string.IsNullOrWhiteSpace(domain)))
@@ -699,7 +706,8 @@ public sealed class ResourceManagementService(
             application.Description == null ? null : application.Description.Value.Value, projectId.Value,
             application.EnvironmentId.Value, application.ServerId.Value, application.GitSource.RepositoryUrl.Value,
             application.GitSource.Branch, application.BuildConfiguration.BuildPack,
-            application.Domains.Select(domain => domain.Host + domain.PathPrefix).ToArray());
+            application.Domains.Select(domain => domain.Host + domain.PathPrefix).ToArray(),
+            application.SourceId?.Value);
     }
 
     private DatabaseSummary ToSummary(DatabaseResource database)

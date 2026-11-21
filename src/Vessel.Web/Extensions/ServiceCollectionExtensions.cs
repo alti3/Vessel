@@ -1,3 +1,8 @@
+using Vessel.Application.Monitoring.HostMetrics;
+using Vessel.Application.Resources.RuntimeLogs;
+using Vessel.Application.Resources.Status;
+using Vessel.Application.Servers.Alerts;
+using Vessel.Application.Servers.DockerCleanup;
 using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
@@ -27,6 +32,7 @@ using Vessel.Application.Email;
 using Vessel.Application.Instance;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
@@ -45,6 +51,7 @@ using Vessel.Application.Ssh.Keys;
 using Vessel.Application.Storage;
 using Vessel.Application.Terminals;
 using Vessel.Application.Webhooks;
+using Vessel.Application.Sources;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
@@ -141,6 +148,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<SshHostKeyScanThrottle>();
         services.AddScoped<ServerSshConnectionService>();
         services.AddScoped<SshKeyService>();
+        services.AddScoped<IGitCredentialProvider, GitCredentialResolver>();
+        services.AddScoped<GitSourceService>();
         services.AddScoped<SshKeyRotationService>();
         services.AddScoped<RotateSshKeyJob>();
         services.AddScoped<ServerManagementService>();
@@ -148,6 +157,23 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ValidateServerJob>();
         services.AddScoped<ServerHealthPollingService>();
         services.AddScoped<ServerHealthPollingJob>();
+        // SRV-03/04/05/07/08: metrics, runtime status, runtime logs, Docker cleanup and server alerts.
+        services.AddScoped<ServerMetricsCollectionService>();
+        services.AddScoped<ServerMetricsQueryService>();
+        services.AddScoped<ServerMetricsRetentionService>();
+        services.AddScoped<ServerMonitoringSettingsService>();
+        services.TryAddScoped<IServerMetricsPruner, QueryableServerMetricsPruner>();
+        services.AddScoped<ServerMetricsDispatchJob>();
+        services.AddScoped<CollectServerMetricsJob>();
+        services.AddScoped<ServerMetricsRetentionJob>();
+        services.AddScoped<ServerAlertEvaluator>();
+        services.AddScoped<ResourceStatusReconciler>();
+        services.AddScoped<ResourceRuntimeStatusService>();
+        services.AddScoped<NotifyResourceStoppedJob>();
+        services.AddScoped<RuntimeLogQueryService>();
+        services.AddScoped<DockerCleanupService>();
+        services.AddScoped<RunDockerCleanupJob>();
+        services.AddScoped<DockerCleanupScheduleSyncJob>();
         services.AddScoped<ManagedDatabaseService>();
         services.AddScoped<DatabaseRestoreService>();
         services.AddScoped<DatabaseHealthProbe>();
@@ -158,7 +184,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<BackupArtifactReader>();
         services.AddScoped<CheckMissingBackupsJob>();
         services.AddScoped<RevalidateBackupDestinationsJob>();
-        services.AddSingleton<ServiceTemplateCatalog>();
+        services.AddSingleton(provider => ServiceTemplateCatalog.Create(
+            provider.GetService<IServiceTemplateComposeProcessor>(), provider.GetService<IServiceTemplateSource>()));
         services.AddScoped<DomainRoutingService>();
         services.AddScoped<ProxyConfigurationService>();
         services.AddScoped<ProxyLifecycleService>();
