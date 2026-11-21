@@ -158,7 +158,10 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
                                command.WorkingDirectory,
                                Timeout: command.Timeout ?? TimeSpan.FromMinutes(30),
                                OutputMode: ProcessOutputMode.Lines,
-                               Redaction: new ProcessRedactionProfile(command.BuildArguments.Values.ToArray(), [])),
+                               Redaction: new ProcessRedactionProfile(
+                                   [.. command.BuildArguments.Values, .. command.Redaction?.SecretValues ?? []],
+                                   command.Redaction?.PatternNames ?? [], command.Redaction?.KnownValues,
+                                   command.Redaction?.IsLogOutput ?? false)),
                            cancellationToken))
             yield return line;
     }
@@ -199,8 +202,35 @@ public sealed class DockerCliContainerRuntimeClient(IProcessRunner processRunner
                            args,
                            command.WorkingDirectory,
                            Timeout: command.Timeout,
-                           OutputMode: ProcessOutputMode.Lines), cancellationToken))
+                           OutputMode: ProcessOutputMode.Lines,
+                           Redaction: command.Redaction), cancellationToken))
             yield return line;
+    }
+
+    public async Task<bool> RemoveComposeProjectAsync(
+        ContainerRuntimeTarget target,
+        string projectName,
+        bool removeVolumes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectName);
+        var args = new List<string> { "compose", "--project-name", projectName, "down", "--remove-orphans" };
+        if (removeVolumes) args.Add("--volumes");
+        ProcessResult result = await processRunner.RunTextAsync(new ProcessCommand(
+            target.ResolveCliExecutable(), args, Timeout: TimeSpan.FromMinutes(5)), cancellationToken);
+        return result.Succeeded;
+    }
+
+    public async Task<bool> RemoveImageAsync(
+        ContainerRuntimeTarget target,
+        string imageReference,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(imageReference);
+        if (imageReference.StartsWith('-'))
+            throw new ArgumentException("Image reference must not start with '-'.", nameof(imageReference));
+        ProcessResult result = await RunDockerAsync(target, ["image", "rm", imageReference], cancellationToken);
+        return result.Succeeded;
     }
 
     private Task<ProcessResult> RunDockerAsync(ContainerRuntimeTarget target, IReadOnlyList<string> args,

@@ -62,6 +62,22 @@ public sealed class WebhookEvent : Entity<WebhookEventId>
     /// </summary>
     public Guid[] VerifiedApplicationIds { get; private set; } = [];
 
+    /// <summary>Per-application results of processing (DEP-12 fan-out); empty until processed.</summary>
+    public WebhookApplicationOutcome[] ApplicationOutcomes { get; private set; } = [];
+
+    public void RecordApplicationOutcomes(IEnumerable<WebhookApplicationOutcome> outcomes, DateTimeOffset now)
+    {
+        ApplicationOutcomes = outcomes
+            .Select(outcome => outcome with { Reason = Truncate(outcome.Reason) })
+            .ToArray();
+        Touch(now);
+    }
+
+    private static string? Truncate(string? reason)
+    {
+        return reason is null || reason.Length <= 512 ? reason : reason[..509] + "...";
+    }
+
     public bool IsVerifiedFor(ApplicationId applicationId)
     {
         return SignatureStatus == WebhookSignatureStatus.Verified && VerifiedApplicationIds.Contains(applicationId.Value);

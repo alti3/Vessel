@@ -50,6 +50,8 @@ public class InMemoryVesselDb : DispatchProxy
     {
         ArgumentNullException.ThrowIfNull(targetMethod);
         if (targetMethod.Name == nameof(IUnitOfWork.SaveChangesAsync)) return Task.FromResult(1);
+        // List-backed entities are shared instances, so there is nothing stale to refresh.
+        if (targetMethod.Name == nameof(IVesselDbContext.RefreshAsync)) return Task.CompletedTask;
         if (targetMethod.Name == "get_" + nameof(IVesselDbContext.TeamMemberships))
             return Set<Team>().SelectMany(team => team.Memberships).AsQueryable();
 
@@ -136,6 +138,8 @@ public sealed class SecurityServiceFactory(InMemoryVesselDb store)
         if (type == typeof(TimeProvider)) return TimeProvider.System;
         if (type == typeof(IApiTokenAccessContext)) return TokenContext;
         if (type == typeof(IAccessResolver)) return Get(typeof(AccessResolver));
+        // Optional collaborators (e.g. the auth mailer) stay absent unless a test wires them.
+        if (type == typeof(Vessel.Application.Auth.AuthEmailService)) return null!;
         if (type == typeof(ITokenGenerator))
         {
             if (!_instances.TryGetValue(type, out object? generator))

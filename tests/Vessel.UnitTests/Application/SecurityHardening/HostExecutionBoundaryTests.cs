@@ -195,8 +195,12 @@ public sealed class HostExecutionBoundaryTests
         Server server = AddServer(team, ServerConnectionType.Local);
         AppEntity application = AddApplication(team, server);
         var jobs = new RecordingJobDispatcher();
-        var starter = new StartDeploymentService(_db, new VesselAuthorizationService(_db), jobs,
-            new RecordingAuditWriter(), new NullRealtimeNotifier(), TimeProvider.System);
+        var queue = new Vessel.Application.Deployments.Queue.DeploymentQueueService(_db,
+            new InMemoryDistributedLockManager(TimeProvider.System), jobs,
+            new Vessel.Application.Deployments.Queue.DeploymentCancellationRegistry(), new NullRealtimeNotifier(),
+            TimeProvider.System);
+        var starter = new StartDeploymentService(_db, new VesselAuthorizationService(_db), queue,
+            new RecordingAuditWriter(), TimeProvider.System);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => starter.StartAsync(member.Id, team.Id,
             new StartDeploymentRequest(application.Id.Value), TestContext.Current.CancellationToken));

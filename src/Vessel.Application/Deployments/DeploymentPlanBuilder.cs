@@ -67,6 +67,24 @@ public static class DeploymentPlanBuilder
             $"vessel/{app}:{suffix}-{deploymentId.Value:N}", network, previewAlias, suffix);
     }
 
+    /// <summary>Local image repository of an application (<c>vessel/{applicationId:N}</c>).</summary>
+    public static string ImageRepository(AppId applicationId)
+    {
+        return $"vessel/{applicationId.Value:N}";
+    }
+
+    /// <summary>
+    ///     Production image reference. Images are tagged by commit SHA (Coolify tags by commit) so earlier commits stay
+    ///     available as rollback targets; without a resolved commit the deployment ID is the tag.
+    /// </summary>
+    public static string ProductionImage(AppId applicationId, string? commitSha, DeploymentId deploymentId)
+    {
+        var tag = GitRef.IsCommitShaValue(commitSha) && commitSha!.Length <= 64
+            ? commitSha.ToLowerInvariant()
+            : deploymentId.Value.ToString("N");
+        return $"{ImageRepository(applicationId)}:{tag}";
+    }
+
     public static string PreviewSuffix(int pullRequestNumber)
     {
         if (pullRequestNumber <= 0) throw new DomainException("Pull request number must be positive.");

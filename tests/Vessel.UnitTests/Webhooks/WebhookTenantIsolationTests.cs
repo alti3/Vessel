@@ -5,6 +5,8 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
+using Vessel.Application.Deployments;
+using Vessel.Application.Deployments.Queue;
 using Vessel.Application.Webhooks;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
@@ -212,6 +214,73 @@ public sealed class WebhookTenantIsolationTests
         Assert.False(await throttle.IsLockedAsync(scope, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task One_delivery_evaluates_every_matching_application_independently_with_per_app_outcomes()
+    {
+        var scenario = new Scenario();
+        AppEntity staging = scenario.AddApplication("https://github.com/org/app.git", VictimSecret, autoDeploy: true);
+        AppEntity production =
+            scenario.AddApplication("https://github.com/org/app.git", VictimSecret, autoDeploy: true);
+        AppEntity docs = scenario.AddApplication("https://github.com/org/app.git", VictimSecret, autoDeploy: true);
+        docs.UpdateDeploymentSettings(docs.DeploymentSettings with { WatchPaths = "docs/**" }, scenario.Now);
+        AppEntity manual = scenario.AddApplication("https://github.com/org/app.git", VictimSecret, autoDeploy: false);
+
+        await scenario.ReceivePushAsync("org/app", VictimSecret);
+        WebhookProcessingResult result = await scenario.ProcessAsync(scenario.Db.Events.Single());
+
+        Assert.Equal(WebhookEventStatus.Processed, result.Status);
+        Assert.Equal(2, scenario.Db.DeploymentItems.Count);
+        Assert.All(scenario.Db.DeploymentItems, item => Assert.Equal(DeploymentTrigger.Webhook, item.Trigger));
+        IReadOnlyList<WebhookApplicationOutcome> outcomes = Assert.IsAssignableFrom<IReadOnlyList<WebhookApplicationOutcome>>(
+            result.Applications);
+        Assert.Equal(4, outcomes.Count);
+        Assert.Equal(WebhookApplicationOutcomeKind.Queued, Outcome(outcomes, staging).Outcome);
+        Assert.Equal(WebhookApplicationOutcomeKind.Queued, Outcome(outcomes, production).Outcome);
+        Assert.Equal(WebhookApplicationOutcomeKind.Skipped, Outcome(outcomes, docs).Outcome);
+        Assert.Contains("watch paths", Outcome(outcomes, docs).Reason);
+        Assert.Equal(WebhookApplicationOutcomeKind.Skipped, Outcome(outcomes, manual).Outcome);
+        Assert.Equal(outcomes, scenario.Db.Events.Single().ApplicationOutcomes);
+    }
+
+    [Fact]
+    public async Task Redelivered_push_for_an_active_commit_is_deduplicated_not_failed()
+    {
+        var scenario = new Scenario();
+        AppEntity app = scenario.AddApplication("https://github.com/org/app.git", VictimSecret, autoDeploy: true);
+        await scenario.ReceivePushAsync("org/app", VictimSecret);
+        await scenario.ProcessAsync(scenario.Db.Events.Single());
+        // A second delivery (different id) of the same commit while the first deployment is still active.
+        WebhookEvent second = WebhookEvent.Receive(WebhookProvider.GitHub, "push", "delivery-2", "dedupe-2",
+            scenario.Db.Events.Single().PayloadJson, WebhookSignatureStatus.Missing, scenario.Now);
+        second.MarkSignatureVerified([app.Id], scenario.Now);
+        scenario.Db.Events.Add(second);
+
+        WebhookProcessingResult result = await scenario.ProcessAsync(second);
+
+        Assert.Single(scenario.Db.DeploymentItems);
+        Assert.Equal(WebhookApplicationOutcomeKind.Deduplicated, Assert.Single(result.Applications!).Outcome);
+        Assert.Equal(WebhookEventStatus.Processed, result.Status);
+    }
+
+    [Fact]
+    public void Watch_paths_use_the_net_change_of_a_push()
+    {
+        IReadOnlyList<string> files = WebhookPayloadReader.NetChangedFiles(
+        [
+            (["tmp/scratch.txt", "src/a.cs"], [], []),
+            ([], ["src/a.cs"], ["tmp/scratch.txt"]),
+            ([], [], ["docs/old.md"])
+        ]);
+
+        Assert.Equal(["src/a.cs", "docs/old.md"], files);
+    }
+
+    private static WebhookApplicationOutcome Outcome(IReadOnlyList<WebhookApplicationOutcome> outcomes,
+        AppEntity application)
+    {
+        return outcomes.Single(item => item.ApplicationId == application.Id.Value);
+    }
+
     private sealed class Scenario
     {
         private readonly Dictionary<SecretReferenceId, string> _secrets = [];
@@ -289,7 +358,10 @@ public sealed class WebhookTenantIsolationTests
 
         public Task<WebhookProcessingResult> ProcessAsync(WebhookEvent webhookEvent)
         {
-            var service = new WebhookProcessingService(Db, new NullDispatcher(), new NullAuditWriter(),
+            var dispatcher = new NullDispatcher();
+            var queue = new DeploymentQueueService(Db, new InMemoryDistributedLockManager(TimeProvider.System),
+                dispatcher, new DeploymentCancellationRegistry(), new NullRealtime(), new FixedTime(Now));
+            var service = new WebhookProcessingService(Db, dispatcher, queue, new NullAuditWriter(),
                 new FixedTime(Now));
             return service.ProcessAsync(webhookEvent.Id, TestContext.Current.CancellationToken);
         }
@@ -415,6 +487,15 @@ public sealed class WebhookTenantIsolationTests
         public string Schedule<TJob>(Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
         {
             return "job";
+        }
+    }
+
+    private sealed class NullRealtime : Vessel.Application.Realtime.IRealtimeNotifier
+    {
+        public Task PublishAsync(Vessel.Application.Realtime.RealtimeGroup group,
+            Vessel.Application.Realtime.RealtimeMessage message, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
         }
     }
 

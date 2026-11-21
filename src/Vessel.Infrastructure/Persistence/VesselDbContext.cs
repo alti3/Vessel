@@ -280,6 +280,14 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
 
     public IRepository<SettingEntry, SettingId> SettingRepository { get; }
 
+    public async Task RefreshAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default)
+        where TEntity : class
+    {
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<TEntity> entry = Entry(entity);
+        if (entry.State is EntityState.Detached or EntityState.Added) return;
+        await entry.ReloadAsync(cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("vessel");
@@ -474,6 +482,10 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(server => server.Capabilities).HasConversion<int>().IsRequired();
             builder.Property(server => server.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(server => server.Labels).HasMaxLength(1000).IsRequired();
+            builder.Property(server => server.ConcurrentBuilds).HasDefaultValue(Server.DefaultConcurrentBuilds)
+                .IsRequired();
+            builder.Property(server => server.DeploymentQueueLimit)
+                .HasDefaultValue(Server.DefaultDeploymentQueueLimit).IsRequired();
             builder.Property(server => server.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(server => server.DomainEvents);
             builder.HasIndex(server => new { server.TeamId, server.Name }).IsUnique();
@@ -872,6 +884,13 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(deployment => deployment.ArtifactReference).HasMaxLength(512);
             builder.Property(deployment => deployment.ConfigurationSnapshotReference).HasMaxLength(512);
             builder.Property(deployment => deployment.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            builder.Property(deployment => deployment.Trigger).HasConversion<string>().HasMaxLength(32)
+                .HasDefaultValue(DeploymentTrigger.Manual).IsRequired();
+            builder.Property(deployment => deployment.ParentDeploymentId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new DeploymentId(value.Value) : null);
+            builder.Property(deployment => deployment.RollbackImage).HasMaxLength(512);
+            builder.Property(deployment => deployment.CancellationReason).HasMaxLength(512);
             builder.Property(deployment => deployment.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(deployment => deployment.DomainEvents);
             builder.HasMany(deployment => deployment.LogLines)
@@ -880,6 +899,8 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
                 .OnDelete(DeleteBehavior.Cascade);
             builder.Navigation(deployment => deployment.LogLines).UsePropertyAccessMode(PropertyAccessMode.Field);
             builder.HasIndex(deployment => new { deployment.ApplicationId, deployment.CreatedAt });
+            // Queue admission and advancement scan active deployments per server.
+            builder.HasIndex(deployment => new { deployment.ServerId, deployment.Status, deployment.CreatedAt });
             builder.HasOne<AppEntity>()
                 .WithMany()
                 .HasForeignKey(deployment => deployment.ApplicationId)
@@ -1302,6 +1323,12 @@ public sealed class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(webhook => webhook.FailureReason).HasMaxLength(512);
             // Applications whose own secret verified the delivery (SEC-01); stored as a PostgreSQL uuid[] column.
             builder.PrimitiveCollection(webhook => webhook.VerifiedApplicationIds).IsRequired();
+            // Per-application fan-out results (DEP-12), stored as jsonb.
+            builder.Property(webhook => webhook.ApplicationOutcomes)
+                .HasConversion(WebhookOutcomeConversions.Converter, WebhookOutcomeConversions.Comparer)
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'[]'::jsonb")
+                .IsRequired();
             builder.Property(webhook => webhook.ApplicationId)
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new AppId(value.Value) : null);
