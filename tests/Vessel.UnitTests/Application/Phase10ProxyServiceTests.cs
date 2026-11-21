@@ -5,6 +5,8 @@ using Vessel.Application.Jobs;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
+using Vessel.Application.Proxy.Certificates;
+using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Domain;
@@ -61,15 +63,17 @@ public sealed partial class Phase10ProxyServiceTests
         Assert.Single(fixture.Db.CertificateItems);
         Assert.Equal("app.example.com", fixture.Db.CertificateItems.Single().Host);
         Assert.True(second.Canonical);
-        Assert.False(fixture.Application.Domains.Single(domain => domain.DomainName.Value == "app.example.com")
+        Assert.False(fixture.Application.Domains.Single(domain => domain.Host == "app.example.com")
             .Canonical);
         Assert.Equal(2, fixture.Audit.Records.Count(record => record.Action == AuditActions.DomainRouteConfigured));
     }
 
     [Theory]
-    [InlineData("app.example.com:8080")]
-    [InlineData("app.example.com/path")]
-    [InlineData("bad_host.example.com")]
+    [InlineData("app.example.com:99999")]
+    [InlineData("app.example.com/../path")]
+    [InlineData("localhost")]
+    [InlineData("ftp://app.example.com")]
+    [InlineData("app.example.com/pa`th")]
     [InlineData("")]
     public async Task ConfigureDomain_RejectsMalformedHosts(string host)
     {
@@ -134,6 +138,12 @@ public sealed partial class Phase10ProxyServiceTests
             fixture.Application.Id,
             "app.example.com/path",
             TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<DomainException>(() => fixture.Certificates.QueueIssuanceAsync(
+            fixture.UserId,
+            fixture.TeamId,
+            fixture.Application.Id,
+            "10.0.0.1",
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -158,11 +168,11 @@ public sealed partial class Phase10ProxyServiceTests
     {
         var fixture = ServiceFixture.Create();
         fixture.Application.UpsertDomain(new DomainName("app.example.com"), 8080, true, true, false, fixture.Now);
-        var certificate = Certificate.Create(
+        var certificate = Certificate.CreatePending(
             fixture.TeamId,
+            fixture.Server.Id,
             fixture.Application.Id,
             "app.example.com",
-            CertificateProvider.TraefikAcme,
             fixture.Now);
         fixture.Db.CertificateItems.Add(certificate);
 
@@ -173,40 +183,6 @@ public sealed partial class Phase10ProxyServiceTests
         Assert.Equal(certificate.Id.Value, summary.Id);
         Assert.True(fixture.Files.Contents.ContainsKey(ProxyLayout.DynamicConfigurationFile));
         Assert.Equal("app.example.com", fixture.ProxyProvider.GeneratedRoutes.Single().Host);
-    }
-
-    [Fact]
-    public async Task RenewDue_QueuesIssuedDueCertificatesAndSkipsLockedRows()
-    {
-        var fixture = ServiceFixture.Create();
-        var due = Certificate.Create(
-            fixture.TeamId,
-            fixture.Application.Id,
-            "due.example.com",
-            CertificateProvider.TraefikAcme,
-            fixture.Now.AddDays(-90));
-        due.MarkIssued(fixture.Now.AddDays(-90), fixture.Now.AddDays(7), null, null);
-        var notDue = Certificate.Create(
-            fixture.TeamId,
-            fixture.Application.Id,
-            "later.example.com",
-            CertificateProvider.TraefikAcme,
-            fixture.Now.AddDays(-10));
-        notDue.MarkIssued(fixture.Now.AddDays(-10), fixture.Now.AddDays(40), null, null);
-        fixture.Db.CertificateItems.AddRange([due, notDue]);
-
-        var renewed = await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal(1, renewed);
-        Assert.Equal(CertificateStatus.RenewalQueued, due.Status);
-        Assert.Equal(CertificateStatus.Issued, notDue.Status);
-
-        fixture.Locks.ShouldAcquire = false;
-        due.MarkFailed("reset", fixture.Now);
-        var skipped = await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, skipped);
-        Assert.Equal(CertificateStatus.Failed, due.Status);
     }
 
     [Fact]
@@ -242,8 +218,8 @@ public sealed partial class Phase10ProxyServiceTests
     {
         var fixture = ServiceFixture.Create();
         fixture.Application.UpsertDomain(new DomainName("app.example.com"), 8080, true, true, false, fixture.Now);
-        var certificate = Certificate.Create(fixture.TeamId, fixture.Application.Id, "app.example.com",
-            CertificateProvider.TraefikAcme, fixture.Now);
+        var certificate = Certificate.CreatePending(fixture.TeamId, fixture.Server.Id, fixture.Application.Id,
+            "app.example.com", fixture.Now);
         fixture.Db.CertificateItems.Add(certificate);
         fixture.Files.FailNextWrites = 1;
         fixture.Files.FailureMessage = "acme failed";
@@ -257,35 +233,25 @@ public sealed partial class Phase10ProxyServiceTests
     }
 
     [Fact]
-    public async Task RenewDue_NotifiesOnceWhenRenewalFails()
-    {
-        var fixture = ServiceFixture.Create();
-        var certificate = Certificate.Create(fixture.TeamId, fixture.Application.Id, "due.example.com",
-            CertificateProvider.TraefikAcme, fixture.Now.AddDays(-90));
-        certificate.MarkIssued(fixture.Now.AddDays(-90), fixture.Now.AddDays(7), null, null);
-        certificate.QueueRenewal(fixture.Now);
-        fixture.Db.CertificateItems.Add(certificate);
-
-        // RenewalQueued is not Issued, so the next renewal attempt fails and should alert once.
-        await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
-        await fixture.Certificates.RenewDueAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal(CertificateStatus.Failed, certificate.Status);
-        TeamNotification notification = Assert.Single(fixture.Notifications.Published);
-        Assert.Equal(NotificationEventTypes.CertificateRenewalFailed, notification.Notification.EventType);
-    }
-
-    [Fact]
-    public void CertificateRecurringJobs_RegisterSchedulesRenewalJob()
+    public void CertificateRecurringJobs_RegisterAcmeSyncAndHistoryCleanup()
     {
         var scheduler = new TestRecurringJobScheduler();
 
         CertificateRecurringJobs.Register(scheduler);
 
-        RecurringRegistration registration = Assert.Single(scheduler.Registrations);
-        Assert.Equal(CertificateRecurringJobs.RenewDueJobId, registration.RecurringJobId);
-        Assert.Equal(typeof(CertificateRenewalJob), registration.JobType);
-        Assert.Equal(CertificateRecurringJobs.RenewDueCronExpression, registration.CronExpression);
+        Assert.Collection(scheduler.Registrations,
+            registration =>
+            {
+                // The former renewal job id is reused so its stale Hangfire definition is replaced.
+                Assert.Equal("certificates.renew-due", registration.RecurringJobId);
+                Assert.Equal(typeof(CertificateSyncJob), registration.JobType);
+                Assert.Equal(CertificateRecurringJobs.SyncCronExpression, registration.CronExpression);
+            },
+            registration =>
+            {
+                Assert.Equal(CertificateRecurringJobs.HistoryCleanupJobId, registration.RecurringJobId);
+                Assert.Equal(typeof(ProxyConfigurationHistoryCleanupJob), registration.JobType);
+            });
     }
 
     [Fact]
@@ -350,7 +316,7 @@ public sealed partial class Phase10ProxyServiceTests
             fixture.Server.Id,
             ProxyProviderKind.Traefik,
             "previous",
-            new string('a', 64),
+            new string('b', 64),
             "http:\n  routers: {}\n  services: {}\n",
             null,
             fixture.Now.AddMinutes(-10));
@@ -432,10 +398,13 @@ public sealed partial class Phase10ProxyServiceTests
         {
             ProxyLifecycle = new ProxyLifecycleService(Db, Authorization, Locks, [Files], Runtime, Renderer, Audit,
                 Redactor, Time);
+            Projector = new ProxyRouteProjector(Db, Vault);
+            Protector = new ProxyConfigurationProtector(Cipher);
             ProxyConfigurations =
                 new ProxyConfigurationService(Db, Authorization, ProxyProvider, ProxyLifecycle, Locks, Audit, Redactor,
-                    Time, Notifications);
-            Domains = new DomainRoutingService(Db, Authorization, Audit, Redactor, Time);
+                    Time, Notifications, Projector, Protector);
+            Domains = new DomainRoutingService(Db, Authorization, Audit, Redactor, Time, new RoutePolicyWriter(Vault));
+            ServiceDomains = new ServiceDomainService(Db, Authorization, Audit, Time, new RoutePolicyWriter(Vault));
             Certificates = new CertificateManagementService(
                 Db,
                 Authorization,
@@ -443,9 +412,10 @@ public sealed partial class Phase10ProxyServiceTests
                 BackgroundJobs,
                 ProxyConfigurations,
                 Audit,
-                Redactor,
                 Time,
                 Notifications);
+            Inventory = new CertificateInventoryService(Db, Authorization, Locks, Acme, Projector, ProxyLifecycle,
+                Audit, Redactor, Time, Notifications);
         }
 
         public RecordingNotificationEventPublisher Notifications { get; } = new();
@@ -472,6 +442,20 @@ public sealed partial class Phase10ProxyServiceTests
 
         public ProxyLifecycleService ProxyLifecycle { get; }
 
+        public TestSecretCipher Cipher { get; } = new();
+
+        public TestSecretVault Vault { get; } = new();
+
+        public TestAcmeStore Acme { get; } = new();
+
+        public ProxyRouteProjector Projector { get; }
+
+        public ProxyConfigurationProtector Protector { get; }
+
+        public ServiceDomainService ServiceDomains { get; }
+
+        public CertificateInventoryService Inventory { get; }
+
         public TimeProvider Time => new FixedTimeProvider(Now);
 
         public VesselAuthorizationService Authorization => new(Db);
@@ -489,6 +473,28 @@ public sealed partial class Phase10ProxyServiceTests
         public Server Server { get; private set; } = null!;
 
         public AppEntity Application { get; private set; } = null!;
+
+        public AppEntity AddApplication(string name, ServerId serverId, TeamId? teamId = null)
+        {
+            var project = Project.Create(teamId ?? TeamId, new ResourceName($"{name} project"), Now);
+            var environment = EnvironmentEntity.CreateProduction(project.Id, Now);
+            var application = AppEntity.Create(environment.Id, serverId, new ResourceName(name),
+                new GitSource(new RepositoryUrl("https://example.com/other.git"), "main"),
+                BuildConfiguration.Default(ApplicationBuildPack.Dockerfile), Now);
+            Db.ProjectItems.Add(project);
+            Db.EnvironmentItems.Add(environment);
+            Db.ApplicationItems.Add(application);
+            return application;
+        }
+
+        public ServiceResource AddService(string templateKey)
+        {
+            var environmentId = Db.ApplicationItems.First().EnvironmentId;
+            var service = ServiceResource.Create(TeamId, environmentId, Server.Id, new ResourceName($"svc-{templateKey}"),
+                templateKey, "1", "{}", Now);
+            Db.ServiceResourceItems.Add(service);
+            return service;
+        }
 
         public static ServiceFixture Create()
         {
@@ -550,6 +556,22 @@ public sealed partial class Phase10ProxyServiceTests
         public List<Certificate> CertificateItems { get; } = [];
         public List<ProxyConfigurationVersion> ProxyConfigurationVersionItems { get; } = [];
         public List<ServerProxySettings> ServerProxySettingsItems { get; } = [];
+        public List<ProxyDynamicConfiguration> DynamicConfigurationItems { get; } = [];
+        public List<ServiceResource> ServiceResourceItems { get; } = [];
+        public List<ServiceDomain> ServiceDomainItems { get; } = [];
+        public List<ApplicationPreview> PreviewItems { get; } = [];
+
+        public IQueryable<ProxyDynamicConfiguration> ProxyDynamicConfigurations =>
+            DynamicConfigurationItems.AsQueryable();
+
+        public IRepository<ProxyDynamicConfiguration, ProxyDynamicConfigurationId>
+            ProxyDynamicConfigurationRepository =>
+            new ListRepository<ProxyDynamicConfiguration, ProxyDynamicConfigurationId>(DynamicConfigurationItems);
+
+        public IQueryable<ServiceDomain> ServiceDomains => ServiceDomainItems.AsQueryable();
+
+        public IRepository<ServiceDomain, ServiceDomainId> ServiceDomainRepository =>
+            new ListRepository<ServiceDomain, ServiceDomainId>(ServiceDomainItems);
         public IQueryable<ServerProxySettings> ServerProxySettings => ServerProxySettingsItems.AsQueryable();
 
         public IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository =>
@@ -573,7 +595,7 @@ public sealed partial class Phase10ProxyServiceTests
             ApplicationItems.SelectMany(application => application.Domains).AsQueryable();
 
         public IQueryable<DatabaseResource> DatabaseResources => Array.Empty<DatabaseResource>().AsQueryable();
-        public IQueryable<ServiceResource> ServiceResources => Array.Empty<ServiceResource>().AsQueryable();
+        public IQueryable<ServiceResource> ServiceResources => ServiceResourceItems.AsQueryable();
         public IQueryable<BackupSchedule> BackupSchedules => Array.Empty<BackupSchedule>().AsQueryable();
         public IQueryable<BackupExecution> BackupExecutions => Array.Empty<BackupExecution>().AsQueryable();
         public IQueryable<Deployment> Deployments => Array.Empty<Deployment>().AsQueryable();
@@ -600,7 +622,7 @@ public sealed partial class Phase10ProxyServiceTests
         public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations =>
             Array.Empty<ApplicationWebhookConfiguration>().AsQueryable();
 
-        public IQueryable<ApplicationPreview> ApplicationPreviews => Array.Empty<ApplicationPreview>().AsQueryable();
+        public IQueryable<ApplicationPreview> ApplicationPreviews => PreviewItems.AsQueryable();
 
         public IQueryable<ProxyConfigurationVersion> ProxyConfigurationVersions =>
             ProxyConfigurationVersionItems.AsQueryable();
@@ -836,6 +858,10 @@ public sealed partial class Phase10ProxyServiceTests
             return RouteRejections;
         }
 
+        public string GeneratedContents { get; set; } = "http:\n  routers: {}\n  services: {}\n";
+
+        public string GeneratedHash { get; set; } = new('a', 64);
+
         public ProxyConfigurationDocument Generate(ServerId serverId, IReadOnlyList<ProxyRoute> routes)
         {
             GeneratedRoutes = routes.ToList();
@@ -843,14 +869,21 @@ public sealed partial class Phase10ProxyServiceTests
                 serverId,
                 ProxyProviderKind.Traefik,
                 "test-version",
-                "http:\n  routers: {}\n  services: {}\n",
-                new string('a', 64),
+                GeneratedContents,
+                GeneratedHash,
                 routes);
         }
 
         public ProxyValidationResult Validate(ProxyConfigurationDocument document)
         {
             return ValidationResult;
+        }
+
+        public ProxyValidationResult ValidateUserDynamicConfiguration(string contents)
+        {
+            return contents.Contains("invalid", StringComparison.Ordinal)
+                ? new ProxyValidationResult(false, ["Dynamic configuration is not valid YAML."])
+                : ProxyValidationResult.Success;
         }
     }
 

@@ -91,6 +91,7 @@ public static class NotificationEventCatalog
     public const string DockerCleanupFailed = "server.docker_cleanup_failed";
     public const string CertificateIssuanceFailed = "certificate.issuance_failed";
     public const string CertificateRenewalFailed = "certificate.renewal_failed";
+    public const string CertificateExpiringSoon = "certificate.expiring_soon";
     public const string ProxyApplyFailed = "proxy.apply_failed";
     public const string ProxyOutdated = "proxy.outdated";
     public const string ApplicationStatusChanged = "application.status_changed";
@@ -137,6 +138,9 @@ public static class NotificationEventCatalog
         new(CertificateIssuanceFailed, "ssl_certificate_renewal", NotificationEventCategory.Certificate, true, true,
             true, NotificationThrottlePolicy.Every(Daily)),
         new(CertificateRenewalFailed, "ssl_certificate_renewal", NotificationEventCategory.Certificate, true, true,
+            true, NotificationThrottlePolicy.Every(Daily)),
+        // An in-use certificate Traefik has not renewed (acme.json sync); raised once per expiry by the producer.
+        new(CertificateExpiringSoon, "ssl_certificate_renewal", NotificationEventCategory.Certificate, true, true,
             true, NotificationThrottlePolicy.Every(Daily)),
         new(ProxyApplyFailed, null, NotificationEventCategory.Proxy, true, false, true,
             NotificationThrottlePolicy.Every(TimeSpan.FromHours(1))),

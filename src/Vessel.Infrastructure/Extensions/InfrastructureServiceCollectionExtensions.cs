@@ -18,6 +18,7 @@ using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
+using Vessel.Application.Proxy.Certificates;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Servers.Files;
@@ -146,6 +147,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IServerFileChannel, SshServerFileChannel>());
         services.TryAddSingleton<IProxyContainerRuntime, DockerProxyContainerRuntime>();
         services.TryAddSingleton<IProxyRuntimeRenderer, TraefikRuntimeRenderer>();
+        services.TryAddSingleton<ITraefikAcmeStore, TraefikAcmeStore>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddVesselNotificationInfrastructure(configuration);
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);

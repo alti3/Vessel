@@ -121,6 +121,35 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
         return new ComposeNormalizationResult(Serialize(root), primary, warnings);
     }
 
+    public string AttachServicesToNetwork(string yaml, string networkName,
+        IReadOnlyDictionary<string, string> aliasesByService)
+    {
+        ArgumentNullException.ThrowIfNull(aliasesByService);
+        YamlMappingNode root = Load(yaml);
+        if (!TryGet(root, "services", out YamlNode? servicesNode) || servicesNode is not YamlMappingNode services)
+            throw new ComposeValidationException("Compose file must define services.");
+        foreach ((var serviceName, var alias) in aliasesByService.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            if (!services.Children.TryGetValue(Key(serviceName), out YamlNode? serviceNode) ||
+                serviceNode is not YamlMappingNode service)
+                throw new ComposeValidationException($"Compose service '{serviceName}' does not exist.");
+            AttachPrimaryToServerNetwork(service, serviceName,
+                new RepositoryComposeSpec(string.Empty, string.Empty, networkName, alias, 0,
+                    new Dictionary<string, string>(), null));
+        }
+
+        if (!TryGet(root, "networks", out YamlNode? networksNode) || networksNode is not YamlMappingNode networks)
+        {
+            if (networksNode is not null && networksNode is not YamlMappingNode && !IsNull(networksNode))
+                throw new ComposeValidationException("Compose top-level 'networks' must be a mapping.");
+            networks = new YamlMappingNode();
+            root.Children[Key("networks")] = networks;
+        }
+
+        networks.Children[Key(networkName)] = new YamlMappingNode { { "external", Bool(true) } };
+        return Serialize(root);
+    }
+
     private static YamlMappingNode Load(string yaml)
     {
         var text = yaml.TrimStart('﻿');

@@ -70,6 +70,43 @@ public sealed class ApiRouteConventionTests
     }
 
     [Fact]
+    public void RoutingControllersProtectSensitiveAndMutatingEndpoints()
+    {
+        AssertActionPolicy<ApplicationDomainsController>(nameof(ApplicationDomainsController.ConfigureByUrl),
+            VesselPermissions.ApplicationsWrite);
+        AssertActionPolicy<ApplicationDomainsController>(nameof(ApplicationDomainsController.RemoveByUrl),
+            VesselPermissions.ApplicationsWrite);
+
+        // Configuration text is sensitive (basic-auth hashes, topology): reading it needs write access.
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.ReadContent),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.Restore),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.GetDynamic),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.SaveDynamic),
+            VesselPermissions.ServersWrite);
+        AssertActionPolicy<ProxyConfigurationsController>(nameof(ProxyConfigurationsController.DeleteDynamic),
+            VesselPermissions.ServersWrite);
+
+        AssertControllerPolicy<ServerCertificatesController>(VesselPermissions.ServersRead);
+        foreach (var action in new[]
+                 {
+                     nameof(ServerCertificatesController.Sync), nameof(ServerCertificatesController.Delete),
+                     nameof(ServerCertificatesController.DeleteUnused),
+                     nameof(ServerCertificatesController.RestoreBackup),
+                     nameof(ServerCertificatesController.DeleteBackup)
+                 })
+            AssertActionPolicy<ServerCertificatesController>(action, VesselPermissions.ServersWrite);
+
+        AssertControllerPolicy<ServiceDomainsController>(VesselPermissions.ProjectsRead);
+        AssertActionPolicy<ServiceDomainsController>(nameof(ServiceDomainsController.Configure),
+            VesselPermissions.ProjectsWrite);
+        AssertActionPolicy<ServiceDomainsController>(nameof(ServiceDomainsController.Remove),
+            VesselPermissions.ProjectsWrite);
+    }
+
+    [Fact]
     public void Phase12ControllersProtectTerminalAndHealthEndpointsWithExpectedPolicies()
     {
         AssertActionPolicy<TerminalsController>(nameof(TerminalsController.Open), VesselPermissions.TerminalsOpen);

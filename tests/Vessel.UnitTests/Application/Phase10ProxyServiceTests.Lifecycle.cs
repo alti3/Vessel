@@ -370,6 +370,27 @@ public sealed partial class Phase10ProxyServiceTests
                 return Task.FromResult<string?>("tampered");
             return Task.FromResult(Contents.GetValueOrDefault(ServerFilePaths.ValidateRelative(relativePath)));
         }
+
+        public Task<IReadOnlyList<string>> ListFilesAsync(
+            ServerExecutionTarget target,
+            string relativeDirectory,
+            CancellationToken cancellationToken = default)
+        {
+            var prefix = ServerFilePaths.ValidateRelative(relativeDirectory) + "/";
+            return Task.FromResult<IReadOnlyList<string>>(Contents.Keys
+                .Where(key => key.StartsWith(prefix, StringComparison.Ordinal) && !key[prefix.Length..].Contains('/'))
+                .Select(key => key[prefix.Length..])
+                .Order(StringComparer.Ordinal)
+                .ToArray());
+        }
+
+        public Task<bool> DeleteFileAsync(
+            ServerExecutionTarget target,
+            string relativePath,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Contents.Remove(ServerFilePaths.ValidateRelative(relativePath)));
+        }
     }
 
     private sealed class TestProxyContainerRuntime : IProxyContainerRuntime

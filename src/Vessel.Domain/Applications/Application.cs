@@ -1,4 +1,5 @@
 using Vessel.Domain.Common;
+using Vessel.Domain.Proxy;
 using Vessel.Domain.ValueObjects;
 
 namespace Vessel.Domain.Applications;
@@ -75,9 +76,18 @@ public sealed class Application : Entity<ApplicationId>
 
     public void AddDomain(DomainName domainName, DateTimeOffset now)
     {
-        if (_domains.Any(domain => domain.DomainName == domainName)) return;
+        AddDomain(RouteAddress.FromDomainName(domainName), now);
+    }
 
-        _domains.Add(new ApplicationDomain(Id, domainName, now));
+    public void AddDomain(RouteAddress address, DateTimeOffset now)
+    {
+        if (_domains.Any(domain => domain.Is(address))) return;
+
+        var domain = new ApplicationDomain(Id, address, now);
+        domain.UpdateRouting(address.Port, address.Scheme != RouteScheme.Http &&
+                                           address.HostKind is not (RouteHostKind.IPv4 or RouteHostKind.IPv6),
+            false, false);
+        _domains.Add(domain);
         Touch(now);
     }
 
@@ -89,30 +99,53 @@ public sealed class Application : Entity<ApplicationId>
         bool redirectToCanonical,
         DateTimeOffset now)
     {
+        UpsertDomain(RouteAddress.FromDomainName(domainName), targetPort, tlsEnabled, canonical, redirectToCanonical,
+            null, now);
+    }
+
+    /// <summary>
+    ///     Adds or updates the route for <paramref name="address" /> (identity: host + path). A <see langword="null" />
+    ///     <paramref name="policy" /> keeps the current policy (or the default for a new route).
+    /// </summary>
+    public ApplicationDomain UpsertDomain(
+        RouteAddress address,
+        int? targetPort,
+        bool tlsEnabled,
+        bool canonical,
+        bool redirectToCanonical,
+        RoutePolicy? policy,
+        DateTimeOffset now)
+    {
         if (canonical && redirectToCanonical)
             throw new DomainException("Canonical domain cannot redirect to itself.");
 
-        ApplicationDomain? existing = _domains.SingleOrDefault(domain => domain.DomainName == domainName);
-        if (existing is null)
-        {
-            existing = new ApplicationDomain(Id, domainName, now);
-            _domains.Add(existing);
-        }
+        ApplicationDomain? existing = _domains.SingleOrDefault(domain => domain.Is(address));
+        var created = existing is null;
+        existing ??= new ApplicationDomain(Id, address, now);
+        existing.UpdateRouting(targetPort, tlsEnabled, canonical, redirectToCanonical);
+        if (policy is not null) existing.UpdatePolicy(policy);
+        if (created) _domains.Add(existing);
 
         if (canonical)
-            foreach (ApplicationDomain domain in _domains.Where(domain => domain.DomainName != domainName))
+            foreach (ApplicationDomain domain in _domains.Where(domain => !domain.Is(address)))
                 domain.UpdateRouting(domain.TargetPort, domain.TlsEnabled, false, domain.RedirectToCanonical);
 
-        existing.UpdateRouting(targetPort, tlsEnabled, canonical, redirectToCanonical);
         Touch(now);
+        return existing;
     }
 
     public void RemoveDomain(DomainName domainName, DateTimeOffset now)
     {
-        ApplicationDomain? existing = _domains.SingleOrDefault(domain => domain.DomainName == domainName);
-        if (existing is null) return;
+        RemoveDomain(RouteAddress.FromDomainName(domainName), now);
+    }
+
+    public bool RemoveDomain(RouteAddress address, DateTimeOffset now)
+    {
+        ApplicationDomain? existing = _domains.SingleOrDefault(domain => domain.Is(address));
+        if (existing is null) return false;
         _domains.Remove(existing);
         Touch(now);
+        return true;
     }
 
     public void UpdateDeploymentSettings(DeploymentSettings deploymentSettings, DateTimeOffset now)

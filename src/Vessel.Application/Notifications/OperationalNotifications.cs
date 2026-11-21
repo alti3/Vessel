@@ -25,6 +25,7 @@ public static class NotificationEventTypes
     public const string DockerCleanupFailed = NotificationEventCatalog.DockerCleanupFailed;
     public const string CertificateIssuanceFailed = NotificationEventCatalog.CertificateIssuanceFailed;
     public const string CertificateRenewalFailed = NotificationEventCatalog.CertificateRenewalFailed;
+    public const string CertificateExpiringSoon = NotificationEventCatalog.CertificateExpiringSoon;
     public const string ProxyApplyFailed = NotificationEventCatalog.ProxyApplyFailed;
     public const string ProxyOutdated = NotificationEventCatalog.ProxyOutdated;
     public const string ApplicationStatusChanged = NotificationEventCatalog.ApplicationStatusChanged;
@@ -148,6 +149,30 @@ public static class OperationalNotifications
                 ["host"] = host
             }),
             $"/applications/{applicationId:D}", null);
+    }
+
+    /// <summary>
+    ///     A certificate in use on the server expires soon. Traefik renews certificates itself (about 30 days before
+    ///     expiry), so this signals that renewal is not happening (DNS, port 80, rate limits or a stopped proxy).
+    /// </summary>
+    public static RaiseNotificationRequest CertificateExpiringSoon(Guid certificateId, Guid serverId,
+        string serverName, string host, DateTimeOffset expiresAt)
+    {
+        var expires = expiresAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'",
+            System.Globalization.CultureInfo.InvariantCulture);
+        return new RaiseNotificationRequest(NotificationEventTypes.CertificateExpiringSoon,
+            NotificationSeverity.Warning, NotificationTargetType.Server, serverId.ToString("D"),
+            $"Certificate expiring soon: {host}",
+            $"The TLS certificate for '{host}' on server '{serverName}' expires at {expires} and has not been renewed. " +
+            "Check that the domain resolves to the server and that the proxy is running.",
+            Payload(new Dictionary<string, object?>
+            {
+                ["certificateId"] = certificateId,
+                ["serverId"] = serverId,
+                ["host"] = host,
+                ["expiresAt"] = expiresAt
+            }),
+            $"/servers/{serverId:D}", null);
     }
 
     public static RaiseNotificationRequest ProxyApplyFailed(Guid serverId, string serverName, string stage)

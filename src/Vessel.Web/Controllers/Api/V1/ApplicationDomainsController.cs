@@ -21,6 +21,18 @@ public sealed class ApplicationDomainsController(
         return Ok(domains.List(User.GetUserId(), User.GetTeamId(), new AppId(applicationId)));
     }
 
+    /// <summary>Configures a route given as a URL in the body (supports paths, wildcards and IP hosts).</summary>
+    [HttpPut]
+    [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
+    public async Task<ActionResult<DomainRouteSummary>> ConfigureByUrl(
+        Guid applicationId,
+        ConfigureDomainRouteRequest request,
+        CancellationToken cancellationToken)
+    {
+        return Ok(await domains.ConfigureAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId),
+            request, cancellationToken));
+    }
+
     [HttpPut("{host}")]
     [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
     public async Task<ActionResult<DomainRouteSummary>> Configure(
@@ -34,6 +46,19 @@ public sealed class ApplicationDomainsController(
             effective, cancellationToken));
     }
 
+    /// <summary>Removes the route identified by a URL or host (with optional path) in the query string.</summary>
+    [HttpDelete]
+    [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
+    public async Task<IActionResult> RemoveByUrl(
+        Guid applicationId,
+        [FromQuery] string address,
+        CancellationToken cancellationToken)
+    {
+        await domains.RemoveAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId), address,
+            cancellationToken);
+        return NoContent();
+    }
+
     [HttpDelete("{host}")]
     [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
     public async Task<IActionResult> Remove(Guid applicationId, string host, CancellationToken cancellationToken)
@@ -41,6 +66,12 @@ public sealed class ApplicationDomainsController(
         await domains.RemoveAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId), host,
             cancellationToken);
         return NoContent();
+    }
+
+    [HttpGet("certificates")]
+    public ActionResult<IReadOnlyList<CertificateSummary>> Certificates(Guid applicationId)
+    {
+        return Ok(certificates.List(User.GetUserId(), User.GetTeamId(), new AppId(applicationId)));
     }
 
     [HttpPost("{host}/certificates/issue")]

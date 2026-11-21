@@ -6,6 +6,7 @@ using Vessel.Application.Docker;
 using Vessel.Application.Jobs;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
+using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Processes;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -36,7 +37,8 @@ public sealed class ManagedDatabaseService(
     ServiceTemplateCatalog templates,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
-    INotificationEventPublisher notifications)
+    INotificationEventPublisher notifications,
+    ServiceRoutingCoordinator serviceRouting)
 {
     private static readonly TimeSpan LockLeaseMargin = TimeSpan.FromMinutes(10);
 
@@ -164,8 +166,13 @@ public sealed class ManagedDatabaseService(
         service.MarkProvisioning(timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        // Compose services with domains join the server network under per-service aliases (NET-06).
+        ServiceRoutingPreparation routing = await serviceRouting.PrepareAsync(service, server, plan.ComposeYaml,
+            (network, token) => runtime.EnsureNetworkAsync(ManagedRuntimeTargets.For(server), network,
+                new Dictionary<string, string> { ["vessel.managed"] = "true" }, token),
+            cancellationToken);
         ManagedServiceWorkspace workspace = await workspaces.PrepareServiceAsync(service.Id, cancellationToken);
-        await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, false,
+        await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", routing.ComposeYaml, false,
             cancellationToken);
         await workspaces.WriteTextAsync(workspace.RootDirectory, ".env", BuildEnvironmentFile(plan.SecretValues),
             true, cancellationToken);
@@ -173,6 +180,8 @@ public sealed class ManagedDatabaseService(
             cancellationToken);
         service.MarkRunning("docker-compose.yml", timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (routing.Routed)
+            await serviceRouting.PublishRoutesAsync(service, cancellationToken);
         await auditWriter.RecordAsync(service.TeamId, null, AuditActions.ServiceProvisioned,
             new AuditTarget("service", service.Id.Value.ToString("D")), null,
             new Dictionary<string, object?> { ["template"] = service.TemplateKey }, cancellationToken);

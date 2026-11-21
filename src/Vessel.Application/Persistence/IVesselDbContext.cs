@@ -108,6 +108,17 @@ public interface IVesselDbContext : IUnitOfWork
 
     IQueryable<ServerProxySettings> ServerProxySettings { get; }
 
+    IQueryable<ProxyDynamicConfiguration> ProxyDynamicConfigurations =>
+        Enumerable.Empty<ProxyDynamicConfiguration>().AsQueryable();
+
+    IQueryable<ServiceDomain> ServiceDomains => Enumerable.Empty<ServiceDomain>().AsQueryable();
+
+    IRepository<ProxyDynamicConfiguration, ProxyDynamicConfigurationId> ProxyDynamicConfigurationRepository =>
+        throw new InvalidOperationException("Proxy dynamic configuration persistence is not available.");
+
+    IRepository<ServiceDomain, ServiceDomainId> ServiceDomainRepository =>
+        throw new InvalidOperationException("Service domain persistence is not available.");
+
     IRepository<User, UserId> UserRepository { get; }
 
     IRepository<Team, TeamId> TeamRepository { get; }

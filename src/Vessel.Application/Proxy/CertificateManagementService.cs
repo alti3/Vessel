@@ -4,7 +4,6 @@ using Vessel.Application.Jobs;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Redis;
-using Vessel.Application.Security;
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Certificates;
@@ -14,6 +13,12 @@ using AppId = Vessel.Domain.ApplicationId;
 
 namespace Vessel.Application.Proxy;
 
+/// <summary>
+///     Application-facing certificate operations. Traefik issues and renews certificates through its ACME resolver once
+///     a TLS route is published; Vessel requests issuance by applying the routes and learns the outcome from
+///     <c>acme.json</c> through <see cref="Certificates.CertificateInventoryService" />. There is no Vessel-side renewal state
+///     machine.
+/// </summary>
 public sealed class CertificateManagementService(
     IVesselDbContext dbContext,
     VesselAuthorizationService authorization,
@@ -21,16 +26,22 @@ public sealed class CertificateManagementService(
     IBackgroundJobDispatcher backgroundJobs,
     ProxyConfigurationService proxyConfiguration,
     IAuditWriter auditWriter,
-    ISecretRedactor redactor,
     TimeProvider timeProvider,
     INotificationEventPublisher notifications)
 {
     public IReadOnlyList<CertificateSummary> List(UserId actorUserId, TeamId teamId, AppId applicationId)
     {
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsRead);
+        Domain.Applications.Application application = GetApplication(applicationId);
+        var hosts = dbContext.ApplicationDomains
+            .Where(domain => domain.ApplicationId == applicationId)
+            .Select(domain => domain.Host)
+            .ToArray();
         return dbContext.Certificates
-            .Where(certificate => certificate.ApplicationId == applicationId)
+            .Where(certificate => certificate.ServerId == application.ServerId &&
+                                  (certificate.ApplicationId == applicationId || hosts.Contains(certificate.Host)))
             .OrderBy(certificate => certificate.Host)
+            .AsEnumerable()
             .Select(ToSummary)
             .ToArray();
     }
@@ -43,21 +54,28 @@ public sealed class CertificateManagementService(
         CancellationToken cancellationToken = default)
     {
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsWrite);
+        Domain.Applications.Application application = GetApplication(applicationId);
         var normalized = NormalizeHost(host);
         await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
-            $"certificate-issuance:{applicationId.Value:D}:{normalized}",
+            $"certificate-issuance:{application.ServerId.Value:D}:{normalized}",
             TimeSpan.FromMinutes(5),
             TimeSpan.Zero,
             cancellationToken);
         if (handle is null)
             throw new DomainException("A certificate issuance operation is already running for this host.");
 
-        Certificate? existing = dbContext.Certificates.SingleOrDefault(item =>
-            item.ApplicationId == applicationId && item.Host == normalized);
-        Certificate certificate = existing
-                                  ?? Certificate.Create(teamId, applicationId, normalized,
-                                      CertificateProvider.TraefikAcme, timeProvider.GetUtcNow());
+        Certificate? existing = dbContext.Certificates.FirstOrDefault(item =>
+            item.ServerId == application.ServerId && item.Host == normalized);
+        TeamId ownerTeamId = (
+                from environment in dbContext.Environments
+                join project in dbContext.Projects on environment.ProjectId equals project.Id
+                where environment.Id == application.EnvironmentId
+                select project.TeamId)
+            .Single();
+        Certificate certificate = existing ?? Certificate.CreatePending(ownerTeamId, application.ServerId,
+            applicationId, normalized, timeProvider.GetUtcNow());
         if (existing is null) await dbContext.CertificateRepository.AddAsync(certificate, cancellationToken);
+        certificate.MarkIssuanceRequested(timeProvider.GetUtcNow());
 
         await dbContext.SaveChangesAsync(cancellationToken);
         var jobId = backgroundJobs.Enqueue<CertificateIssuanceJob>(job =>
@@ -74,6 +92,10 @@ public sealed class CertificateManagementService(
         return ToSummary(certificate);
     }
 
+    /// <summary>
+    ///     Publishes the routes of the certificate's server so Traefik requests the certificate. The certificate row is
+    ///     updated from <c>acme.json</c> by the next certificate sync.
+    /// </summary>
     public async Task<CertificateSummary> RequestIssuanceAsync(
         CertificateId certificateId,
         CancellationToken cancellationToken = default)
@@ -89,24 +111,16 @@ public sealed class CertificateManagementService(
         if (handle is null)
             throw new DomainException("A certificate operation is already running for this certificate.");
 
-        Domain.Applications.Application application = dbContext.Applications
-                                                          .SingleOrDefault(item => item.Id == certificate.ApplicationId)
-                                                      ?? throw new InvalidOperationException(
-                                                          "Application was not found.");
-
         try
         {
-            await proxyConfiguration.ApplyForDeploymentAsync(
-                null,
-                certificate.TeamId,
-                application.ServerId,
+            await proxyConfiguration.ApplyForDeploymentAsync(null, certificate.TeamId, certificate.ServerId,
                 cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await notifications.PublishAsync(certificate.TeamId,
-                OperationalNotifications.CertificateFailed(certificate.Id.Value, certificate.ApplicationId.Value,
-                    certificate.Host, renewal: false),
+                OperationalNotifications.CertificateFailed(certificate.Id.Value,
+                    certificate.ApplicationId?.Value ?? Guid.Empty, certificate.Host, renewal: false),
                 CancellationToken.None);
             throw;
         }
@@ -114,60 +128,18 @@ public sealed class CertificateManagementService(
         return ToSummary(certificate);
     }
 
-    public async Task<int> RenewDueAsync(CancellationToken cancellationToken = default)
+    internal static CertificateSummary ToSummary(Certificate certificate)
     {
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        Certificate[] due = dbContext.Certificates
-            .Where(certificate => certificate.Status == CertificateStatus.RenewalDue ||
-                                  (certificate.RenewalDueAt != null && certificate.RenewalDueAt <= now))
-            .ToArray();
-        var renewed = 0;
-        List<Certificate> failed = [];
-        foreach (Certificate certificate in due)
-        {
-            await using DistributedLockHandle? handle = await locks.TryAcquireAsync(
-                $"certificate:{certificate.Id.Value:D}",
-                TimeSpan.FromMinutes(10),
-                TimeSpan.Zero,
-                cancellationToken);
-            if (handle is null) continue;
-
-            try
-            {
-                certificate.QueueRenewal(now);
-                renewed++;
-            }
-            catch (Exception ex)
-            {
-                // Announce only the transition into Failed; a certificate that stays failed is re-polled every
-                // run and must not raise a new alert each time.
-                if (certificate.Status != CertificateStatus.Failed) failed.Add(certificate);
-                certificate.MarkFailed(redactor.Redact(ex.Message), now);
-            }
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        foreach (Certificate certificate in failed)
-            await notifications.PublishAsync(certificate.TeamId,
-                OperationalNotifications.CertificateFailed(certificate.Id.Value, certificate.ApplicationId.Value,
-                    certificate.Host, renewal: true),
-                CancellationToken.None);
-        return renewed;
+        return new CertificateSummary(certificate.Id.Value, certificate.ApplicationId?.Value, certificate.Host,
+            certificate.Provider, certificate.Status, certificate.ExpiresAt, certificate.LastError,
+            certificate.ServerId.Value, certificate.SubjectAlternativeNameList, certificate.Resolver,
+            certificate.InUse, certificate.IssuedAt, certificate.LastSyncedAt);
     }
 
-    public async Task<CertificateSummary> FinalizeIssuanceAsync(
-        CertificateId certificateId,
-        DateTimeOffset expiresAt,
-        SecretReferenceId? certificateSecretReferenceId,
-        SecretReferenceId? privateKeySecretReferenceId,
-        CancellationToken cancellationToken = default)
+    private Domain.Applications.Application GetApplication(AppId applicationId)
     {
-        Certificate certificate = dbContext.Certificates.SingleOrDefault(item => item.Id == certificateId)
-                                  ?? throw new InvalidOperationException("Certificate was not found.");
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        certificate.MarkIssued(now, expiresAt, certificateSecretReferenceId, privateKeySecretReferenceId);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return ToSummary(certificate);
+        return dbContext.Applications.SingleOrDefault(item => item.Id == applicationId)
+               ?? throw new InvalidOperationException("Application was not found.");
     }
 
     private void RequireApplication(UserId actorUserId, TeamId teamId, AppId applicationId, string permission)
@@ -177,28 +149,12 @@ public sealed class CertificateManagementService(
 
     private static string NormalizeHost(string host)
     {
-        if (string.IsNullOrWhiteSpace(host)) throw new DomainException("Certificate host is required.");
-        if (Uri.TryCreate(host, UriKind.Absolute, out Uri? uri))
-            host = uri.Host;
-        var normalized = host.Trim().TrimEnd('/').ToLowerInvariant();
-        if (normalized.Contains('/', StringComparison.Ordinal) || normalized.Contains(':', StringComparison.Ordinal))
+        RouteAddress address = RouteAddress.Parse(host);
+        if (address.PathPrefix.Length > 0 || address.Port is not null)
             throw new DomainException("Certificate host must not include a path or port.");
-        return new DomainName(normalized).Value;
-    }
-
-    private static CertificateSummary ToSummary(Certificate certificate)
-    {
-        return new CertificateSummary(certificate.Id.Value, certificate.ApplicationId.Value, certificate.Host,
-            certificate.Provider, certificate.Status, certificate.ExpiresAt, certificate.RenewalDueAt,
-            certificate.LastError);
-    }
-}
-
-public sealed class CertificateRenewalJob(CertificateManagementService certificates)
-{
-    public Task<int> RunAsync(CancellationToken cancellationToken = default)
-    {
-        return certificates.RenewDueAsync(cancellationToken);
+        if (address.HostKind is RouteHostKind.IPv4 or RouteHostKind.IPv6)
+            throw new DomainException("Certificates cannot be requested for IP address hosts.");
+        return address.Host;
     }
 }
 

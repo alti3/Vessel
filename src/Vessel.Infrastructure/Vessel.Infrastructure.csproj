@@ -8,6 +8,8 @@
         <PackageReference Include="Konscious.Security.Cryptography.Argon2"/>
         <PackageReference Include="MailKit"/>
         <PackageReference Include="AWSSDK.S3"/>
+        <!-- bcrypt for Traefik basic-auth hashes (already a transitive dependency of SSH.NET). -->
+        <PackageReference Include="BouncyCastle.Cryptography"/>
         <PackageReference Include="Docker.DotNet"/>
         <PackageReference Include="Hangfire.AspNetCore"/>
         <PackageReference Include="Hangfire.PostgreSql"/>

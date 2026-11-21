@@ -340,7 +340,9 @@ public sealed class Phase12OperationalTests
             new TestAuditWriter(), new TestRedactor(), TimeProvider.System);
         var proxy = new Vessel.Application.Proxy.ProxyConfigurationService(scenario.Db, authorization,
             ThrowingProxy.Create<Vessel.Application.Proxy.IProxyProvider>(), proxyLifecycle, locks,
-            new TestAuditWriter(), new TestRedactor(), TimeProvider.System, notifications);
+            new TestAuditWriter(), new TestRedactor(), TimeProvider.System, notifications,
+            new Vessel.Application.Proxy.ProxyRouteProjector(scenario.Db, ThrowingProxy.Create<ISecretVault>()),
+            new Vessel.Application.Proxy.ProxyConfigurationProtector(ThrowingProxy.Create<ISecretCipher>()));
         TestJobDispatcher jobs = dispatcher ?? new TestJobDispatcher();
         var cancellations = new Vessel.Application.Deployments.Queue.DeploymentCancellationRegistry();
         var queue = new Vessel.Application.Deployments.Queue.DeploymentQueueService(scenario.Db, locks, jobs,

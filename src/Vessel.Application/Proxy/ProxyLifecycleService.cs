@@ -222,6 +222,58 @@ public sealed class ProxyLifecycleService(
                 $"Dynamic configuration delivered and verified; the proxy container is not running (state: {StateName(status.State)}).");
     }
 
+    /// <summary>
+    ///     Writes (and verifies) a user dynamic configuration file next to the generated routes. The caller must hold the
+    ///     proxy lock and must have validated the file name and contents.
+    /// </summary>
+    public async Task<ProxyApplyResult> DeliverUserDynamicConfigurationAsync(
+        Server server,
+        string fileName,
+        string contents,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        var target = ServerExecutionTarget.From(server);
+        try
+        {
+            IServerFileChannel channel = fileChannels.For(target);
+            await channel.EnsureDirectoryAsync(target, ProxyLayout.Directory, ServerFileModes.WorldReadableDirectory,
+                cancellationToken);
+            await channel.EnsureDirectoryAsync(target, ProxyLayout.DynamicDirectory,
+                ServerFileModes.WorldReadableDirectory, cancellationToken);
+            await WriteVerifiedAsync(target, channel,
+                new ServerFileWrite(ProxyLayout.DynamicFile(fileName), contents, ServerFileModes.OwnerReadWrite),
+                cancellationToken);
+            return new ProxyApplyResult(true,
+                "Dynamic configuration file delivered and verified; Traefik reloads it through the file provider watch.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ProxyApplyResult(false, $"Could not deliver the dynamic configuration file: {ex.Message}");
+        }
+    }
+
+    /// <summary>Removes a user dynamic configuration file. The caller must hold the proxy lock.</summary>
+    public async Task<ProxyApplyResult> RemoveUserDynamicConfigurationAsync(
+        Server server,
+        string fileName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        var target = ServerExecutionTarget.From(server);
+        try
+        {
+            var removed = await fileChannels.For(target)
+                .DeleteFileAsync(target, ProxyLayout.DynamicFile(fileName), cancellationToken);
+            return new ProxyApplyResult(true,
+                removed ? "Dynamic configuration file removed." : "Dynamic configuration file was already absent.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new ProxyApplyResult(false, $"Could not remove the dynamic configuration file: {ex.Message}");
+        }
+    }
+
     public async Task<bool> IsHealthyAsync(Server server, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(server);
