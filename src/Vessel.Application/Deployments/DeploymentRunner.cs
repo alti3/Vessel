@@ -3,9 +3,12 @@ using System.Globalization;
 using System.Text;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Common;
+using Vessel.Application.Deployments.BuildPacks;
 using Vessel.Application.Deployments.Queue;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Docker;
+using Vessel.Application.EnvironmentVariables;
 using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.Notifications;
@@ -25,6 +28,7 @@ using Vessel.Domain.Auditing;
 using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
+using Vessel.Domain.Registries;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Storage;
 using Vessel.Domain.ValueObjects;
@@ -179,6 +183,7 @@ public sealed partial class DeploymentRunner(
         DeploymentWorkspace? workspace = null;
         ServerExecutionTarget? remoteTarget = null;
         string? remoteWorkspace = null;
+        RegistryDirectory? registryDirectory = null;
         try
         {
             await ThrowIfCanceledAsync(deploymentId, buildToken);
@@ -211,8 +216,12 @@ public sealed partial class DeploymentRunner(
             }
 
             workspace = await workspaces.PrepareAsync(deploymentId, buildToken);
-            // DEP-06: a rollback to a listed local image skips clone and build.
-            var reuseImage = await RollbackImageAvailableAsync(target, application, deployment, preview, buildToken);
+            registryDirectory = await PrepareRegistryDirectoryAsync(workspace, remoteTarget, deploymentId,
+                buildToken);
+            // DEP-06: a rollback to a listed image (local, or pulled again from the configured registry) skips clone
+            // and build.
+            var reuseImage = await RollbackImageAvailableAsync(target, application, teamId, deployment, preview,
+                registryDirectory, buildToken);
             if (reuseImage)
             {
                 await AppendAsync(deploymentId, "system",
@@ -233,6 +242,7 @@ public sealed partial class DeploymentRunner(
                 await git.CheckoutAsync(checkout, buildToken);
                 GitCommitInfo commit = await git.GetCommitAsync(workspace.RepositoryDirectory, "HEAD", buildToken);
                 await RecordSourceAsync(deploymentId, application, preview, commit, buildToken);
+                deployment = await GetDeploymentAsync(deploymentId, buildToken);
             }
 
             await ThrowIfCanceledAsync(deploymentId, buildToken);
@@ -246,8 +256,8 @@ public sealed partial class DeploymentRunner(
                     directoryTransfer!.ResolveHostPath(remoteTarget, remoteRelative));
             }
 
-            DeploymentRuntimePlan plan = await CreatePlanAsync(application, environment, server, teamId, deployment,
-                preview, workspace, runtimeWorkspace, buildToken);
+            (DeploymentRuntimePlan plan, PreparedBuild build) = await CreatePlanAsync(application, environment,
+                server, teamId, deployment, preview, workspace, runtimeWorkspace, buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, ".env", plan.EnvironmentFile, true,
                 buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", plan.ComposeYaml, false,
@@ -256,6 +266,7 @@ public sealed partial class DeploymentRunner(
                 plan.RedactedComposeYaml, false, buildToken);
             await workspaces.WriteTextAsync(workspace.RootDirectory, "snapshots/env.redacted",
                 plan.RedactedEnvironmentFile, false, buildToken);
+            await WriteBuildFilesAsync(workspace, build, remoteTarget is not null, buildToken);
             await RecordSnapshotAsync(deploymentId, "snapshots/docker-compose.redacted.yml", buildToken);
 
             if (remoteTarget is not null)
@@ -284,13 +295,17 @@ public sealed partial class DeploymentRunner(
                     (line, isWarning, token) => AppendAsync(deploymentId, isWarning ? "stderr" : "system", line, token),
                     buildToken);
 
-            if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile && !reuseImage)
+            if (!reuseImage && build.Plan.BuildsImage)
             {
-                var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "Dockerfile");
-                // The Dockerfile is read by the runtime CLI on this host: reject symlinks/escapes from the repository.
-                workspaces.EnsureRegularFile(workspace.RepositoryDirectory, dockerfile);
-                await StreamBuildAsync(target, plan, runtimeWorkspace, dockerfile, deployment, application, buildToken);
+                await RunBuildAsync(target, server, plan, build, workspace, runtimeWorkspace, deployment, application,
+                    buildToken);
                 await ThrowIfCanceledAsync(deploymentId, buildToken);
+                if (preview is null && build.RegistryImage is not null)
+                {
+                    await PushImageAsync(target, application, teamId, plan.ImageName, registryDirectory, deploymentId,
+                        buildToken);
+                    await ThrowIfCanceledAsync(deploymentId, buildToken);
+                }
             }
 
             await StreamComposeAsync(target, plan, runtimeWorkspace, deploymentId, ["config", "--quiet"], buildToken);
@@ -302,10 +317,13 @@ public sealed partial class DeploymentRunner(
             run.Dispose();
             await AppendAsync(deploymentId, "system", "Deploy phase started; replacing containers.", cancellationToken);
 
+            // Images Vessel built (or reused) are never rebuilt by compose; only Docker Compose services build here.
+            var composeBuilds = !reuseImage && application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose;
             await StreamComposeAsync(target, plan, runtimeWorkspace, deploymentId,
-                reuseImage
-                    ? ["up", "--detach", "--remove-orphans", "--no-build"]
-                    : ["up", "--detach", "--remove-orphans", "--build"], cancellationToken);
+                composeBuilds
+                    ? ["up", "--detach", "--remove-orphans", "--build"]
+                    : ["up", "--detach", "--remove-orphans", "--no-build"], cancellationToken);
+
 
             var healthCheckUrl = preview is null
                 ? plan.HealthCheckUrl
@@ -348,6 +366,8 @@ public sealed partial class DeploymentRunner(
             run.Dispose();
             if (remoteTarget is not null && remoteWorkspace is not null)
                 await CleanupRemoteWorkspaceAsync(remoteTarget, remoteWorkspace, deploymentId);
+            if (remoteTarget is not null && registryDirectory?.RemoteRelativePath is { } registryRemote)
+                await CleanupRemoteWorkspaceAsync(remoteTarget, registryRemote, deploymentId);
             if (workspace is not null)
                 await workspaces.CleanupAsync(deploymentId, CancellationToken.None);
             activity?.SetTag("vessel.deployment_status", finalStatus.ToString());
@@ -381,31 +401,201 @@ public sealed partial class DeploymentRunner(
         });
     }
 
-    private async Task StreamBuildAsync(
+    /// <summary>
+    ///     Build inputs of one deployment: the build pack plan, the build values (build-time variables only) and the
+    ///     registry repository production images are pushed to (null when not configured or not applicable).
+    /// </summary>
+    private sealed record PreparedBuild(
+        BuildPlan Plan,
+        BuildVariableSelection Values,
+        string? RegistryImage);
+
+    /// <summary>Isolated registry client configuration: the path the runtime sees and, on SSH servers, its remote path.</summary>
+    private sealed record RegistryDirectory(string RuntimePath, string? RemoteRelativePath);
+
+    private async Task<RegistryDirectory> PrepareRegistryDirectoryAsync(DeploymentWorkspace workspace,
+        ServerExecutionTarget? remoteTarget, DeploymentId deploymentId, CancellationToken cancellationToken)
+    {
+        if (remoteTarget is null)
+        {
+            await workspaces.WriteTextAsync(workspace.RootDirectory, "registry/.vessel", string.Empty, true,
+                cancellationToken);
+            return new RegistryDirectory(Path.Combine(workspace.RootDirectory, "registry"), null);
+        }
+
+        // Outside the uploaded workspace (a rollback pull happens before the upload); removed after the deployment.
+        var relative = RemoteWorkspacePath(deploymentId) + "-registry";
+        return new RegistryDirectory(directoryTransfer!.ResolveHostPath(remoteTarget, relative), relative);
+    }
+
+    private async Task WriteBuildFilesAsync(DeploymentWorkspace workspace, PreparedBuild build, bool remote,
+        CancellationToken cancellationToken)
+    {
+        foreach (GeneratedBuildFile file in build.Plan.Files)
+            await workspaces.WriteTextAsync(workspace.RootDirectory, file.WorkspacePath, file.Contents, false,
+                cancellationToken);
+        if (build.Plan.Steps.OfType<RailpackPrepareStep>().FirstOrDefault() is { } prepare)
+            await workspaces.WriteTextAsync(workspace.RootDirectory, prepare.PlanDirectory + "/.vessel", string.Empty,
+                false, cancellationToken);
+        // SSH servers read build values from this file (inside the uploaded workspace, removed afterwards); locally
+        // they are set in the CLI's environment and never written.
+        if (remote && build.Values.Values.Count > 0)
+            await workspaces.WriteTextAsync(workspace.RootDirectory, BuildPackPlanner.BuildEnvironmentFile,
+                ShellEnvFileWriter.Write(build.Values.Values), true, cancellationToken);
+    }
+
+    private async Task RunBuildAsync(
         ContainerRuntimeTarget target,
+        Server server,
         DeploymentRuntimePlan plan,
+        PreparedBuild build,
         DeploymentWorkspace workspace,
-        string dockerfile,
+        DeploymentWorkspace runtimeWorkspace,
         Deployment deployment,
         AppEntity application,
         CancellationToken cancellationToken)
     {
-        await AppendAsync(deployment.Id, "system", "Building Docker image.", cancellationToken);
+        var remote = target.IsRemote;
+        var context = RuntimePath(runtimeWorkspace.RepositoryDirectory, build.Plan.ContextPath, remote);
+        // The context is read by the runtime CLI: it must be a directory inside the repository without symbolic links.
+        if (build.Plan.ContextPath.Length > 0)
+            workspaces.EnsureDirectory(workspace.RepositoryDirectory, build.Plan.ContextPath);
+        var environment = new BuildEnvironment(build.Values.Values,
+            remote && build.Values.Values.Count > 0
+                ? RuntimePath(runtimeWorkspace.RootDirectory, BuildPackPlanner.BuildEnvironmentFile, true)
+                : null);
         Dictionary<string, string> labels = Labels(deployment.Id, application);
         if (GitRef.IsCommitShaValue(deployment.CommitSha)) labels["vessel.commit"] = deployment.CommitSha!;
-        await foreach (ProcessOutputLine line in runtime.BuildImageAsync(
-                           target,
-                           new DockerBuildCommand(
-                               workspace.RepositoryDirectory,
-                               dockerfile,
-                               plan.ImageName,
-                               labels,
-                               new Dictionary<string, string>(),
-                               TimeSpan.FromMinutes(30),
-                               LogRedactor.ProcessProfile),
-                           cancellationToken))
-            await AppendAsync(deployment.Id, StreamName(line.Stream), line.Content, cancellationToken);
+        var noCache = application.DeploymentSettings.ForceRebuild;
+
+        foreach (BuildStep step in build.Plan.Steps)
+            switch (step)
+            {
+                case DockerfileBuildStep dockerfile:
+                    {
+                        string dockerfilePath;
+                        if (dockerfile.InWorkspace)
+                        {
+                            dockerfilePath = RuntimePath(runtimeWorkspace.RootDirectory, dockerfile.DockerfilePath, remote);
+                        }
+                        else
+                        {
+                            if (!dockerfile.Generated)
+                                workspaces.EnsureRegularFile(workspace.RepositoryDirectory,
+                                    BuildPackPlanner.Combine(build.Plan.ContextPath, dockerfile.DockerfilePath));
+                            dockerfilePath = dockerfile.DockerfilePath;
+                        }
+
+                        await AppendAsync(deployment.Id, "system", "Building Docker image.", cancellationToken);
+                        await foreach (ProcessOutputLine line in runtime.BuildImageAsync(target,
+                                           new DockerBuildCommand(context, dockerfilePath, plan.ImageName, labels,
+                                               build.Values.AsDictionary(), TimeSpan.FromMinutes(30),
+                                               LogRedactor.ProcessProfile, environment.ShellFilePath, noCache),
+                                           cancellationToken))
+                            await AppendAsync(deployment.Id, StreamName(line.Stream), line.Content, cancellationToken);
+                        break;
+                    }
+                case RailpackPrepareStep prepare:
+                    await AppendAsync(deployment.Id, "system",
+                        $"Generating the Railpack build plan (Railpack {ComponentVersions.Railpack}).", cancellationToken);
+                    await foreach (ProcessOutputLine line in runtime.PrepareRailpackPlanAsync(target,
+                                       new RailpackPrepareCommand(context,
+                                           RuntimePath(runtimeWorkspace.RootDirectory, prepare.PlanDirectory, remote),
+                                           prepare.PlanFileName, ComponentVersions.RailpackCliImage,
+                                           prepare.ControlVariables, environment, prepare.BuildCommand,
+                                           prepare.StartCommand, TimeSpan.FromMinutes(10), LogRedactor.ProcessProfile),
+                                       cancellationToken))
+                        await AppendAsync(deployment.Id, StreamName(line.Stream), line.Content, cancellationToken);
+                    break;
+                case RailpackBuildStep railpack:
+                    {
+                        // One Railpack build per server at a time: the shared BuildKit builder is stopped after each
+                        // build (upstream v4.5.0), which must not interrupt another build.
+                        DistributedLockHandle? builderLock = await locks.TryAcquireAsync(
+                            $"railpack-builder:{server.Id.Value:D}", TimeSpan.FromHours(1), TimeSpan.FromMinutes(30),
+                            cancellationToken) ?? throw new DomainException(
+                            "Another Railpack build on this server did not finish within 30 minutes.");
+                        await using (builderLock)
+                        {
+                            await AppendAsync(deployment.Id, "system", "Building Docker image with Railpack.",
+                                cancellationToken);
+                            await foreach (ProcessOutputLine line in runtime.BuildRailpackImageAsync(target,
+                                               new RailpackBuildCommand(context,
+                                                   RuntimePath(runtimeWorkspace.RootDirectory, railpack.PlanFile, remote),
+                                                   plan.ImageName, ComponentVersions.RailpackFrontendImage,
+                                                   ComponentVersions.BuildKitImage, RailpackBuilderName, labels,
+                                                   environment, application.Id.Value.ToString("N"), noCache,
+                                                   TimeSpan.FromMinutes(45), LogRedactor.ProcessProfile),
+                                               cancellationToken))
+                                await AppendAsync(deployment.Id, StreamName(line.Stream), line.Content,
+                                    cancellationToken);
+                        }
+
+                        break;
+                    }
+                case NixpacksGenerateStep nixpacks:
+                    await AppendAsync(deployment.Id, "stderr", ApplicationBuildPacks.NixpacksDeprecationMessage,
+                        cancellationToken);
+                    await AppendAsync(deployment.Id, "system", "Generating the Nixpacks Dockerfile.", cancellationToken);
+                    await foreach (ProcessOutputLine line in runtime.GenerateNixpacksBuildAsync(target,
+                                       new NixpacksGenerateCommand(context, plan.ImageName, environment,
+                                           nixpacks.InstallCommand, nixpacks.BuildCommand, nixpacks.StartCommand,
+                                           TimeSpan.FromMinutes(10), LogRedactor.ProcessProfile), cancellationToken))
+                        await AppendAsync(deployment.Id, StreamName(line.Stream), line.Content, cancellationToken);
+                    break;
+            }
     }
+
+    /// <summary>Name of the per-server buildx builder of Railpack builds.</summary>
+    public const string RailpackBuilderName = "vessel-railpack";
+
+    private static string RuntimePath(string root, string relative, bool remote)
+    {
+        if (relative.Length == 0) return root;
+        return remote ? $"{root.TrimEnd('/')}/{relative}" : Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    /// <summary>
+    ///     Pushes a production image to the application's registry (DEP-06): pushed images stay rollback targets after
+    ///     the local image is pruned. Credentials come from the team's registry credential and are sent on standard input.
+    /// </summary>
+    private async Task PushImageAsync(ContainerRuntimeTarget target, AppEntity application, TeamId teamId,
+        string image, RegistryDirectory? registryDirectory, DeploymentId deploymentId,
+        CancellationToken cancellationToken)
+    {
+        RegistryAuth? auth = await RegistryAuthAsync(application, teamId, cancellationToken);
+        await AppendAsync(deploymentId, "system", $"Pushing image {image} to the registry.", cancellationToken);
+        await foreach (ProcessOutputLine line in runtime.PushImageAsync(target,
+                           new RegistryImageCommand(image, auth, registryDirectory!.RuntimePath,
+                               TimeSpan.FromMinutes(30), RegistryRedaction(auth)), cancellationToken))
+            await AppendAsync(deploymentId, StreamName(line.Stream), line.Content, cancellationToken);
+        await auditWriter.RecordAsync(teamId, null, AuditActions.DeploymentImagePushed,
+            new AuditTarget("deployment", deploymentId.Value.ToString("D")), null,
+            new Dictionary<string, object?> { ["image"] = image }, cancellationToken);
+    }
+
+    private ProcessRedactionProfile RegistryRedaction(RegistryAuth? auth)
+    {
+        ProcessRedactionProfile profile = LogRedactor.ProcessProfile;
+        return auth is null
+            ? profile
+            : profile with { SecretValues = [.. profile.SecretValues, auth.Password] };
+    }
+
+    /// <summary>The team registry credential of the application, or null to push/pull with the server's own login.</summary>
+    private async Task<RegistryAuth?> RegistryAuthAsync(AppEntity application, TeamId teamId,
+        CancellationToken cancellationToken)
+    {
+        if (application.BuildConfiguration.RegistryCredentialId is not { } credentialId) return null;
+        RegistryCredential credential = dbContext.RegistryCredentials
+                                            .SingleOrDefault(item => item.Id == credentialId && item.TeamId == teamId)
+                                        ?? throw new DomainException(
+                                            "The registry credential of this application no longer exists.");
+        var password = await secretVault.RevealForDeploymentAsync(teamId, credential.PasswordReferenceId,
+            cancellationToken);
+        return new RegistryAuth(credential.Registry, credential.Username, password);
+    }
+
 
     private async Task StreamComposeAsync(
         ContainerRuntimeTarget target,
@@ -500,7 +690,7 @@ public sealed partial class DeploymentRunner(
         throw new DomainException($"Health check failed before timeout. {lastError?.Message}");
     }
 
-    private async Task<DeploymentRuntimePlan> CreatePlanAsync(
+    private async Task<(DeploymentRuntimePlan Plan, PreparedBuild Build)> CreatePlanAsync(
         AppEntity application,
         EnvironmentEntity environment,
         Server server,
@@ -512,24 +702,48 @@ public sealed partial class DeploymentRunner(
         CancellationToken cancellationToken)
     {
         DeploymentId deploymentId = deployment.Id;
-        ResolvedEnvironment resolved =
-            await ResolveEnvironmentAsync(application, environment, server, teamId, deploymentId, preview,
+        BuildConfiguration config = application.BuildConfiguration;
+        var isCompose = config.BuildPack == ApplicationBuildPack.DockerCompose;
+        var port = application.RuntimeConfiguration.ExposedPort?.Value ?? DeploymentPlanBuilder.DefaultPort;
+        ResolvedDeploymentEnvironment resolved =
+            await ResolveEnvironmentAsync(application, environment, server, teamId, deployment, preview, port,
                 cancellationToken);
-        IReadOnlyDictionary<string, string> env = resolved.Values;
+        IReadOnlyDictionary<string, string> env = resolved.AllValues;
         // DEP-03/SEC-09: from here on every log line and command output is redacted with the deployment's values.
         _logRedactor = new DeploymentLogRedactor(redactor, DeploymentLogRedactor.CreateContext(env,
             resolved.SecretKeys, application.DeploymentSettings.RedactAllEnvValuesInLogs));
-        var envFile = BuildEnvironmentFile(env);
+        if (resolved.UnresolvedReferences.Count > 0)
+            await AppendAsync(deploymentId, "stderr",
+                "Environment values reference variables that are not defined (empty strings are used): " +
+                string.Join(", ", resolved.UnresolvedReferences), cancellationToken);
+
+        BuildVariableSelection buildValues = BuildVariablePolicy.Select(resolved.Build,
+            ApplicationBuildPacks.DisplayName(config.BuildPack));
+        foreach (var warning in buildValues.Warnings)
+            await AppendAsync(deploymentId, "stderr", warning, cancellationToken);
+        BuildPlan buildPlan = BuildPackPlanner.Plan(config, port, buildValues.Values);
+        foreach (var note in buildPlan.Notes)
+            await AppendAsync(deploymentId, "system", note, cancellationToken);
+
+        // Docker Compose interpolates the compose file from the env file, so build values (as build.args) need to be in
+        // it too; every other stack reads the env file as container environment, which gets runtime values only.
+        IEnumerable<ResolvedVariable> envFileVariables = isCompose
+            ? resolved.Runtime.Concat(resolved.Build.Where(build =>
+                resolved.Runtime.All(runtimeVariable => runtimeVariable.Key != build.Key)))
+            : resolved.Runtime;
+        var envFile = ComposeEnvFileWriter.Write(envFileVariables);
         var redactedEnv = redactor.Redact(envFile, new RedactionContext(env.Values.ToArray()));
         DeploymentNaming naming = DeploymentPlanBuilder.Naming(application.Id, server.Id, deploymentId, preview);
         // DEP-06: production images are tagged by commit (rollback targets); a rollback reuses its listed image.
+        // With a registry configured, production images are named in the registry repository and pushed.
+        var registryImage = preview is null && !isCompose ? config.RegistryImage : null;
         if (preview is null)
             naming = naming with
             {
                 ImageName = deployment.RollbackImage ??
-                            DeploymentPlanBuilder.ProductionImage(application.Id, deployment.CommitSha, deploymentId)
+                            DeploymentPlanBuilder.ProductionImage(application.Id, deployment.CommitSha, deploymentId,
+                                registryImage)
             };
-        var port = application.RuntimeConfiguration.ExposedPort?.Value ?? DeploymentPlanBuilder.DefaultPort;
         var healthPath = application.RuntimeConfiguration.HealthCheckPath.StartsWith('/')
             ? application.RuntimeConfiguration.HealthCheckPath
             : "/" + application.RuntimeConfiguration.HealthCheckPath;
@@ -537,21 +751,20 @@ public sealed partial class DeploymentRunner(
         IReadOnlyDictionary<string, string> labels = Labels(deploymentId, application, preview);
         var serviceName = naming.ServiceName;
         string compose;
-        ComposeNormalizationResult? normalized =
-            application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
-                ? await CreateComposePassthroughAsync(workspace, runtimeWorkspace, application, naming, port, labels,
-                    cancellationToken)
-                : null;
-        if (normalized is null)
+        if (!isCompose)
         {
-            compose = CreateDockerfileCompose(application, naming, port, labels);
+            compose = CreateImageStack(naming, port, labels);
         }
         else
         {
+            ComposeNormalizationResult normalized = await CreateRepositoryComposeAsync(workspace, runtimeWorkspace,
+                application, deployment, naming, port, labels,
+                buildValues.Values.Select(pair => pair.Key).ToArray(), cancellationToken);
             compose = normalized.Yaml;
             serviceName = normalized.PrimaryService;
             foreach (var warning in normalized.Warnings)
                 await AppendAsync(deploymentId, "system", warning, cancellationToken);
+            await RecordElevatedComposeAsync(teamId, deployment, normalized.ElevatedSettings, cancellationToken);
         }
 
         // DATA-12: named volumes and resource-directory mounts; previews get their own volumes and directory.
@@ -566,7 +779,7 @@ public sealed partial class DeploymentRunner(
                 cancellationToken);
         }
 
-        return new DeploymentRuntimePlan(
+        var plan = new DeploymentRuntimePlan(
             naming.ProjectName,
             serviceName,
             naming.ImageName,
@@ -582,18 +795,42 @@ public sealed partial class DeploymentRunner(
         {
             HasStorage = hasStorage
         };
+        return (plan, new PreparedBuild(buildPlan, buildValues, registryImage));
     }
 
-    private async Task<ComposeNormalizationResult?> CreateComposePassthroughAsync(
+    /// <summary>Elevated compose settings (SEC-11) are logged in the deployment log and audited.</summary>
+    private async Task RecordElevatedComposeAsync(TeamId teamId, Deployment deployment,
+        IReadOnlyList<string> elevated, CancellationToken cancellationToken)
+    {
+        if (elevated.Count == 0) return;
+        await AppendAsync(deployment.Id, "stderr",
+            "Host-level compose settings allowed because an instance administrator authorized this deployment: " +
+            string.Join("; ", elevated) + ".", cancellationToken);
+        await auditWriter.RecordAsync(teamId, deployment.ActorUserId, AuditActions.DeploymentComposeElevated,
+            new AuditTarget("deployment", deployment.Id.Value.ToString("D")), null,
+            new Dictionary<string, object?> { ["settings"] = elevated.ToArray() }, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Reads and normalizes the repository compose file (DEP-11/SEC-11): the path is relative to the base directory;
+    ///     a missing file fails the deployment (no silent fallback); included files are read from the repository (each
+    ///     inside it, at most five levels); host-level settings need an instance administrator as the deployment actor.
+    /// </summary>
+    private async Task<ComposeNormalizationResult> CreateRepositoryComposeAsync(
         DeploymentWorkspace workspace,
         DeploymentWorkspace runtimeWorkspace,
         AppEntity application,
+        Deployment deployment,
         DeploymentNaming naming,
         int port,
         IReadOnlyDictionary<string, string> labels,
+        IReadOnlyList<string> buildArgumentKeys,
         CancellationToken cancellationToken)
     {
-        var composePath = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "docker-compose.yml");
+        BuildConfiguration config = application.BuildConfiguration;
+        var composePath = NormalizeRelativePath(
+            BuildPackPlanner.Combine(BuildPackPlanner.ContextPath(config.BaseDirectory),
+                config.DockerfilePath ?? "docker-compose.yml"), "docker-compose.yml");
         string raw;
         try
         {
@@ -601,9 +838,38 @@ public sealed partial class DeploymentRunner(
         }
         catch (FileNotFoundException)
         {
-            return null;
+            throw new DomainException($"Compose file {composePath} was not found in the repository.");
         }
 
+        if (string.IsNullOrWhiteSpace(raw.TrimStart('﻿')))
+            throw new DomainException($"Compose file {composePath} is empty.");
+
+        var included = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pending = new Queue<(string Path, string Content, int Depth)>();
+        pending.Enqueue((composePath, raw, 0));
+        while (pending.Count > 0)
+        {
+            (var path, var content, var depth) = pending.Dequeue();
+            foreach (var include in composeDocuments.ListIncludes(content, workspace.RepositoryDirectory, path))
+            {
+                if (included.ContainsKey(include) || include == composePath) continue;
+                if (depth >= 5) throw new DomainException("Compose 'include' is nested too deeply.");
+                string text;
+                try
+                {
+                    text = await workspaces.ReadTextAsync(workspace.RepositoryDirectory, include, cancellationToken);
+                }
+                catch (FileNotFoundException)
+                {
+                    throw new DomainException($"Included compose file {include} was not found in the repository.");
+                }
+
+                included[include] = text;
+                pending.Enqueue((include, text, depth + 1));
+            }
+        }
+
+        var allowElevated = deployment.ActorUserId is { } actor && authorization.IsInstanceAdmin(actor);
         // Parsed and normalized: build contexts, bind mounts and env files must resolve inside the repository, and
         // the primary service joins the server network under the per-application (or per-preview) upstream alias.
         return composeDocuments.NormalizeRepositoryCompose(raw, new RepositoryComposeSpec(
@@ -616,56 +882,75 @@ public sealed partial class DeploymentRunner(
             naming.PreviewSuffix,
             string.Equals(runtimeWorkspace.RepositoryDirectory, workspace.RepositoryDirectory, StringComparison.Ordinal)
                 ? null
-                : runtimeWorkspace.RepositoryDirectory));
+                : runtimeWorkspace.RepositoryDirectory)
+        {
+            AllowElevated = allowElevated,
+            IncludedFiles = included,
+            PrimaryService = config.ComposeService,
+            BuildArgumentKeys = buildArgumentKeys
+        });
     }
 
-    private string CreateDockerfileCompose(
-        AppEntity application,
-        DeploymentNaming naming,
-        int port,
-        IReadOnlyDictionary<string, string> labels)
+    /// <summary>The single-service stack of an image Vessel built (or reuses): no build section.</summary>
+    private string CreateImageStack(DeploymentNaming naming, int port, IReadOnlyDictionary<string, string> labels)
     {
-        var dockerfile = NormalizeRelativePath(application.BuildConfiguration.DockerfilePath, "Dockerfile");
         var portText = port.ToString(CultureInfo.InvariantCulture);
         // Production keeps its fixed host port; previews bind an ephemeral loopback port so they never collide.
         var binding = naming.IsPreview ? $"127.0.0.1::{portText}" : $"{portText}:{portText}";
         return composeDocuments.CreateDockerfileStack(new DockerfileStackSpec(
             naming.ServiceName,
             naming.ImageName,
-            "./repository",
-            dockerfile,
+            null,
+            null,
             naming.NetworkName,
             naming.UpstreamAlias,
             binding,
             labels));
     }
 
-    private sealed record ResolvedEnvironment(
-        IReadOnlyDictionary<string, string> Values,
-        IReadOnlySet<string> SecretKeys);
-
-    private async Task<ResolvedEnvironment> ResolveEnvironmentAsync(
+    /// <summary>
+    ///     Deployment variables in deterministic order (DEP-10): defaults, then team, project, environment, server and
+    ///     application variables (page order, then key), then preview copies. Later definitions win. Runtime values and
+    ///     build values are resolved separately, so runtime-only values never reach a build.
+    /// </summary>
+    private async Task<ResolvedDeploymentEnvironment> ResolveEnvironmentAsync(
         AppEntity application,
         EnvironmentEntity environment,
         Server server,
         TeamId teamId,
-        DeploymentId deploymentId,
+        Deployment deployment,
         ApplicationPreview? preview,
+        int port,
         CancellationToken cancellationToken)
     {
-        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        DeploymentId deploymentId = deployment.Id;
+        var variables = new List<DeploymentVariable>();
+        if (application.DeploymentSettings.IncludeDefaultVariables)
         {
-            ["VESSEL_APPLICATION_ID"] = application.Id.Value.ToString("D"),
-            ["VESSEL_ENVIRONMENT_ID"] = environment.Id.Value.ToString("D"),
-            ["VESSEL_SERVER_ID"] = server.Id.Value.ToString("D")
-        };
-        if (preview is not null)
-            values["VESSEL_PULL_REQUEST_ID"] = preview.PullRequestNumber.ToString(CultureInfo.InvariantCulture);
+            variables.Add(Default("VESSEL_APPLICATION_ID", application.Id.Value.ToString("D"), true));
+            variables.Add(Default("VESSEL_ENVIRONMENT_ID", environment.Id.Value.ToString("D"), false));
+            variables.Add(Default("VESSEL_SERVER_ID", server.Id.Value.ToString("D"), false));
+            variables.Add(Default("VESSEL_BRANCH", preview?.SourceBranch ?? application.GitSource.Branch, true));
+            if (preview is not null)
+                variables.Add(Default("VESSEL_PULL_REQUEST_ID",
+                    preview.PullRequestNumber.ToString(CultureInfo.InvariantCulture), true));
+            // Runtime only: a per-commit build value would defeat the build cache (upstream SOURCE_COMMIT).
+            if (GitRef.IsCommitShaValue(deployment.CommitSha))
+                variables.Add(Default("SOURCE_COMMIT", deployment.CommitSha!, false));
+        }
+
+        // Upstream adds PORT (first exposed port, not for Compose) and HOST unless the application defines them.
+        if (application.BuildConfiguration.BuildPack != ApplicationBuildPack.DockerCompose)
+            variables.Add(Default("PORT", port.ToString(CultureInfo.InvariantCulture), false));
+        variables.Add(Default("HOST", "0.0.0.0", false));
 
         EnvironmentVariable[] applicable = dbContext.EnvironmentVariables
-            .Where(variable => variable.TeamId == teamId && variable.IsRuntime)
+            .Where(variable => variable.TeamId == teamId && (variable.IsRuntime || variable.IsBuildTime))
             .AsEnumerable()
             .Where(variable => AppliesTo(variable, application, environment, server))
+            .OrderBy(variable => ScopeRank(variable.TargetType))
+            .ThenBy(variable => variable.SortOrder)
+            .ThenBy(variable => variable.Key.Value, StringComparer.Ordinal)
             .ToArray();
         // Production never receives preview copies; previews follow Coolify's preview-variable rules.
         DeploymentVariableSelection selection = DeploymentPlanBuilder.SelectVariables(applicable, preview is not null,
@@ -678,19 +963,35 @@ public sealed partial class DeploymentRunner(
                 string.Join(", ", selection.WithheldKeys),
                 cancellationToken);
 
-        var secretKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (EnvironmentVariable variable in selection.Variables)
         {
             var isSecret = variable.ValueKind == EnvironmentVariableValueKind.Secret;
-            values[variable.Key.Value] = isSecret && variable.SecretReferenceId.HasValue
+            var value = isSecret && variable.SecretReferenceId.HasValue
                 ? await secretVault.RevealForDeploymentAsync(teamId, variable.SecretReferenceId.Value,
                     cancellationToken)
-                : variable.PlainValue ?? string.Empty;
-            if (isSecret) secretKeys.Add(variable.Key.Value);
-            else secretKeys.Remove(variable.Key.Value);
+                : variable.PreserveComposeNull ? null : variable.PlainValue ?? string.Empty;
+            variables.Add(DeploymentVariable.From(variable, value));
         }
 
-        return new ResolvedEnvironment(values, secretKeys);
+        return DeploymentEnvironmentResolver.Resolve(variables);
+    }
+
+    private static DeploymentVariable Default(string key, string value, bool buildTime)
+    {
+        return new DeploymentVariable(key, value, IsBuildTime: buildTime, IsRuntime: true, IsDefault: true);
+    }
+
+    private static int ScopeRank(EnvironmentVariableTargetType targetType)
+    {
+        return targetType switch
+        {
+            EnvironmentVariableTargetType.Team => 0,
+            EnvironmentVariableTargetType.Project => 1,
+            EnvironmentVariableTargetType.Environment => 2,
+            EnvironmentVariableTargetType.Server => 3,
+            EnvironmentVariableTargetType.Application => 4,
+            _ => 5
+        };
     }
 
     private static bool AppliesTo(EnvironmentVariable variable, AppEntity application, EnvironmentEntity environment,
@@ -707,23 +1008,6 @@ public sealed partial class DeploymentRunner(
         };
     }
 
-    private static string BuildEnvironmentFile(IReadOnlyDictionary<string, string> values)
-    {
-        var builder = new StringBuilder();
-        foreach (var (key, value) in values.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-            builder.Append(key).Append('=').AppendLine(QuoteEnv(value));
-        return builder.ToString();
-    }
-
-    private static string QuoteEnv(string value)
-    {
-        if (value.Length == 0) return "\"\"";
-        if (value.Any(char.IsWhiteSpace) || value.Contains('"', StringComparison.Ordinal) ||
-            value.Contains('#', StringComparison.Ordinal))
-            return "\"" + value.Replace("\\", "\\\\", StringComparison.Ordinal)
-                .Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
-        return value;
-    }
 
     private async Task RecordSourceAsync(
         DeploymentId deploymentId,
@@ -870,35 +1154,61 @@ public sealed partial class DeploymentRunner(
     }
 
     /// <summary>
-    ///     A rollback reuses its image when it is a Dockerfile production rollback and the image is still present
-    ///     locally; otherwise it rebuilds the target commit (only successful production commits are allowed).
+    ///     A production rollback (every build pack except Docker Compose) reuses its image when it is still present
+    ///     locally, or when it can be pulled again from the application's registry (DEP-06, upstream v4.5.0 rollback to
+    ///     registry images); otherwise it rebuilds the target commit (only successful production commits are allowed).
     /// </summary>
     private async Task<bool> RollbackImageAvailableAsync(ContainerRuntimeTarget target, AppEntity application,
-        Deployment deployment, ApplicationPreview? preview, CancellationToken cancellationToken)
+        TeamId teamId, Deployment deployment, ApplicationPreview? preview, RegistryDirectory? registryDirectory,
+        CancellationToken cancellationToken)
     {
         if (!deployment.IsRollback || preview is not null || string.IsNullOrWhiteSpace(deployment.RollbackImage) ||
-            application.BuildConfiguration.BuildPack != ApplicationBuildPack.Dockerfile)
+            application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose)
             return false;
         IReadOnlyList<ImageSummary> images = await runtime.ListImagesAsync(target, cancellationToken);
-        var available = images.Any(image => image.RepoTags.Contains(deployment.RollbackImage, StringComparer.Ordinal));
-        if (!available)
-            await AppendAsync(deployment.Id, "system",
-                $"Image {deployment.RollbackImage} is no longer present locally; rebuilding commit {deployment.CommitSha}.",
-                cancellationToken);
-        return available;
+        if (images.Any(image => image.RepoTags.Contains(deployment.RollbackImage, StringComparer.Ordinal)))
+            return true;
+
+        var registry = application.BuildConfiguration.RegistryImage;
+        if (registry is not null && registryDirectory is not null &&
+            deployment.RollbackImage.StartsWith(registry + ":", StringComparison.Ordinal))
+            try
+            {
+                RegistryAuth? auth = await RegistryAuthAsync(application, teamId, cancellationToken);
+                await AppendAsync(deployment.Id, "system",
+                    $"Image {deployment.RollbackImage} is not present locally; pulling it from the registry.",
+                    cancellationToken);
+                await foreach (ProcessOutputLine line in runtime.PullImageAsync(target,
+                                   new RegistryImageCommand(deployment.RollbackImage, auth,
+                                       registryDirectory.RuntimePath, TimeSpan.FromMinutes(30),
+                                       RegistryRedaction(auth)), cancellationToken))
+                    await AppendAsync(deployment.Id, StreamName(line.Stream), line.Content, cancellationToken);
+                return true;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                await AppendAsync(deployment.Id, "stderr",
+                    $"Pulling {deployment.RollbackImage} failed: {redactor.Redact(ex.Message)}", cancellationToken);
+            }
+
+        await AppendAsync(deployment.Id, "system",
+            $"Image {deployment.RollbackImage} is no longer available; rebuilding commit {deployment.CommitSha}.",
+            cancellationToken);
+        return false;
     }
 
     /// <summary>
     ///     Keeps the images of the most recent successful production deployments (<c>ImagesToKeep</c>, Coolify
-    ///     <c>docker_images_to_keep</c>) as rollback targets and removes older images of the application. Images still
-    ///     used by a container are never forced out.
+    ///     <c>docker_images_to_keep</c>) as rollback targets and removes older local images of the application (its own
+    ///     repository and its registry repository; pushed images stay in the registry). Images still used by a
+    ///     container are never forced out.
     /// </summary>
     private async Task PruneImagesAsync(ContainerRuntimeTarget target, AppEntity application, string currentImage,
         CancellationToken cancellationToken)
     {
         try
         {
-            var repository = DeploymentPlanBuilder.ImageRepository(application.Id) + ":";
+            var repositories = DeploymentPlanBuilder.ImageRepositories(application);
             var keep = dbContext.Deployments
                 .Where(item => item.ApplicationId == application.Id && item.PreviewId == null &&
                                item.Status == DeploymentStatus.Succeeded && item.ArtifactReference != null)
@@ -911,8 +1221,9 @@ public sealed partial class DeploymentRunner(
                 .ToHashSet(StringComparer.Ordinal);
             IReadOnlyList<ImageSummary> images = await runtime.ListImagesAsync(target, cancellationToken);
             string[] remove = images.SelectMany(image => image.RepoTags)
-                .Where(tag => tag.StartsWith(repository, StringComparison.Ordinal) &&
-                              !tag[repository.Length..].StartsWith("pr-", StringComparison.Ordinal) &&
+                .Where(tag => repositories.Any(repository => tag.StartsWith(repository + ":", StringComparison.Ordinal) &&
+                                                             !tag[(repository.Length + 1)..].StartsWith("pr-",
+                                                                 StringComparison.Ordinal)) &&
                               !keep.Contains(tag))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
@@ -924,6 +1235,7 @@ public sealed partial class DeploymentRunner(
             // Image retention is best effort; a failure never changes the deployment result.
         }
     }
+
 
     private async Task<Deployment> GetDeploymentAsync(DeploymentId deploymentId, CancellationToken cancellationToken)
     {

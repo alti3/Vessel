@@ -78,12 +78,27 @@ public static class DeploymentPlanBuilder
     ///     Production image reference. Images are tagged by commit SHA (Coolify tags by commit) so earlier commits stay
     ///     available as rollback targets; without a resolved commit the deployment ID is the tag.
     /// </summary>
-    public static string ProductionImage(AppId applicationId, string? commitSha, DeploymentId deploymentId)
+    public static string ProductionImage(AppId applicationId, string? commitSha, DeploymentId deploymentId,
+        string? registryImage = null)
     {
         var tag = GitRef.IsCommitShaValue(commitSha) && commitSha!.Length <= 64
             ? commitSha.ToLowerInvariant()
             : deploymentId.Value.ToString("N");
-        return $"{ImageRepository(applicationId)}:{tag}";
+        // A configured registry repository (validated, without tag) names the image so it can be pushed and pulled.
+        var repository = string.IsNullOrWhiteSpace(registryImage)
+            ? ImageRepository(applicationId)
+            : ImageReference.ParseRepository(registryImage).Repository;
+        return $"{repository}:{tag}";
+    }
+
+    /// <summary>Local image repositories of an application: its own and, when configured, its registry repository.</summary>
+    public static IReadOnlyList<string> ImageRepositories(AppEntity application)
+    {
+        ArgumentNullException.ThrowIfNull(application);
+        var registry = application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose
+            ? null
+            : application.BuildConfiguration.RegistryImage;
+        return registry is null ? [ImageRepository(application.Id)] : [ImageRepository(application.Id), registry];
     }
 
     public static string PreviewSuffix(int pullRequestNumber)

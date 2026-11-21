@@ -456,6 +456,12 @@ public sealed class ResourceManagementService(
             request.ValueKind, plainValue, secretReferenceId, request.IsBuildTime, request.IsRuntime, request.IsPreview,
             request.IsLiteral, request.IsMultiline, request.Comment, Now());
         ApplyTarget(variable, request, target);
+        // DEP-10: new variables go to the end of their scope's page order (deployments write variables in that order).
+        var scopeCount = dbContext.EnvironmentVariables.Count(item =>
+            item.TeamId == teamId && item.TargetType == variable.TargetType && item.ProjectId == variable.ProjectId &&
+            item.EnvironmentId == variable.EnvironmentId && item.ServerId == variable.ServerId &&
+            item.ApplicationId == variable.ApplicationId && item.DatabaseResourceId == variable.DatabaseResourceId);
+        variable.Reorder(scopeCount, Now());
         await dbContext.EnvironmentVariableRepository.AddAsync(variable, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         await AuditAsync(teamId, actorUserId, AuditActions.EnvironmentVariableCreated, "environment-variable",

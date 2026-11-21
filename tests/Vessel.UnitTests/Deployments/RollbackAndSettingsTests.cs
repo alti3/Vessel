@@ -169,6 +169,46 @@ public sealed class RollbackAndSettingsTests
             new RecordingAudit());
     }
 
+    [Fact]
+    public async Task Build_settings_need_write_permission_and_a_registry_credential_of_the_same_team()
+    {
+        CrossTeamFixture fixture = CrossTeamFixture.Create();
+        var audit = new RecordingAudit();
+        var service = new Vessel.Application.Deployments.BuildPacks.BuildSettingsService(fixture.Store.Context,
+            fixture.Authorization, audit, TimeProvider.System);
+        var foreign = Vessel.Domain.Registries.RegistryCredential.Create(fixture.TeamB.Id,
+            new Vessel.Domain.ValueObjects.ResourceName("b-registry"), "ghcr.io", "bot", SecretReferenceId.New(),
+            fixture.Now);
+        var own = Vessel.Domain.Registries.RegistryCredential.Create(fixture.TeamA.Id,
+            new Vessel.Domain.ValueObjects.ResourceName("a-registry"), "ghcr.io", "bot", SecretReferenceId.New(),
+            fixture.Now);
+        fixture.Store.Set<Vessel.Domain.Registries.RegistryCredential>().AddRange([foreign, own]);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.UpdateAsync(fixture.Actor.Id,
+            fixture.TeamA.Id, fixture.ApplicationB.Id,
+            new Vessel.Application.Deployments.BuildPacks.UpdateApplicationBuildSettingsRequest(
+                ApplicationBuildPack.Railpack), TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.UpdateAsync(fixture.Actor.Id,
+            fixture.TeamA.Id, fixture.ApplicationA.Id,
+            new Vessel.Application.Deployments.BuildPacks.UpdateApplicationBuildSettingsRequest(
+                RegistryImage: "ghcr.io/acme/web", RegistryCredentialId: foreign.Id.Value),
+            TestContext.Current.CancellationToken));
+
+        var updated = await service.UpdateAsync(fixture.Actor.Id, fixture.TeamA.Id, fixture.ApplicationA.Id,
+            new Vessel.Application.Deployments.BuildPacks.UpdateApplicationBuildSettingsRequest(
+                ApplicationBuildPack.Static, PublishDirectory: "dist", IsSpa: true, RegistryImage: "ghcr.io/acme/web",
+                RegistryCredentialId: own.Id.Value), TestContext.Current.CancellationToken);
+
+        Assert.Equal(ApplicationBuildPack.Static, updated.BuildPack);
+        Assert.Equal("dist", updated.PublishDirectory);
+        Assert.Equal(own.Id.Value, updated.RegistryCredentialId);
+        Assert.Equal(AuditActions.ApplicationBuildSettingsUpdated, Assert.Single(audit.Actions));
+        await Assert.ThrowsAsync<DomainException>(() => service.UpdateAsync(fixture.Actor.Id, fixture.TeamA.Id,
+            fixture.ApplicationA.Id,
+            new Vessel.Application.Deployments.BuildPacks.UpdateApplicationBuildSettingsRequest(
+                PublishDirectory: "../../etc"), TestContext.Current.CancellationToken));
+    }
+
     private sealed class RecordingAudit : IAuditWriter
     {
         public List<string> Actions { get; } = [];

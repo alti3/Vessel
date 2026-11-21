@@ -20,6 +20,14 @@ public interface IComposeDocumentBuilder
     ComposeNormalizationResult NormalizeRepositoryCompose(string yaml, RepositoryComposeSpec spec);
 
     /// <summary>
+    ///     Repository-relative paths of the files a compose document includes (<c>include:</c>), resolved against
+    ///     <paramref name="composeFilePath" /> and required to stay inside the repository. The caller reads them (and their
+    ///     own includes) and passes them in <see cref="RepositoryComposeSpec.IncludedFiles" />.
+    /// </summary>
+    /// <exception cref="ComposeValidationException">The document or an include path is invalid.</exception>
+    IReadOnlyList<string> ListIncludes(string yaml, string repositoryDirectory, string composeFilePath);
+
+    /// <summary>
     ///     Joins the named services of a (Vessel-generated) compose document to the external server network under the
     ///     given upstream aliases, so the server proxy can route to them. Used for service-template resources.
     /// </summary>
@@ -62,11 +70,16 @@ public sealed record ComposeStorageSpec(string? DefaultService, IReadOnlyList<Co
 ///     Dockerfile stack input. <see cref="HostPortBinding" /> is <c>"{port}:{port}"</c> for production; previews publish
 ///     on an ephemeral loopback port (<c>"127.0.0.1::{port}"</c>) so they never collide with production or each other.
 /// </summary>
+/// <remarks>
+///     <see cref="BuildContext" /> and <see cref="DockerfilePath" /> are null for images Vessel already built (every
+///     build pack except Docker Compose): the stack then only references the image, so <c>compose up</c> never rebuilds
+///     it without the build values (DEP-09).
+/// </remarks>
 public sealed record DockerfileStackSpec(
     string ServiceName,
     string ImageName,
-    string BuildContext,
-    string DockerfilePath,
+    string? BuildContext,
+    string? DockerfilePath,
     string NetworkName,
     string UpstreamAlias,
     string HostPortBinding,
@@ -86,15 +99,45 @@ public sealed record RepositoryComposeSpec(
     int ExposedPort,
     IReadOnlyDictionary<string, string> Labels,
     string? PreviewSuffix,
-    string? HostRepositoryDirectory = null);
+    string? HostRepositoryDirectory = null)
+{
+    /// <summary>
+    ///     Allows host-level settings (SEC-11): <c>privileged</c>, host network/pid/ipc/uts/userns/cgroup namespaces,
+    ///     dangerous <c>cap_add</c>, devices, unconfined security options, absolute host bind mounts (including the
+    ///     runtime socket) and host-path volume drivers. Only set when the deployment is authorized by an instance
+    ///     administrator; every use is reported in <see cref="ComposeNormalizationResult.ElevatedSettings" />.
+    /// </summary>
+    public bool AllowElevated { get; init; }
+
+    /// <summary>
+    ///     Contents of files named by <c>include:</c> (repository-relative paths, see
+    ///     <see cref="IComposeDocumentBuilder.ListIncludes" />). Included files must be inside the repository.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> IncludedFiles { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Configured public service (<c>BuildConfiguration.ComposeService</c>); must exist when set.</summary>
+    public string? PrimaryService { get; init; }
+
+    /// <summary>
+    ///     Build-time variable names injected as <c>build.args</c> (<c>KEY: ${KEY}</c>, from the env file) into every
+    ///     service that builds, unless the service already declares that argument.
+    /// </summary>
+    public IReadOnlyList<string> BuildArgumentKeys { get; init; } = [];
+}
 
 /// <summary>
 ///     Normalized compose document, the primary service (attached to the server network and targeted by the proxy) and
-///     non-fatal notes for the deployment log (never secret values).
+///     non-fatal notes for the deployment log (never secret values). <see cref="ElevatedSettings" /> lists host-level
+///     settings that were allowed because the deployment is authorized by an instance administrator (logged and
+///     audited).
 /// </summary>
 public sealed record ComposeNormalizationResult(
     string Yaml,
     string PrimaryService,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings)
+{
+    public IReadOnlyList<string> ElevatedSettings { get; init; } = [];
+}
 
 public sealed class ComposeValidationException(string message) : Exception(message);

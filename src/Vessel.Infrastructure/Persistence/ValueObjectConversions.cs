@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Databases;
@@ -120,7 +121,11 @@ internal static class ValueObjectConversions
         return string.Join('|', ((int)value.BuildPack).ToString(CultureInfo.InvariantCulture),
             Escape(value.BaseDirectory), Escape(value.DockerfilePath ?? string.Empty),
             Escape(value.InstallCommand ?? string.Empty), Escape(value.BuildCommand ?? string.Empty),
-            Escape(value.StartCommand ?? string.Empty), Escape(value.ImageTag?.Value ?? string.Empty));
+            Escape(value.StartCommand ?? string.Empty), Escape(value.ImageTag?.Value ?? string.Empty),
+            Escape(value.PublishDirectory ?? string.Empty), value.IsSpa.ToString(),
+            Escape(value.RegistryImage ?? string.Empty),
+            value.RegistryCredentialId?.Value.ToString("D") ?? string.Empty,
+            Escape(value.ComposeService ?? string.Empty));
     }
 
     private static string FormatRuntimeConfiguration(RuntimeConfiguration value)
@@ -137,7 +142,7 @@ internal static class ValueObjectConversions
             value.ForceRebuild.ToString(), Escape(value.WatchPaths ?? string.Empty),
             value.PublicPreviewsEnabled.ToString(), value.AutoCancelQueuedDeployments.ToString(),
             value.AutoCancelBuildingDeployments.ToString(), value.RedactAllEnvValuesInLogs.ToString(),
-            value.ImagesToKeep.ToString(CultureInfo.InvariantCulture));
+            value.ImagesToKeep.ToString(CultureInfo.InvariantCulture), value.IncludeDefaultVariables.ToString());
     }
 
     private static string FormatStorageConfiguration(StorageConfiguration value)
@@ -196,7 +201,15 @@ internal static class ValueObjectConversions
             EmptyToNull(parts[3]),
             EmptyToNull(parts[4]),
             EmptyToNull(parts[5]),
-            string.IsNullOrEmpty(parts[6]) ? null : new ImageTag(parts[6]));
+            string.IsNullOrEmpty(parts[6]) ? null : new ImageTag(parts[6]),
+            // Rows written before build pack settings (DEP-09) have seven parts.
+            parts.Length > 7 ? EmptyToNull(parts[7]) : null,
+            parts.Length > 8 && bool.Parse(parts[8]),
+            parts.Length > 9 ? EmptyToNull(parts[9]) : null,
+            parts.Length > 10 && !string.IsNullOrEmpty(parts[10])
+                ? new RegistryCredentialId(Guid.Parse(parts[10], CultureInfo.InvariantCulture))
+                : null,
+            parts.Length > 11 ? EmptyToNull(parts[11]) : null);
     }
 
     private static RuntimeConfiguration ParseRuntimeConfiguration(string value)
@@ -224,7 +237,8 @@ internal static class ValueObjectConversions
             parts.Length <= 7 || bool.Parse(parts[7]),
             parts.Length > 8
                 ? int.Parse(parts[8], CultureInfo.InvariantCulture)
-                : Vessel.Domain.Applications.DeploymentSettings.DefaultImagesToKeep);
+                : Vessel.Domain.Applications.DeploymentSettings.DefaultImagesToKeep,
+            parts.Length <= 9 || bool.Parse(parts[9]));
     }
 
     private static StorageConfiguration ParseStorageConfiguration(string value)

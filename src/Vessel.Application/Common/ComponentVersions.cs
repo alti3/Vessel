@@ -66,4 +66,28 @@ public static class ComponentVersions
     ///     public image instead.
     /// </summary>
     public const string VolumeBackupHelperImage = "busybox:1.37.0";
+
+    // Build packs (DEP-09). Builds run these pinned images on the deployment server; the BuildKit frontend always
+    // matches the Railpack CLI version that wrote the plan (upstream v4.4.4).
+
+    /// <summary>Railpack release. Verified against upstream Coolify <c>config/constants.php</c> (<c>railpack_version</c>).</summary>
+    public const string Railpack = "0.43.0";
+
+    /// <summary>
+    ///     Image that runs <c>railpack prepare</c> (the Railpack CLI). Bump together with <see cref="Railpack" />; verify
+    ///     the tag on <c>ghcr.io/railwayapp/railpack</c> before a release.
+    /// </summary>
+    public const string RailpackCliImage = "ghcr.io/railwayapp/railpack:v" + Railpack;
+
+    /// <summary>Railpack BuildKit frontend (<c>BUILDKIT_SYNTAX</c>) matching <see cref="Railpack" />.</summary>
+    public const string RailpackFrontendImage = "ghcr.io/railwayapp/railpack-frontend:v" + Railpack;
+
+    /// <summary>BuildKit daemon image of the Railpack <c>docker-container</c> builder (Railpack needs full BuildKit).</summary>
+    public const string BuildKitImage = "moby/buildkit:v0.26.2";
+
+    /// <summary>
+    ///     Web server of the Static build pack. Upstream Coolify offers only <c>nginx:alpine</c> (floating); Vessel pins
+    ///     the stable line.
+    /// </summary>
+    public const string StaticNginxImage = "nginx:1.30-alpine";
 }
