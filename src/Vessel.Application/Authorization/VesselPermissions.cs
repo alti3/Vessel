@@ -36,6 +36,12 @@ public static class VesselPermissions
     public const string DeploymentsCancel = "deployments.cancel";
     public const string DeploymentsReadLogs = "deployments.readLogs";
     public const string ResourcesLifecycle = "resources.lifecycle";
+
+    /// <summary>
+    ///     Runtime (container) logs of applications, databases and services (SRV-05). Read-sensitive like upstream
+    ///     (<c>read:sensitive</c>, "users who can update the resource"): read-only members do not hold it.
+    /// </summary>
+    public const string ResourcesReadLogs = "resources.readLogs";
     public const string TerminalsOpen = "terminals.open";
     public const string SecretsRead = "secrets.read";
     public const string SecretsWrite = "secrets.write";
@@ -68,6 +74,7 @@ public static class VesselPermissions
             [DeploymentsCancel] = new(AccessLevel.Deploy, PermissionReach.Located),
             [DeploymentsReadLogs] = new(AccessLevel.Read, PermissionReach.Located),
             [ResourcesLifecycle] = new(AccessLevel.Deploy, PermissionReach.Located),
+            [ResourcesReadLogs] = new(AccessLevel.ReadSensitive, PermissionReach.Located),
             [TerminalsOpen] = new(AccessLevel.Root, PermissionReach.TeamAdmin),
             [SecretsRead] = new(AccessLevel.ReadSensitive, PermissionReach.Located),
             [SecretsWrite] = new(AccessLevel.Write, PermissionReach.Located),

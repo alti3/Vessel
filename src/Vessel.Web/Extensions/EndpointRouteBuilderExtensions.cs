@@ -22,6 +22,7 @@ public static class EndpointRouteBuilderExtensions
         endpoints.MapHub<DeploymentLogHub>("/hubs/deployment-logs");
         endpoints.MapHub<TerminalHub>("/hubs/terminal");
         endpoints.MapHub<ServerStatusHub>("/hubs/server-status");
+        endpoints.MapHub<RuntimeLogHub>("/hubs/runtime-logs");
         endpoints.MapHub<NotificationHub>("/hubs/notifications");
 
         endpoints.MapHealthChecks("/live", new HealthCheckOptions

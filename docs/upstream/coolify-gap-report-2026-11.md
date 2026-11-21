@@ -179,7 +179,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | DEP-05 | Auto-cancel superseded deployments (v4.7.0 breaking default) | P1 | M | New items in Phase 8/9 rework (8.20 extension). | Done |
 | DEP-06 | Rollback (local and registry images, restricted targets) | P1 | M | New Phase 8 follow-up (or Phase 9b); 18.12. | Partial (local images; registry rollback needs registry push support) |
 | DEP-07 | Preview lifecycle: cleanup, stop, API and settings | P1 | M | 9.14 completion; Phase 10 for preview domains (cross-ref Proxy… | Done |
-| DEP-08 | Private Git sources (GitHub App, GitLab App, Gitea/Forgejo App, deploy keys, HTTPS credentials, SSH host-key pinning) | P1 | XL | 9.08 (marked done but only refs discovery exists) → new Phase 9b… | Partial (interactive OAuth app install flow, GitLab system hooks, source UI forms remain) |
+| DEP-08 | Private Git sources (GitHub App, GitLab App, Gitea/Forgejo App, deploy keys, HTTPS credentials, SSH host-key pinning) | P1 | XL | 9.08 (marked done but only refs discovery exists) → new Phase 9b… | Open |
 | DEP-09 | Build packs: Railpack (and Static) unimplemented, Nixpacks deprecated, build-time variables never passed | P1 | L | New Phase 8b "Build packs"; 17.06 import mapping. | Open |
 | DEP-10 | Environment variable value semantics (exact values, literal/multiline, empty values, order, preview copies, duplicates) | P1 | M | 7.13/8.09 rework; 17.07. | Open |
 | DEP-11 | Docker Compose build pack: parse and validate instead of raw passthrough | P1 | L | 8.08 rework; new Compose items; Phase 10 (routing) cross-ref. | Open |
@@ -198,7 +198,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | NET-06 | Routing coverage for service-template resources and preview deployments | P1 | L | Phase 9 (9.12) and Phase 11 (11.05) follow-ups; Phase 10 | Done |
 | NET-07 | Proxy configuration history semantics and custom dynamic configs | P1 | M | Phase 10 (10.06) | Done |
 | NTF-03 | Channel delivery-failure tracking, auto-disable, and response classification | P1 | S | 13.08 (extend). | Done |
-| NTF-04 | Notification throttling and dedupe | P1 | M | New: 13.13–13.14 (or Phase 16 reliability). | Partial (delayed resource-stopped recheck needs SRV-04 producer) |
+| NTF-04 | Notification throttling and dedupe | P1 | M | New: 13.13–13.14 (or Phase 16 reliability). | Done |
 | NTF-05 | Granular event catalog and per-event routing | P1 | M | 13.09 (extend), 17.10. | Done |
 | NTF-06 | Email provider parity: instance transactional email, named SMTP servers, Resend, sender split, TLS modes, EHLO | P1 | L | 13.03 (reopen); auth Phase 4 password reset. | Done |
 | NTF-07 | User-defined scheduled tasks (cron commands in application/service containers) | P1 | L | New (suggest Phase 11/12 follow-up, "11.16–11.20 Scheduled… | Open |
@@ -212,18 +212,18 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SEC-07 | Manual webhook secret strength, failure throttling, and real client IP | P1 | S | 15.04, Phase 9 follow-up. | Done |
 | SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Done |
 | SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Done |
-| SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Partial (git boundary done; docker boundary in build-pack batch) |
+| SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Open |
 | SEC-11 | Git-based Docker Compose validation and host-path policy | P1 | M | 15.05/15.10, Phase 8 follow-up. | Open |
 | SEC-12 | SSH connection hardening foundation (host key pinning, fixed options, key lifecycle) | P1 | L | New items under Phase 15 (and the SSH runtime phase), 15.12. | Done |
 | SEC-13 | API abuse controls: failed-request throttle and rate-limit coverage | P1 | S | 15.04, Phase 13. | Done |
 | SRV-02 | Remote server execution foundation: private keys, real validation and install, server lifecycle API | P1 | L. | 7.04/7.05 (extend), new Phase 12b "Remote servers"; Security agent… | Done |
-| SRV-03 | Host and container metrics, fleet Metrics page, and the host-agent decision (Sentinel equivalent) | P1 | L | 12.11/12.12 (re-open), 16.08; new ADR; Phase B is a new phase item. | Open |
-| SRV-04 | Resource runtime status reconciliation, restart limits, and stop notifications | P1 | M. | 12.13 (extend); new item under Phase 12b. | Open |
-| SRV-05 | Runtime (container) logs for applications, databases and services: API, UI, merging, safe export | P1 | M. | 12.01/12.04 (extend to runtime logs). | Open |
+| SRV-03 | Host and container metrics, fleet Metrics page, and the host-agent decision (Sentinel equivalent) | P1 | L | 12.11/12.12 (re-open), 16.08; new ADR; Phase B is a new phase item. | Done |
+| SRV-04 | Resource runtime status reconciliation, restart limits, and stop notifications | P1 | M. | 12.13 (extend); new item under Phase 12b. | Partial (deploy/start flows must signal expected stops to suppress false stop alerts) |
+| SRV-05 | Runtime (container) logs for applications, databases and services: API, UI, merging, safe export | P1 | M. | 12.01/12.04 (extend to runtime logs). | Done |
 | SRV-06 | Container terminal (PTY exec/attach), short-lived session tokens, and continuous re-authorization | P1 | M. | 12.07–12.10 (re-open the container PTY). | Done |
-| SRV-07 | Docker cleanup (scheduled, threshold-based, safe) and the server Images page | P1 | M. | New Phase 12b item; 16.04. | Open |
-| SRV-08 | Disk-usage and reachability alerts (event producers for server notifications) | P1 | S–M. | 13.x follow-up; 12.11. | Open |
-| TPL-01 | Service template format compatibility with the Coolify catalog | P1 | XL | 11.05–11.07 (reopen), 17.08, 17.12. | Done |
+| SRV-07 | Docker cleanup (scheduled, threshold-based, safe) and the server Images page | P1 | M. | New Phase 12b item; 16.04. | Done |
+| SRV-08 | Disk-usage and reachability alerts (event producers for server notifications) | P1 | S–M. | 13.x follow-up; 12.11. | Done |
+| TPL-01 | Service template format compatibility with the Coolify catalog | P1 | XL | 11.05–11.07 (reopen), 17.08, 17.12. | Open |
 | API-02 | MCP server (83 tools, 2 prompts, 2 resources) with per-team toggle, IP allowlist and `is_mcp` deployments | P2 | L | New: Phase 19 "MCP server" (after Phase 6b). | Open |
 | DATA-15 | Non-S3 backup storage types (SFTP, FTPS, WebDAV) | P2 | L | New: Phase 11b | Open |
 | DATA-16 | Additional engines: MongoDB, KeyDB, Dragonfly, ClickHouse (with scheduled backups) and SQLite | P2 | L | 11.01-11.04 (extend) | Open |
