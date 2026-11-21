@@ -100,6 +100,13 @@ public static class NotificationEventCatalog
     public const string ApplicationRestartLimitReached = "application.restart_limit_reached";
     public const string ScheduledTaskSucceeded = "scheduled_task.succeeded";
     public const string ScheduledTaskFailed = "scheduled_task.failed";
+    public const string ScheduledTaskRecovered = "scheduled_task.recovered";
+    public const string ScheduledJobMissed = "scheduled_job.missed";
+    public const string PlatformUpdateAvailable = "platform.update_available";
+    public const string PlatformUpdateStarted = "platform.update_started";
+    public const string PlatformUpdateFailed = "platform.update_failed";
+    public const string PlatformUpdateSucceeded = "platform.update_succeeded";
+    public const string ControlPlaneBackupFailed = "platform.control_plane_backup_failed";
     public const string ApiTokenFailing = "api_token.failing";
     public const string ChannelDisabled = "notification.channel_disabled";
     public const string Test = "notification.test";
@@ -163,6 +170,23 @@ public static class NotificationEventCatalog
         new(ScheduledTaskSucceeded, "scheduled_task_success", NotificationEventCategory.ScheduledTask, false, false,
             true, NotificationThrottlePolicy.None, Releases: ScheduledTaskFailed),
         new(ScheduledTaskFailed, "scheduled_task_failure", NotificationEventCategory.ScheduledTask, true, false, true,
+            NotificationThrottlePolicy.Every(Daily)),
+        // "Task works again" notice after a failure streak (upstream ScheduledJobRecovered, task_recovered).
+        new(ScheduledTaskRecovered, "scheduled_task_success", NotificationEventCategory.ScheduledTask, true, false,
+            true, NotificationThrottlePolicy.None, Releases: ScheduledTaskFailed),
+        // Occurrences of a schedule that were not run (control plane down, worker lost); NTF-08.
+        new(ScheduledJobMissed, "scheduled_task_failure", NotificationEventCategory.ScheduledTask, true, false, true,
+            NotificationThrottlePolicy.Every(Daily)),
+        // Platform (instance) lifecycle: sent to teams that include an instance administrator (OPS-01/OPS-02).
+        new(PlatformUpdateAvailable, null, NotificationEventCategory.System, true, false, true,
+            NotificationThrottlePolicy.Every(Daily)),
+        new(PlatformUpdateStarted, null, NotificationEventCategory.System, true, false, true,
+            NotificationThrottlePolicy.None),
+        new(PlatformUpdateFailed, null, NotificationEventCategory.System, true, false, true,
+            NotificationThrottlePolicy.None),
+        new(PlatformUpdateSucceeded, null, NotificationEventCategory.System, true, false, true,
+            NotificationThrottlePolicy.None),
+        new(ControlPlaneBackupFailed, null, NotificationEventCategory.System, true, false, true,
             NotificationThrottlePolicy.Every(Daily)),
         new(ApiTokenFailing, "api_token_failing", NotificationEventCategory.Security, true, true, true,
             NotificationThrottlePolicy.Every(Daily)),

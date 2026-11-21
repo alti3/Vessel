@@ -332,7 +332,15 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         ConfigureRouting(modelBuilder);
         ConfigureMonitoring(modelBuilder);
         ConfigurePersistentStorage(modelBuilder);
+        ConfigureScheduling(modelBuilder);
+        ConfigureOperations(modelBuilder);
     }
+
+    /// <summary>Scheduled job ledger and user scheduled tasks (NTF-07/NTF-08); see VesselDbContext.Scheduling.cs.</summary>
+    static partial void ConfigureScheduling(ModelBuilder modelBuilder);
+
+    /// <summary>Control-plane operations: backups, upgrade runs (OPS-01/OPS-02/DATA-13); see VesselDbContext.Operations.cs.</summary>
+    static partial void ConfigureOperations(ModelBuilder modelBuilder);
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
     {

@@ -6,6 +6,7 @@ using Vessel.Application.Backups;
 using Vessel.Application.Deployments;
 using Vessel.Application.Deployments.Queue;
 using Vessel.Application.Jobs;
+using Vessel.Application.Jobs.Scheduling;
 using Vessel.Application.ManagedServices;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
@@ -63,6 +64,7 @@ public static class WebApplicationExtensions
             DatabaseRecurringJobs.Register(scheduler);
             BackupRecurringJobs.Register(scheduler);
             NotificationRecurringJobs.Register(scheduler);
+            SchedulingRecurringJobs.Register(scheduler);
             // Deployments that were running when the previous control-plane process stopped have no worker any
             // more: fail them and restart the queues.
             DeploymentQueueRecurringJobs.EnqueueStartupRecovery(

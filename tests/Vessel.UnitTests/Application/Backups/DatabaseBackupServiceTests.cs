@@ -76,7 +76,8 @@ public sealed class DatabaseBackupServiceTests
             new CreateBackupScheduleRequest(_f.Database.Id.Value, "nightly", "0 2 * * *", DumpAll: false,
                 Databases: ["app"], DestinationIds: [destination.Id.Value]), Token);
         Assert.Equal(BackupStorageKind.ObjectStorage, schedule.StorageKind);
-        Assert.True(_f.Jobs.Recurring.ContainsKey(DatabaseBackupService.RecurringJobId(new BackupScheduleId(schedule.Id))));
+        // NTF-08: schedules are dispatched by the scheduled job ledger, never by a per-schedule Hangfire job.
+        Assert.False(_f.Jobs.Recurring.ContainsKey(DatabaseBackupService.RecurringJobId(new BackupScheduleId(schedule.Id))));
 
         IReadOnlyList<BackupExecutionSummary> results =
             await backups.RunScheduledBackupAsync(new BackupScheduleId(schedule.Id), Token);

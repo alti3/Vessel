@@ -80,6 +80,7 @@ public sealed class DatabaseBackupService(
             ToRetention(request.RemoteRetention, 0), destinations, request.DisableLocalCopy,
             request.TimeoutSeconds ?? BackupSchedule.DefaultTimeoutSeconds, request.MissingAlertDays, Now());
         if (!request.Enabled) schedule.Disable(Now());
+        schedule.ConfigureScheduling(request.TimeZone, request.MissedRunPolicy, Now());
         await dbContext.BackupScheduleRepository.AddAsync(schedule, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
         SyncRecurringJob(schedule);
@@ -121,6 +122,10 @@ public sealed class DatabaseBackupService(
             Now());
         if (request.Enabled == true) schedule.Enable(Now());
         if (request.Enabled == false) schedule.Disable(Now());
+        if (request.TimeZone is not null || request.MissedRunPolicy is not null || request.ClearTimeZone ||
+            request.ClearMissedRunPolicy)
+            schedule.ConfigureScheduling(request.ClearTimeZone ? null : request.TimeZone ?? schedule.TimeZone,
+                request.ClearMissedRunPolicy ? null : request.MissedRunPolicy ?? schedule.MissedRunPolicy, Now());
         await dbContext.SaveChangesAsync(cancellationToken);
         SyncRecurringJob(schedule);
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.BackupScheduleUpdated,
@@ -685,13 +690,20 @@ public sealed class DatabaseBackupService(
                                                              restore.Status == DatabaseRestoreStatus.Running));
     }
 
+    /// <summary>
+    ///     Schedules are dispatched by the scheduled job ledger (NTF-08: one durable run per occurrence, time zone
+    ///     aware, never retried into a duplicate execution). The per-schedule Hangfire recurring job of earlier
+    ///     versions is removed whenever a schedule is saved.
+    /// </summary>
     private void SyncRecurringJob(BackupSchedule schedule)
     {
-        if (schedule.Enabled)
-            recurringJobs.AddOrUpdate<RunBackupJob>(RecurringJobId(schedule.Id),
-                job => job.RunAsync(schedule.Id.Value, CancellationToken.None), schedule.CronExpression);
-        else
-            recurringJobs.RemoveIfExists(RecurringJobId(schedule.Id));
+        RemoveLegacyRecurringJob(schedule.Id);
+    }
+
+    /// <summary>Removes the pre-ledger Hangfire recurring job of a schedule (no-op when it does not exist).</summary>
+    public void RemoveLegacyRecurringJob(BackupScheduleId scheduleId)
+    {
+        recurringJobs.RemoveIfExists(RecurringJobId(scheduleId));
     }
 
     private BackupDestinationId[] ResolveDestinations(TeamId teamId, IReadOnlyList<Guid>? ids)
@@ -772,7 +784,8 @@ public sealed class DatabaseBackupService(
             new BackupRetentionSummary(schedule.RemoteRetentionCount, schedule.RemoteRetentionDays,
                 schedule.RemoteRetentionMaxBytes),
             schedule.DestinationIds.Select(id => id.Value).ToArray(), schedule.DisableLocalCopy,
-            schedule.MissingAlertDays, schedule.LastSucceededAt, schedule.FailingSince);
+            schedule.MissingAlertDays, schedule.LastSucceededAt, schedule.FailingSince, schedule.TimeZone,
+            schedule.MissedRunPolicy);
     }
 
     /// <summary>

@@ -34,6 +34,13 @@ public static class NotificationEventTypes
     public const string ApplicationRestartLimitReached = NotificationEventCatalog.ApplicationRestartLimitReached;
     public const string ScheduledTaskSucceeded = NotificationEventCatalog.ScheduledTaskSucceeded;
     public const string ScheduledTaskFailed = NotificationEventCatalog.ScheduledTaskFailed;
+    public const string ScheduledTaskRecovered = NotificationEventCatalog.ScheduledTaskRecovered;
+    public const string ScheduledJobMissed = NotificationEventCatalog.ScheduledJobMissed;
+    public const string PlatformUpdateAvailable = NotificationEventCatalog.PlatformUpdateAvailable;
+    public const string PlatformUpdateStarted = NotificationEventCatalog.PlatformUpdateStarted;
+    public const string PlatformUpdateFailed = NotificationEventCatalog.PlatformUpdateFailed;
+    public const string PlatformUpdateSucceeded = NotificationEventCatalog.PlatformUpdateSucceeded;
+    public const string ControlPlaneBackupFailed = NotificationEventCatalog.ControlPlaneBackupFailed;
     public const string ApiTokenFailing = NotificationEventCatalog.ApiTokenFailing;
 
     /// <summary>A target was disabled after repeated configuration failures (always delivered, never by email).</summary>

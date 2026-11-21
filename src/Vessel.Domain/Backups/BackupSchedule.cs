@@ -1,4 +1,5 @@
 using Vessel.Domain.Common;
+using Vessel.Domain.Scheduling;
 using Vessel.Domain.ValueObjects;
 
 namespace Vessel.Domain.Backups;
@@ -115,6 +116,12 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
 
     public DateTimeOffset? LastFailureNotifiedAt { get; private set; }
 
+    /// <summary>IANA time zone the cron expression is evaluated in; null uses the instance default (NTF-08).</summary>
+    public string? TimeZone { get; private set; }
+
+    /// <summary>Catch-up policy after control-plane downtime; null uses the instance default (NTF-08).</summary>
+    public MissedRunPolicy? MissedRunPolicy { get; private set; }
+
     public static BackupSchedule Create(
         TeamId teamId,
         DatabaseResourceId databaseResourceId,
@@ -213,6 +220,16 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
         Touch(now);
     }
 
+    /// <summary>Sets the time zone and the catch-up policy of the schedule (null values use the instance defaults).</summary>
+    public void ConfigureScheduling(string? timeZone, MissedRunPolicy? missedRunPolicy, DateTimeOffset now)
+    {
+        var zone = string.IsNullOrWhiteSpace(timeZone) ? null : timeZone.Trim();
+        if (zone is not null) CronSchedule.ResolveTimeZone(zone);
+        TimeZone = zone;
+        MissedRunPolicy = missedRunPolicy;
+        Touch(now);
+    }
+
     public void Enable(DateTimeOffset now)
     {
         if (Enabled) return;
@@ -290,8 +307,10 @@ public sealed class BackupSchedule : Entity<BackupScheduleId>
     private static string ValidateCron(string cronExpression)
     {
         var value = DomainValidation.Required(cronExpression, nameof(CronExpression), 120);
-        if (value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 5)
+        if (value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 5 && !value.StartsWith('@'))
             throw new DomainException("Backup schedule cron expression must contain at least five fields.");
+        if (!CronSchedule.TryParse(value, out _, out var error))
+            throw new DomainException($"Backup schedule cron expression is invalid: {error}");
         return value;
     }
 

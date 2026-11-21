@@ -1,3 +1,4 @@
+using Vessel.Domain.Scheduling;
 using Vessel.Domain.Backups;
 
 namespace Vessel.Application.Backups;
@@ -27,7 +28,9 @@ public sealed record CreateBackupScheduleRequest(
     IReadOnlyList<Guid>? DestinationIds = null,
     bool DisableLocalCopy = false,
     int MissingAlertDays = 0,
-    bool Enabled = true);
+    bool Enabled = true,
+    string? TimeZone = null,
+    MissedRunPolicy? MissedRunPolicy = null);
 
 /// <summary>Partial update of a schedule; <c>null</c> fields keep their current value.</summary>
 public sealed record UpdateBackupScheduleRequest(
@@ -42,7 +45,11 @@ public sealed record UpdateBackupScheduleRequest(
     BackupRetentionRequest? RemoteRetention = null,
     IReadOnlyList<Guid>? DestinationIds = null,
     bool? DisableLocalCopy = null,
-    int? MissingAlertDays = null);
+    int? MissingAlertDays = null,
+    string? TimeZone = null,
+    MissedRunPolicy? MissedRunPolicy = null,
+    bool ClearTimeZone = false,
+    bool ClearMissedRunPolicy = false);
 
 public sealed record BackupRetentionSummary(int Count, int Days, long MaxBytes);
 
@@ -65,7 +72,9 @@ public sealed record BackupScheduleSummary(
     bool DisableLocalCopy,
     int MissingAlertDays,
     DateTimeOffset? LastSucceededAt,
-    DateTimeOffset? FailingSince);
+    DateTimeOffset? FailingSince,
+    string? TimeZone = null,
+    MissedRunPolicy? MissedRunPolicy = null);
 
 public sealed record BackupReplicaSummary(
     Guid? DestinationId,

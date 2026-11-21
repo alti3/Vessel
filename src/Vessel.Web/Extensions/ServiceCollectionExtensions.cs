@@ -252,6 +252,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationCatalogQuery, EmptyNotificationCatalogQuery>();
         services.AddScoped<ISettingsCatalogQuery, EmptySettingsCatalogQuery>();
         services.TryAddScoped<IServerHealthQuery, EmptyServerHealthQuery>();
+        services.AddVesselSchedulingServices();
+        services.AddVesselOperationsServices();
 
         return services;
     }

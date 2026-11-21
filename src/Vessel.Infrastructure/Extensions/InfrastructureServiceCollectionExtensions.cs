@@ -46,6 +46,7 @@ using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.ManagedServices;
 using Vessel.Infrastructure.ManagedServices.Templates;
 using Vessel.Infrastructure.Notifications;
+using Vessel.Infrastructure.Operations;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
 using Vessel.Infrastructure.Proxy;
@@ -187,6 +188,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));
         services.AddSingleton<IBackupStorageProvider, BackupStorageProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
+        services.AddVesselSchedulingInfrastructure(configuration);
+        services.AddVesselOperationsInfrastructure(configuration);
 
         RedisOptions redisOptions = configuration
             .GetSection(RedisOptions.SectionName)
@@ -220,6 +223,8 @@ public static class InfrastructureServiceCollectionExtensions
             .Get<HangfireStorageOptions>() ?? new HangfireStorageOptions();
         if (hangfireOptions.Enabled && !string.IsNullOrWhiteSpace(hangfireOptions.ConnectionString))
         {
+            // NTF-08: per-job retry policy (scheduled occurrences and tasks are never retried into duplicates).
+            VesselRetryPolicyFilter.Install(GlobalJobFilters.Filters);
             services.AddHangfire(config => config
                 .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
                 .UseSimpleAssemblyNameTypeSerializer()

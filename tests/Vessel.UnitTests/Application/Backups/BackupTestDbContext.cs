@@ -19,6 +19,9 @@ using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
+using Vessel.Domain.Operations;
+using Vessel.Domain.ScheduledTasks;
+using Vessel.Domain.Scheduling;
 using Vessel.Domain.Projects;
 using Vessel.Domain.Proxy;
 using Vessel.Domain.Registries;
@@ -75,6 +78,29 @@ internal sealed class BackupTestDbContext : IVesselDbContext
     public IRepository<VolumeBackupExecution, VolumeBackupExecutionId> VolumeBackupExecutionRepository => new ListRepository<VolumeBackupExecution, VolumeBackupExecutionId>(VolumeExecutionItems);
     public IRepository<VolumeBackupRestore, VolumeBackupRestoreId> VolumeBackupRestoreRepository => new ListRepository<VolumeBackupRestore, VolumeBackupRestoreId>(VolumeRestoreItems);
     public IRepository<DatabaseImportUpload, DatabaseImportUploadId> DatabaseImportUploadRepository => new ListRepository<DatabaseImportUpload, DatabaseImportUploadId>(ImportUploadItems);
+    public List<SettingEntry> SettingItems { get; } = [];
+    public List<ServiceResource> ServiceItems { get; } = [];
+    public List<EnvironmentVariable> VariableItems { get; } = [];
+    public List<ScheduledJobRun> RunItems { get; } = [];
+    public List<ScheduledTask> TaskItems { get; } = [];
+    public List<ScheduledTaskExecution> TaskExecutionItems { get; } = [];
+    public List<ControlPlaneBackup> ControlPlaneBackupItems { get; } = [];
+    public List<UpgradeRun> UpgradeRunItems { get; } = [];
+
+    /// <summary>Thrown by the next SaveChangesAsync (simulates a lost optimistic-concurrency race).</summary>
+    public Exception? FailNextSave { get; set; }
+
+    public IQueryable<ScheduledJobRun> ScheduledJobRuns => RunItems.AsQueryable();
+    public IQueryable<ScheduledTask> ScheduledTasks => TaskItems.AsQueryable();
+    public IQueryable<ScheduledTaskExecution> ScheduledTaskExecutions => TaskExecutionItems.AsQueryable();
+    public IQueryable<ControlPlaneBackup> ControlPlaneBackups => ControlPlaneBackupItems.AsQueryable();
+    public IQueryable<UpgradeRun> UpgradeRuns => UpgradeRunItems.AsQueryable();
+    public IRepository<ScheduledJobRun, ScheduledJobRunId> ScheduledJobRunRepository => new ListRepository<ScheduledJobRun, ScheduledJobRunId>(RunItems);
+    public IRepository<ScheduledTask, ScheduledTaskId> ScheduledTaskRepository => new ListRepository<ScheduledTask, ScheduledTaskId>(TaskItems);
+    public IRepository<ScheduledTaskExecution, ScheduledTaskExecutionId> ScheduledTaskExecutionRepository => new ListRepository<ScheduledTaskExecution, ScheduledTaskExecutionId>(TaskExecutionItems);
+    public IRepository<ControlPlaneBackup, ControlPlaneBackupId> ControlPlaneBackupRepository => new ListRepository<ControlPlaneBackup, ControlPlaneBackupId>(ControlPlaneBackupItems);
+    public IRepository<UpgradeRun, UpgradeRunId> UpgradeRunRepository => new ListRepository<UpgradeRun, UpgradeRunId>(UpgradeRunItems);
+    public IRepository<SettingEntry, SettingId> SettingRepository => new ListRepository<SettingEntry, SettingId>(SettingItems);
 
     public IQueryable<User> Users => UserItems.AsQueryable();
     public IQueryable<Team> Teams => TeamItems.AsQueryable();
@@ -86,7 +112,7 @@ internal sealed class BackupTestDbContext : IVesselDbContext
     public IQueryable<AppEntity> Applications => ApplicationItems.AsQueryable();
     public IQueryable<ApplicationDomain> ApplicationDomains => ApplicationItems.SelectMany(application => application.Domains).AsQueryable();
     public IQueryable<DatabaseResource> DatabaseResources => DatabaseItems.AsQueryable();
-    public IQueryable<ServiceResource> ServiceResources => Empty<ServiceResource>();
+    public IQueryable<ServiceResource> ServiceResources => ServiceItems.AsQueryable();
     public IQueryable<BackupSchedule> BackupSchedules => ScheduleItems.AsQueryable();
     public IQueryable<BackupExecution> BackupExecutions => ExecutionItems.AsQueryable();
     public IQueryable<DatabaseRestore> DatabaseRestores => RestoreItems.AsQueryable();
@@ -94,7 +120,7 @@ internal sealed class BackupTestDbContext : IVesselDbContext
     public IQueryable<Deployment> Deployments => DeploymentItems.AsQueryable();
     public IQueryable<SecretReference> SecretReferences => SecretReferenceItems.AsQueryable();
     public IQueryable<SecretValue> SecretValues => SecretValueItems.AsQueryable();
-    public IQueryable<EnvironmentVariable> EnvironmentVariables => Empty<EnvironmentVariable>();
+    public IQueryable<EnvironmentVariable> EnvironmentVariables => VariableItems.AsQueryable();
     public IQueryable<RegistryCredential> RegistryCredentials => Empty<RegistryCredential>();
     public IQueryable<ServerStatusSnapshot> ServerStatusSnapshots => ServerStatusSnapshotItems.AsQueryable();
     public IQueryable<NotificationTarget> NotificationTargets => Empty<NotificationTarget>();
@@ -102,7 +128,7 @@ internal sealed class BackupTestDbContext : IVesselDbContext
     public IQueryable<InAppNotification> InAppNotifications => Empty<InAppNotification>();
     public IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts => Empty<NotificationDeliveryAttempt>();
     public IQueryable<AuditLog> AuditLogs => Empty<AuditLog>();
-    public IQueryable<SettingEntry> Settings => Empty<SettingEntry>();
+    public IQueryable<SettingEntry> Settings => SettingItems.AsQueryable();
     public IQueryable<PersonalAccessToken> PersonalAccessTokens => Empty<PersonalAccessToken>();
     public IQueryable<WebhookEvent> WebhookEvents => Empty<WebhookEvent>();
     public IQueryable<ApplicationWebhookConfiguration> ApplicationWebhookConfigurations => Empty<ApplicationWebhookConfiguration>();
@@ -142,6 +168,12 @@ internal sealed class BackupTestDbContext : IVesselDbContext
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
+        if (FailNextSave is { } failure)
+        {
+            FailNextSave = null;
+            throw failure;
+        }
+
         SaveCount++;
         return Task.FromResult(1);
     }

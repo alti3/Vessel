@@ -28,7 +28,7 @@ using Environment = Vessel.Domain.Projects.Environment;
 
 namespace Vessel.Application.Persistence;
 
-public interface IVesselDbContext : IUnitOfWork
+public partial interface IVesselDbContext : IUnitOfWork
 {
     /// <summary>
     ///     Re-reads a tracked entity's current database values, discarding stale tracked state. Long-running work
