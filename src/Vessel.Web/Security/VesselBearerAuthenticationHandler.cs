@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Vessel.Application.Auth;
+using Vessel.Application.Authorization;
 
 namespace Vessel.Web.Security;
 
@@ -41,6 +42,10 @@ internal sealed class VesselBearerAuthenticationHandler : AuthenticationHandler<
         };
         claims.AddRange(result.Scopes.Select(scope => new Claim(VesselClaimTypes.Scope, scope)));
         claims.AddRange(result.Permissions.Select(permission => new Claim(VesselClaimTypes.Permission, permission)));
+
+        // The token layer for Application authorization (abilities + optional scope limits), see IAM-05.
+        Context.Items[HttpApiTokenAccessContext.ItemKey] = new ApiTokenAccess(result.TokenId, result.UserId,
+            result.TeamId, result.Scopes, result.Access);
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name));

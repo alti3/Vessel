@@ -48,7 +48,7 @@ public sealed class ApiRouteConventionTests
             VesselPermissions.ApplicationsWrite);
         AssertActionPolicy<ApplicationDomainsController>(
             nameof(ApplicationDomainsController.Remove),
-            VesselPermissions.ApplicationsWrite);
+            VesselPermissions.ApplicationsDelete);
         AssertActionPolicy<ApplicationDomainsController>(
             nameof(ApplicationDomainsController.QueueCertificate),
             VesselPermissions.ApplicationsWrite);

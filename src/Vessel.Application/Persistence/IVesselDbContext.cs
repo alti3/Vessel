@@ -193,4 +193,7 @@ public interface IVesselDbContext : IUnitOfWork
     IRepository<ServerProxySettings, ServerId> ServerProxySettingsRepository { get; }
 
     IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; }
+
+    IRepository<SettingEntry, SettingId> SettingRepository =>
+        throw new InvalidOperationException("Setting persistence is not available.");
 }

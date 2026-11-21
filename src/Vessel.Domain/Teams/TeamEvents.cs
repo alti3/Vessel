@@ -15,3 +15,8 @@ public sealed record TeamMemberRoleChangedEvent(
     UserId UserId,
     TeamRole Role,
     DateTimeOffset OccurredAt) : DomainEvent(OccurredAt);
+
+public sealed record TeamMemberAccessChangedEvent(
+    TeamId TeamId,
+    UserId UserId,
+    DateTimeOffset OccurredAt) : DomainEvent(OccurredAt);

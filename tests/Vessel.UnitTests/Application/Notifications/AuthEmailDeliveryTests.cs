@@ -110,6 +110,10 @@ public sealed class AuthEmailDeliveryTests
         kit.ConfigureInstanceSmtp();
         var authEmails = CreateAuthEmails(kit);
         var auth = CreateAuthentication(kit, authEmails: authEmails);
+        // IAM-06: self-registration is closed once users exist; a pending invitation keeps it open for this email.
+        kit.Db.Invitations.Add(Vessel.Domain.Teams.TeamInvitation.Create(kit.Db.Team.Id,
+            new Vessel.Domain.ValueObjects.EmailAddress("new@example.com"), Vessel.Domain.Teams.TeamRole.Member,
+            "invitation-hash", kit.Time.GetUtcNow().AddDays(1), kit.Time.GetUtcNow()));
 
         var registered = await auth.RegisterAsync("New", "new@example.com", "N3w-Passw0rd-Long!", null,
             TestContext.Current.CancellationToken);

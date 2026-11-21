@@ -5,7 +5,8 @@ namespace Vessel.Application.Webhooks;
 public sealed record WebhookReceiptRequest(
     WebhookProvider Provider,
     IReadOnlyDictionary<string, string> Headers,
-    string PayloadJson);
+    string PayloadJson,
+    string? ClientAddress = null);
 
 public sealed record WebhookReceiptResult(
     Guid EventId,
@@ -13,7 +14,12 @@ public sealed record WebhookReceiptResult(
     string EventType,
     WebhookEventStatus Status,
     WebhookSignatureStatus SignatureStatus,
-    string Message);
+    string Message,
+    int? RetryAfterSeconds = null)
+{
+    /// <summary>True when the delivery was refused by the failed-authentication throttle (answer 429).</summary>
+    public bool Throttled => RetryAfterSeconds.HasValue;
+}
 
 public sealed record WebhookProcessingResult(
     Guid EventId,

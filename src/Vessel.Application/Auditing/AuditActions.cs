@@ -12,6 +12,16 @@ public static class AuditActions
     public const string TwoFactorDisabled = "auth.two_factor_disabled";
     public const string TokenCreated = "auth.token_created";
     public const string TokenRevoked = "auth.token_revoked";
+    public const string TokenUpdated = "auth.token_updated";
+    public const string TokenPaused = "auth.token_paused";
+    public const string TokenResumed = "auth.token_resumed";
+    public const string TokenRolled = "auth.token_rolled";
+    public const string RegistrationRejected = "auth.registration_rejected";
+    public const string TeamMemberAccessChanged = "team.member_access_changed";
+    public const string InstanceSettingChanged = "instance.setting_changed";
+    public const string InstanceAdminGranted = "instance.admin_granted";
+    public const string InstanceAdminRevoked = "instance.admin_revoked";
+    public const string ApiFailedRequestsThrottled = "api.failed_requests_throttled";
     public const string TeamInvitationCreated = "team.invitation_created";
     public const string TeamInvitationAccepted = "team.invitation_accepted";
     public const string TeamMemberRemoved = "team.member_removed";

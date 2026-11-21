@@ -7,7 +7,10 @@ namespace Vessel.Web.Security;
 /// <summary>
 ///     Evaluates permission policies.
 ///     <list type="bullet">
-///         <item>Interactive sessions: the user's current role in the active team must grant the permission.</item>
+///         <item>
+///             Interactive sessions: the user's current role and access grants in the active team must grant the
+///             permission on at least one scope.
+///         </item>
 ///         <item>
 ///             API tokens: the token's (role-clamped) permission claims must contain the permission <b>and</b> the
 ///             owner's current role in the token's team must grant it. A token never falls back to the owner's role.
@@ -52,7 +55,10 @@ internal sealed class PermissionAuthorizationHandler : AuthorizationHandler<Perm
             return Task.CompletedTask;
         }
 
-        if (_authorizationService.HasPermission(userId, teamId, requirement.Permission))
+        // Endpoint gate: the permission on at least one scope in the active team (role, grants and the request
+        // token layer all apply). Application services then authorize the concrete target with Demand(...) and filter
+        // list results by visibility, so scoped grants never widen access beyond their targets.
+        if (_authorizationService.HasPermissionSomewhere(userId, teamId, requirement.Permission))
             context.Succeed(requirement);
 
         return Task.CompletedTask;

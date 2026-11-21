@@ -22,6 +22,23 @@ public sealed class ApiExceptionHandlingMiddleware(
         {
             await next(context);
         }
+        catch (UnauthorizedAccessException) when (!context.Response.HasStarted)
+        {
+            // Application authorization failures (Demand/Require) are access denials, not server errors. The message
+            // is deliberately generic so it never reveals whether a resource exists in another team.
+            context.Response.Clear();
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+            await JsonSerializer.SerializeAsync(
+                context.Response.Body,
+                new ApiErrorResponse(new ApiError("forbidden", "You do not have access to this resource.",
+                    new Dictionary<string, object?>
+                    {
+                        ["correlationId"] = CorrelationIdMiddleware.GetCorrelationId(context)
+                    })),
+                JsonSerializerOptions,
+                context.RequestAborted);
+        }
         catch (Exception exception) when (!context.Response.HasStarted)
         {
             var correlationId = CorrelationIdMiddleware.GetCorrelationId(context);

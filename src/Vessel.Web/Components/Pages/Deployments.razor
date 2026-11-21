@@ -1,6 +1,6 @@
 @page "/deployments"
 @attribute [Authorize]
-@inject IDeploymentCatalogQuery DeploymentQuery
+@inject Vessel.Application.Authorization.AccessScopedCatalog Catalog
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Deployments | Vessel</PageTitle>
@@ -50,7 +50,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        Items = DeploymentQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Items = Catalog.ListDeployments(user.GetUserId(), user.GetTeamId());
     }
 
     private static string DeploymentTone(DeploymentStatus status)

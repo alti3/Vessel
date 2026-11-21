@@ -1,3 +1,4 @@
+using Vessel.Domain.Access;
 using Vessel.Domain.Common;
 using Vessel.Domain.ValueObjects;
 
@@ -16,12 +17,14 @@ public sealed class TeamInvitation : Entity<TeamInvitationId>
         TeamRole role,
         string tokenHash,
         DateTimeOffset expiresAt,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        IReadOnlyList<AccessGrant>? accessGrants)
         : base(id, createdAt)
     {
         TeamId = teamId;
         Email = email;
         Role = role;
+        AccessGrants = role == TeamRole.Member ? accessGrants : null;
         TokenHash = tokenHash;
         ExpiresAt = expiresAt;
     }
@@ -33,6 +36,9 @@ public sealed class TeamInvitation : Entity<TeamInvitationId>
     public TeamRole Role { get; private set; }
 
     public string TokenHash { get; private set; } = string.Empty;
+
+    /// <summary>Grants the invited member receives on acceptance (members only; <c>null</c> = team-wide read).</summary>
+    public IReadOnlyList<AccessGrant>? AccessGrants { get; private set; }
 
     public DateTimeOffset ExpiresAt { get; }
 
@@ -46,7 +52,8 @@ public sealed class TeamInvitation : Entity<TeamInvitationId>
         TeamRole role,
         string tokenHash,
         DateTimeOffset expiresAt,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        IReadOnlyList<AccessGrant>? accessGrants = null)
     {
         return new TeamInvitation(
             TeamInvitationId.New(),
@@ -55,7 +62,8 @@ public sealed class TeamInvitation : Entity<TeamInvitationId>
             role,
             DomainValidation.Required(tokenHash, nameof(TokenHash), 128),
             expiresAt,
-            now);
+            now,
+            AccessGrant.Normalize(accessGrants));
     }
 
     public bool IsValid(DateTimeOffset now)

@@ -11,7 +11,7 @@ Supported server-side flows:
 - lockout after repeated failed login attempts
 - password reset token storage
 - TOTP two-factor setup, confirmation, disablement, and recovery codes
-- personal/API token creation, listing, revocation, scopes, expiration, and bearer authentication
+- personal/API token creation, listing (active team), editing, pausing, rolling, revocation, abilities, scope limits, expiration, and bearer authentication
 - team invitations, acceptance, member removal, role changes, and team switching
 
 OIDC, GitHub, and GitLab settings are represented in configuration without exposing client secrets from APIs or logs. External login callbacks should link to `User.ExternalSubject`.
@@ -35,59 +35,76 @@ Two-factor rules:
 
 ## Token Rules
 
-Tokens are returned once as `<token-id>|<secret>`. Only the SHA-256 hash of the secret is stored. Tokens are scoped to the active team and can expire or be revoked.
+Tokens are returned once as `<token-id>|<secret>`. Only the SHA-256 hash of the secret is stored. Tokens belong to one team (the active team when created), are listed per active team (`GET /api/tokens`), and can expire, be paused, be rolled or be revoked.
 
-Issuance (`VesselTokenService.CreateAsync`):
+Abilities (IAM-04, Coolify v4.6 parity) are access levels with an implication hierarchy:
 
-- The issuer must be a member of the team. Every requested scope must be covered by the issuer's role in that team; `root` and `write:sensitive` require Owner or Admin.
-- A token-authenticated caller must hold `root`, and may only mint scopes its own token covers. A token can therefore never mint a token with more abilities than itself or its owner.
-- Expiration must be in the future.
+| Ability | Implies |
+| --- | --- |
+| `read` | read (secrets stay hidden) |
+| `read:sensitive` | read + secrets/env values |
+| `deploy` | read + deploy, cancel, start/stop/restart (`resources.lifecycle`) |
+| `write` | read, read:sensitive, deploy + change settings and create resources |
+| `delete` | read + delete (every destructive `DELETE` endpoint needs `*.delete`) |
+| `root` | everything |
+| `write:sensitive` | owner/admin-only extra ability (secret writes, future instance e-mail settings) |
+
+Unknown abilities are rejected. **Migration data step:** every stored token that holds `write` also receives `delete` (`TokenScopeMapper.MigrateLegacyScopes`, upstream `2026_10_25_100000`); all other abilities keep their meaning.
+
+Issuance and edits (`VesselTokenService.CreateAsync` / `UpdateAsync`):
+
+- The issuer must be a member of the team; `root` and `write:sensitive` require Owner or Admin.
+- The token's abilities applied to its scope limits (or the whole team) must be held by the issuer's current role **and grants** (a token never exceeds its owner).
+- Optional scope limits (`access`: team/project/environment/resource grants) must point inside the team.
+- A token-authenticated caller must hold `root`, have no scope limits, and may only mint abilities its own token covers.
+- Expiration must be in the future. `PATCH /api/tokens/{id}` edits name, abilities, scope limits and expiry (secret unchanged); `POST /api/tokens/{id}/pause|resume|roll` pause, resume or issue a new secret with the same metadata. These lifecycle endpoints require an interactive session.
 
 Validation (every bearer request):
 
-- The token must exist, match its hash, and be neither revoked nor expired.
-- The owner must still be a member of the token's team; removing a member also revokes their tokens for that team.
-- Effective permissions are the token's scope permissions intersected with the owner's **current** role, and the permission policy additionally re-checks the role. A bearer token never falls back to its owner's role for permissions its scopes do not grant.
-
-Supported token scopes:
-
-- `root`
-- `read`
-- `read:sensitive`
-- `write`
-- `write:sensitive`
-- `deploy`
+- The token must exist, match its hash, and be neither revoked, expired nor paused.
+- The owner must still be a member of the token's team; removing **or demoting** a member revokes their tokens for that team (promotions keep them).
+- Effective permissions are the token's abilities intersected with what the owner holds **today** (role and grants). Application authorization also applies the token as a second layer (`IApiTokenAccessContext`), so scope limits are enforced on every `Demand` call, not only at endpoint attributes. A bearer token never falls back to its owner's role.
 
 ## Permission Catalog
 
-Vessel uses explicit policy names:
+`VesselPermissions.Rules` maps each policy to an access level and a reach:
 
-- `projects.read`
-- `projects.write`
-- `servers.read`
-- `servers.write`
-- `applications.read`
-- `applications.write`
-- `deployments.start`
-- `deployments.cancel`
-- `deployments.readLogs`
-- `terminals.open`
-- `secrets.read`
-- `secrets.write`
-- `settings.manage`
-- `teams.manage`
-- `notifications.read`
-- `notifications.write`
+| Permission | Level | Reach |
+| --- | --- | --- |
+| `projects.read`, `servers.read`, `applications.read`, `deployments.readLogs` | read | located |
+| `projects.write`, `applications.write`, `secrets.write` | write | located |
+| `projects.delete`, `applications.delete` | delete | located |
+| `deployments.start`, `deployments.cancel`, `resources.lifecycle` | deploy | located |
+| `secrets.read` | read:sensitive | located |
+| `servers.write`, `notifications.write` | write | team-wide |
+| `notifications.read` | read | team-wide |
+| `settings.manage` | write | team admin (Owner/Admin role) |
+| `teams.manage`, `terminals.open` | root | team admin (Owner/Admin role) |
+| `instance.manage` | root | instance administrator |
 
-Owners and admins receive all permissions. Members receive read-oriented resource permissions plus deployment start/cancel, deployment log access, and `notifications.read`. Only owners and admins can change notification targets or send test notifications (`notifications.write`). Secret read/write requires explicit permission and must not be inferred from route IDs alone.
+"Located" permissions can be granted on a team, project, environment or resource; "team-wide" ones need a team-wide grant; "team admin" ones need the Owner or Admin role regardless of grants.
+
+## Roles and Fine-Grained Access (IAM-03, IAM-05)
+
+- **Owner / Admin:** unrestricted in their team.
+- **Member (breaking change, Coolify v4.2 parity):** read-only by default (team-wide `read`). Members can no longer deploy or cancel unless a grant gives them `deploy`.
+- **Role hierarchy:** only owners and admins manage members; nobody can invite, promote to, demote from, or remove a role above their own. Admins therefore cannot create owners, promote themselves or others to owner, or demote/remove owners. Every role change resets the member's grants.
+- **Grants** (`team_memberships.access_grants`, `team_invitations.access_grants`, `personal_access_tokens.access_grants`, jsonb): `{scope: team|project|environment|resource, target, levels[]}`. A grant on a parent applies to its children and levels add up; `null` means the default. Presets: `viewer` (team read), `developer` (write + deploy on one project), `operator` (team write, deploy, delete), `full` (team root). Edit with `PUT /api/teams/{team}/members/{user}/access`; invitations accept the same `access` payload.
+- **Evaluation:** `VesselAuthorizationService` delegates to `IAccessResolver`: the member layer and, for bearer requests, the token layer must both allow the level at the target's location. Creating projects/servers and other team-level operations need team-wide access. A scoped member may use a server only when it runs a resource they can reach.
+- **Lists:** project, environment, application, database, server and deployment lists (`ResourceManagementService`, `AccessScopedCatalog`) show only what the actor can reach (parents of granted children are visible, siblings are not).
+- **Sensitive responses:** environment-variable values (plain and secret) are masked unless the actor and the token hold `read:sensitive` (`CanReadSensitive`).
+- Deviation from upstream: team-level `/api/v1/*` routes are not blocked wholesale for scoped tokens; each endpoint's reach (team-wide permissions, filtered lists) enforces the same outcome.
 
 ## Resource-Scoped Authorization
 
-Every check on an existing resource goes through `VesselAuthorizationService.Demand`/`IsAuthorized(user, activeTeam, ResourceRef, permission)`. The service resolves the team that **owns** the resource (project, environment, server, application, deployment or database), requires it to be the caller's active team (the session's selected team or the token's team), and evaluates the permission with the caller's role in that team. Membership in any other team, including the caller's personal team, never authorizes access. Missing resources and resources of another team fail identically ("... is outside the active team."). Realtime group joins and environment-variable targets follow the same rule. The former team-agnostic `CanAccessProject/Server/Application/Deployment` helpers were removed; a unit test guards against reintroducing them.
+Every check on an existing resource goes through `VesselAuthorizationService.Demand`/`IsAuthorized(user, activeTeam, ResourceRef, permission)`. The service resolves the team that **owns** the resource (project, environment, server, application, deployment or database), requires it to be the caller's active team (the session's selected team or the token's team), and evaluates the caller's access in that team. Membership in any other team, including the caller's personal team, never authorizes access, and a token never works outside its own team. Missing resources and resources of another team fail identically ("... is outside the active team."). Application authorization failures are answered with `403`. Realtime group joins and environment-variable targets follow the same rule. The former team-agnostic `CanAccessProject/Server/Application/Deployment` helpers were removed; a unit test guards against reintroducing them.
 
-## Instance Administrators
+## Instance Administrators and Registration (IAM-06)
 
-`users.IsInstanceAdmin` is an instance-level privilege independent of team roles (the Coolify "root"/instance admin). The first registered user becomes the instance administrator; later self-registered users do not.
+`users.IsInstanceAdmin` is an instance-level privilege independent of team roles (the Coolify "root"/instance admin). The first registered user becomes the instance administrator.
+
+- **Registration policy:** the instance setting `registration_enabled` (system-scoped `settings` row) defaults to **closed once the first user exists**. While closed, only the bootstrap account and emails with a pending, unexpired team invitation can self-register; others get `403`.
+- **Instance endpoints** (interactive session of an instance administrator, `instance.manage`): `GET|PUT /api/v1/instance/settings`, `GET /api/v1/instance/admins`, `PUT|DELETE /api/v1/instance/admins/{userId}`. The last instance administrator cannot be demoted. Team owners are not instance administrators.
 
 Instance administrators are required for host-local execution, which is host-root-equivalent:
 
@@ -98,6 +115,13 @@ Instance administrators are required for host-local execution, which is host-roo
 - secret key-ring re-encryption.
 
 Unattended work (webhook deployments, scheduled health polling) on a host-local server runs only when an Owner/Admin of the owning team is an instance administrator; otherwise deployments fail and polling records `Unknown` without touching the host runtime.
+
+## Abuse Controls (SEC-13, SEC-07)
+
+- **Global API budget:** every `/api` route shares the `Vessel:RateLimits:Api` fixed window per client address; named policies (`auth`, `terminal`, `webhooks`) still apply on top. All auth endpoints carry the `auth` policy.
+- **Failed-request throttle:** 401/403 (and 404 without a valid token) count per token, or per client address without a valid token. After `Vessel:RateLimits:ApiFailedRequests:PermitLimit` (default 30, `0` disables) failures per `WindowSeconds` (60) the client gets `429` with `Retry-After` (`api_failed_request_rate_limit`) for 1 minute, then 5 and 15 minutes on repeat strikes within an hour. The token's team receives at most one `security.api_token_failing` notification per day.
+- **Webhooks:** new or changed manual webhook secrets need 16-512 characters (existing rows keep working). Distinct failed signature/token attempts are counted per provider + client address + repository + branch (repeats count once; markers are keyed hashes); after 30 per minute further failures get `429`, but correctly signed deliveries are always processed.
+- **Real client address:** `Vessel:ForwardedHeaders` (`Enabled`, `KnownProxies`, `KnownNetworks` in CIDR, `ForwardLimit`). Forwarded headers are honoured only from the listed proxies; the framework's loopback defaults are cleared, so nothing is trusted unless configured. Counters live in Redis when enabled, otherwise in-process.
 
 ## Audit
 

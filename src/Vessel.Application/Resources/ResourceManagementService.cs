@@ -32,23 +32,26 @@ public sealed class ResourceManagementService(
 {
     public IReadOnlyList<ProjectSummary> ListProjects(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ProjectsRead);
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ProjectsRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
 
         return dbContext.Projects
             .Where(project => project.TeamId == teamId)
-            .OrderBy(project => project.Name)
             .Select(project => new ProjectSummary(
                 project.Id.Value,
                 project.Name.Value,
                 project.Description == null ? null : project.Description.Value.Value,
                 project.IsArchived,
                 dbContext.Environments.Count(environment => environment.ProjectId == project.Id)))
+            .AsEnumerable()
+            .Where(project => visibility.CanSeeProject(project.Id))
+            .OrderBy(project => project.Name, StringComparer.Ordinal)
             .ToArray();
     }
 
     public ProjectDetails GetProject(UserId actorUserId, TeamId teamId, ProjectId projectId)
     {
-        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsRead);
+        RequireProjectOpen(actorUserId, teamId, projectId);
         Project project = dbContext.Projects.Single(project => project.Id == projectId);
 
         return new ProjectDetails(
@@ -65,6 +68,7 @@ public sealed class ResourceManagementService(
         CreateProjectRequest request,
         CancellationToken cancellationToken = default)
     {
+        // Creating a project needs team-wide write; project-scoped grants never suffice (IAM-05).
         Require(actorUserId, teamId, VesselPermissions.ProjectsWrite);
         DateTimeOffset now = Now();
 
@@ -102,7 +106,7 @@ public sealed class ResourceManagementService(
         ProjectId projectId,
         CancellationToken cancellationToken = default)
     {
-        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsWrite);
+        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsDelete);
         Project project = await GetRequiredAsync(dbContext.ProjectRepository, projectId, cancellationToken);
         project.Archive(Now());
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -112,7 +116,8 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<EnvironmentSummary> ListEnvironments(UserId actorUserId, TeamId teamId, ProjectId projectId)
     {
-        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsRead);
+        RequireProjectOpen(actorUserId, teamId, projectId);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
 
         return dbContext.Environments
             .Where(environment => environment.ProjectId == projectId)
@@ -124,6 +129,8 @@ public sealed class ResourceManagementService(
                 environment.Name.Value,
                 environment.Kind,
                 environment.Description == null ? null : environment.Description.Value.Value))
+            .AsEnumerable()
+            .Where(environment => visibility.CanSeeEnvironment(environment.Id))
             .ToArray();
     }
 
@@ -171,7 +178,7 @@ public sealed class ResourceManagementService(
     {
         EnvironmentEntity environment =
             await GetRequiredAsync(dbContext.EnvironmentRepository, environmentId, cancellationToken);
-        RequireProject(actorUserId, teamId, environment.ProjectId, VesselPermissions.ProjectsWrite);
+        RequireProject(actorUserId, teamId, environment.ProjectId, VesselPermissions.ProjectsDelete);
         if (environment.Kind == EnvironmentKind.Production)
             throw new InvalidOperationException("Production environments cannot be deleted.");
         if (dbContext.Applications.Any(application => application.EnvironmentId == environmentId)
@@ -186,11 +193,15 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<ServerSummary> ListServers(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ServersRead);
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ServersRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
 
+        // Scoped actors only see the servers that run a resource they can reach (Coolify v4.7 parity).
         return dbContext.Servers
             .Where(server => server.TeamId == teamId)
-            .OrderBy(server => server.Name)
+            .AsEnumerable()
+            .Where(server => visibility.CanSeeServer(server.Id.Value))
+            .OrderBy(server => server.Name.Value, StringComparer.Ordinal)
             .Select(ToSummary)
             .ToArray();
     }
@@ -254,8 +265,14 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<ApplicationSummary> ListApplications(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ApplicationsRead);
-        return ApplicationsForTeam(teamId).OrderBy(application => application.Name).Select(ToSummary).ToArray();
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ApplicationsRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
+        return ApplicationsForTeam(teamId)
+            .AsEnumerable()
+            .Where(application => visibility.CanSeeResource(application.EnvironmentId.Value, application.Id.Value))
+            .OrderBy(application => application.Name.Value, StringComparer.Ordinal)
+            .Select(ToSummary)
+            .ToArray();
     }
 
     public async Task<ApplicationSummary> CreateApplicationAsync(
@@ -299,8 +316,14 @@ public sealed class ResourceManagementService(
 
     public IReadOnlyList<DatabaseSummary> ListDatabases(UserId actorUserId, TeamId teamId)
     {
-        Require(actorUserId, teamId, VesselPermissions.ProjectsRead);
-        return DatabasesForTeam(teamId).OrderBy(database => database.Name).Select(ToSummary).ToArray();
+        RequireSomewhere(actorUserId, teamId, VesselPermissions.ProjectsRead);
+        AccessVisibility visibility = authorization.GetVisibility(actorUserId, teamId);
+        return DatabasesForTeam(teamId)
+            .AsEnumerable()
+            .Where(database => visibility.CanSeeResource(database.EnvironmentId.Value, database.Id.Value))
+            .OrderBy(database => database.Name.Value, StringComparer.Ordinal)
+            .Select(ToSummary)
+            .ToArray();
     }
 
     public async Task<DatabaseSummary> CreateDatabaseAsync(
@@ -356,7 +379,8 @@ public sealed class ResourceManagementService(
     public IReadOnlyList<EnvironmentVariableSummary> ListEnvironmentVariables(UserId actorUserId, TeamId teamId)
     {
         Require(actorUserId, teamId, VesselPermissions.ProjectsRead);
-        var canReveal = authorization.HasPermission(actorUserId, teamId, VesselPermissions.SecretsRead);
+        // Sensitive-response policy (IAM-04): values are returned only to actors (and tokens) holding read:sensitive.
+        var canReveal = authorization.CanReadSensitive(actorUserId, teamId);
 
         return dbContext.EnvironmentVariables
             .Where(variable => variable.TeamId == teamId)
@@ -367,7 +391,7 @@ public sealed class ResourceManagementService(
                 variable.TargetType,
                 variable.Key.Value,
                 variable.ValueKind,
-                variable.ValueKind == EnvironmentVariableValueKind.Secret
+                variable.ValueKind == EnvironmentVariableValueKind.Secret || !canReveal
                     ? "********"
                     : variable.PlainValue ?? string.Empty,
                 canReveal && variable.ValueKind == EnvironmentVariableValueKind.Secret,
@@ -454,6 +478,31 @@ public sealed class ResourceManagementService(
     {
         if (!authorization.HasPermission(actorUserId, teamId, permission))
             throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
+    }
+
+    /// <summary>List gate: the permission on any scope; results are then filtered by visibility.</summary>
+    private void RequireSomewhere(UserId actorUserId, TeamId teamId, string permission)
+    {
+        if (!authorization.HasPermissionSomewhere(actorUserId, teamId, permission))
+            throw new UnauthorizedAccessException($"Missing required permission '{permission}'.");
+    }
+
+    /// <summary>
+    ///     Opening a project needs Read on it, or a grant on one of its environments or resources (the project then
+    ///     shows only the children the actor can see).
+    /// </summary>
+    private void RequireProjectOpen(UserId actorUserId, TeamId teamId, ProjectId projectId)
+    {
+        if (authorization.IsAuthorized(actorUserId, teamId, ResourceRef.Project(projectId),
+                VesselPermissions.ProjectsRead))
+            return;
+
+        var inTeam = dbContext.Projects.Any(project => project.Id == projectId && project.TeamId == teamId);
+        if (inTeam && authorization.HasPermissionSomewhere(actorUserId, teamId, VesselPermissions.ProjectsRead)
+                   && authorization.GetVisibility(actorUserId, teamId).CanSeeProject(projectId.Value))
+            return;
+
+        RequireProject(actorUserId, teamId, projectId, VesselPermissions.ProjectsRead);
     }
 
     private void RequireProject(UserId actorUserId, TeamId teamId, ProjectId projectId, string permission)

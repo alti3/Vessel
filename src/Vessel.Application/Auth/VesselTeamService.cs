@@ -1,7 +1,9 @@
 using Vessel.Application.Auditing;
+using Vessel.Application.Authorization;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
 using Vessel.Domain;
+using Vessel.Domain.Access;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;
@@ -9,8 +11,15 @@ using Vessel.Domain.ValueObjects;
 
 namespace Vessel.Application.Auth;
 
+/// <summary>
+///     Team membership management (IAM-03). Role changes follow <see cref="TeamRolePolicy" />: only owners and admins
+///     manage members, nobody acts on or grants a role above their own (so admins never create, promote to, demote or
+///     remove owners), demotions and removals revoke the member's team tokens in the same save, and promotions keep
+///     them. Members' fine-grained access (IAM-05) is edited here as well.
+/// </summary>
 public sealed class VesselTeamService
 {
+    private readonly IAccessResolver _access;
     private readonly IAuditWriter _auditWriter;
     private readonly AuthEmailService? _authEmails;
     private readonly ITokenGenerator _tokenGenerator;
@@ -21,11 +30,52 @@ public sealed class VesselTeamService
         ITokenGenerator tokenGenerator,
         IAuditWriter auditWriter,
         AuthEmailService? authEmails = null)
+        : this(unitOfWork, tokenGenerator, auditWriter,
+            new AccessResolver(unitOfWork, NoApiTokenAccessContext.Instance), authEmails)
+    {
+    }
+
+    public VesselTeamService(
+        IVesselDbContext unitOfWork,
+        ITokenGenerator tokenGenerator,
+        IAuditWriter auditWriter,
+        IAccessResolver access,
+        AuthEmailService? authEmails = null)
     {
         _authEmails = authEmails;
         _unitOfWork = unitOfWork;
         _tokenGenerator = tokenGenerator;
         _auditWriter = auditWriter;
+        _access = access;
+    }
+
+    public IReadOnlyList<TeamMemberSummary> ListMembers(UserId actorUserId, TeamId teamId)
+    {
+        if (!IsTeamMember(actorUserId, teamId))
+            throw new UnauthorizedAccessException("User is not a member of this team.");
+
+        var memberships = _unitOfWork.TeamMemberships
+            .Where(membership => membership.TeamId == teamId)
+            .Select(membership => new { membership.UserId, membership.Role, membership.AccessGrants })
+            .ToArray();
+        UserId[] userIds = memberships.Select(membership => membership.UserId).ToArray();
+        var users = _unitOfWork.Users
+            .Where(user => userIds.Contains(user.Id))
+            .Select(user => new { user.Id, user.Name, user.Email })
+            .ToArray()
+            .ToDictionary(user => user.Id);
+
+        return memberships
+            .Where(membership => users.ContainsKey(membership.UserId))
+            .Select(membership => new TeamMemberSummary(
+                membership.UserId,
+                users[membership.UserId].Name.Value,
+                users[membership.UserId].Email.Value,
+                membership.Role,
+                membership.AccessGrants))
+            .OrderByDescending(member => TeamRolePolicy.Rank(member.Role))
+            .ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     public IReadOnlyList<TeamSummary> ListTeams(UserId userId)
@@ -41,7 +91,7 @@ public sealed class VesselTeamService
             .ToArray();
     }
 
-    public async Task<TeamInvitationResult> InviteAsync(
+    public Task<TeamInvitationResult> InviteAsync(
         UserId actorUserId,
         TeamId teamId,
         string email,
@@ -50,7 +100,28 @@ public sealed class VesselTeamService
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
-        EnsureCanManageTeam(actorUserId, teamId);
+        return InviteAsync(actorUserId, teamId, email, role, null, expiresAt, correlationId, cancellationToken);
+    }
+
+    /// <summary>Invites a member; <paramref name="accessGrants" /> (members only) apply on acceptance.</summary>
+    public async Task<TeamInvitationResult> InviteAsync(
+        UserId actorUserId,
+        TeamId teamId,
+        string email,
+        TeamRole role,
+        IReadOnlyList<AccessGrant>? accessGrants,
+        DateTimeOffset expiresAt,
+        string? correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        TeamRole actorRole = RequireManager(actorUserId, teamId);
+        if (!TeamRolePolicy.CanInvite(actorRole, role))
+            throw new UnauthorizedAccessException($"Your role cannot invite a member with the {role} role.");
+        if (role != TeamRole.Member && accessGrants is not null)
+            throw new InvalidOperationException(
+                "Access grants apply to members only; owners and admins are unrestricted.");
+        EnsureGrantTargetsExist(teamId, accessGrants);
+
         var plainTextToken = _tokenGenerator.GenerateUrlSafeToken();
         var invitation = TeamInvitation.Create(
             teamId,
@@ -58,7 +129,8 @@ public sealed class VesselTeamService
             role,
             TokenHashing.Sha256(plainTextToken),
             expiresAt,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            accessGrants);
 
         await _unitOfWork.TeamInvitationRepository.AddAsync(invitation, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -72,7 +144,8 @@ public sealed class VesselTeamService
             new Dictionary<string, object?>
             {
                 ["email"] = invitation.Email.Value,
-                ["role"] = invitation.Role.ToString()
+                ["role"] = invitation.Role.ToString(),
+                ["access"] = DescribeAccess(invitation.AccessGrants)
             },
             cancellationToken);
 
@@ -111,7 +184,7 @@ public sealed class VesselTeamService
         Team team = await _unitOfWork.TeamRepository.GetByIdAsync(invitation.TeamId, cancellationToken)
                     ?? throw new InvalidOperationException("Invitation team was not found.");
         if (!team.Memberships.Any(membership => membership.UserId == userId))
-            team.AddMember(userId, invitation.Role, DateTimeOffset.UtcNow);
+            team.AddMember(userId, invitation.Role, DateTimeOffset.UtcNow, invitation.AccessGrants);
         invitation.Accept(DateTimeOffset.UtcNow);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -135,9 +208,17 @@ public sealed class VesselTeamService
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
-        EnsureCanManageTeam(actorUserId, teamId);
+        TeamRole actorRole = RequireManager(actorUserId, teamId);
         Team team = await GetTeamAsync(teamId, cancellationToken);
-        team.ChangeMemberRole(memberUserId, role, DateTimeOffset.UtcNow);
+        TeamRole currentRole = team.GetMemberRole(memberUserId);
+        if (!TeamRolePolicy.CanChangeRole(actorRole, currentRole, role))
+            throw new UnauthorizedAccessException("Your role cannot change this member to that role.");
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        team.ChangeMemberRole(memberUserId, role, now);
+        // A demotion revokes the member's tokens for this team in the same save; a promotion keeps them (the API
+        // checks abilities against the current role on every request).
+        var revoked = TeamRolePolicy.IsDemotion(currentRole, role) ? RevokeTeamTokens(memberUserId, teamId, now) : 0;
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditWriter.RecordAsync(
@@ -146,7 +227,12 @@ public sealed class VesselTeamService
             AuditActions.TeamMemberRoleChanged,
             new AuditTarget("user", memberUserId.ToString()),
             correlationId,
-            new Dictionary<string, object?> { ["role"] = role.ToString() },
+            new Dictionary<string, object?>
+            {
+                ["role"] = role.ToString(),
+                ["previousRole"] = currentRole.ToString(),
+                ["revokedApiCredentials"] = revoked
+            },
             cancellationToken);
     }
 
@@ -157,17 +243,17 @@ public sealed class VesselTeamService
         string? correlationId,
         CancellationToken cancellationToken = default)
     {
-        EnsureCanManageTeam(actorUserId, teamId);
+        TeamRole actorRole = RequireManager(actorUserId, teamId);
         Team team = await GetTeamAsync(teamId, cancellationToken);
+        if (!TeamRolePolicy.CanRemove(actorRole, team.GetMemberRole(memberUserId)))
+            throw new UnauthorizedAccessException("Your role cannot remove this member.");
+
         DateTimeOffset now = DateTimeOffset.UtcNow;
         team.RemoveMember(memberUserId, now);
 
         // A removed member's tokens for this team are revoked so they cannot be revived by a later re-invitation.
         // Token validation also re-checks membership on every request.
-        PersonalAccessToken[] memberTokens = _unitOfWork.PersonalAccessTokens
-            .Where(token => token.UserId == memberUserId && token.TeamId == teamId && token.RevokedAt == null)
-            .ToArray();
-        foreach (PersonalAccessToken token in memberTokens) token.Revoke(now);
+        var revoked = RevokeTeamTokens(memberUserId, teamId, now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await _auditWriter.RecordAsync(
@@ -176,7 +262,7 @@ public sealed class VesselTeamService
             AuditActions.TeamMemberRemoved,
             new AuditTarget("user", memberUserId.ToString()),
             correlationId,
-            new Dictionary<string, object?> { ["revokedApiCredentials"] = memberTokens.Length },
+            new Dictionary<string, object?> { ["revokedApiCredentials"] = revoked },
             cancellationToken);
     }
 
@@ -186,15 +272,78 @@ public sealed class VesselTeamService
             membership.UserId == userId && membership.TeamId == teamId);
     }
 
-    private void EnsureCanManageTeam(UserId userId, TeamId teamId)
+    /// <summary>
+    ///     Replaces a member's fine-grained access (IAM-05). <c>null</c> restores the default team-wide read. Only owners
+    ///     and admins edit access, and only on rows with the Member role.
+    /// </summary>
+    public async Task SetMemberAccessAsync(
+        UserId actorUserId,
+        TeamId teamId,
+        UserId memberUserId,
+        IReadOnlyList<AccessGrant>? accessGrants,
+        string? correlationId,
+        CancellationToken cancellationToken = default)
+    {
+        TeamRole actorRole = RequireManager(actorUserId, teamId);
+        Team team = await GetTeamAsync(teamId, cancellationToken);
+        if (!TeamRolePolicy.CanEditAccess(actorRole, team.GetMemberRole(memberUserId)))
+            throw new UnauthorizedAccessException("Access grants can only be edited for members.");
+        EnsureGrantTargetsExist(teamId, accessGrants);
+
+        team.SetMemberAccess(memberUserId, accessGrants, DateTimeOffset.UtcNow);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await _auditWriter.RecordAsync(
+            teamId,
+            actorUserId,
+            AuditActions.TeamMemberAccessChanged,
+            new AuditTarget("user", memberUserId.ToString()),
+            correlationId,
+            new Dictionary<string, object?> { ["access"] = DescribeAccess(accessGrants) },
+            cancellationToken);
+    }
+
+    internal static string DescribeAccess(IReadOnlyList<AccessGrant>? grants)
+    {
+        if (grants is null) return "default (team-wide read)";
+        if (grants.Count == 0) return "none";
+        return string.Join("; ", grants.Select(grant =>
+            grant.Scope.ToString().ToLowerInvariant()
+            + (grant.TargetId is { } id ? ":" + id.ToString("D") : string.Empty)
+            + "=" + string.Join(',', grant.Levels.Select(level => level.ToAbility()))));
+    }
+
+    private TeamRole RequireManager(UserId userId, TeamId teamId)
     {
         TeamRole? role = _unitOfWork.TeamMemberships
             .Where(membership => membership.UserId == userId && membership.TeamId == teamId)
             .Select(membership => (TeamRole?)membership.Role)
             .SingleOrDefault();
 
-        if (role is not (TeamRole.Owner or TeamRole.Admin))
+        if (role is not { } actorRole || !TeamRolePolicy.CanManageMembers(actorRole))
             throw new UnauthorizedAccessException("User cannot manage this team.");
+        return actorRole;
+    }
+
+    private void EnsureGrantTargetsExist(TeamId teamId, IReadOnlyList<AccessGrant>? grants)
+    {
+        if (grants is null) return;
+        if (grants.Count > AccessGrant.MaxGrantsPerActor)
+            throw new InvalidOperationException($"At most {AccessGrant.MaxGrantsPerActor} access grants are allowed.");
+        if (grants.Any(grant => grant.Levels.Count == 0))
+            throw new InvalidOperationException("Every access grant needs at least one level.");
+        if (grants.Any(grant => _access.LocateGrant(teamId, grant) is null))
+            throw new InvalidOperationException(
+                "Every access grant must point at this team or one of its projects, environments or resources.");
+    }
+
+    private int RevokeTeamTokens(UserId userId, TeamId teamId, DateTimeOffset now)
+    {
+        PersonalAccessToken[] tokens = _unitOfWork.PersonalAccessTokens
+            .Where(token => token.UserId == userId && token.TeamId == teamId && token.RevokedAt == null)
+            .ToArray();
+        foreach (PersonalAccessToken token in tokens) token.Revoke(now);
+        return tokens.Length;
     }
 
     private async Task<Team> GetTeamAsync(TeamId teamId, CancellationToken cancellationToken)

@@ -60,7 +60,7 @@ public sealed class ApplicationDomainsController(
     }
 
     [HttpDelete("{host}")]
-    [Authorize(Policy = VesselPermissions.ApplicationsWrite)]
+    [Authorize(Policy = VesselPermissions.ApplicationsDelete)]
     public async Task<IActionResult> Remove(Guid applicationId, string host, CancellationToken cancellationToken)
     {
         await domains.RemoveAsync(User.GetUserId(), User.GetTeamId(), new AppId(applicationId), host,

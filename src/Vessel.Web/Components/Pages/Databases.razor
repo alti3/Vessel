@@ -1,6 +1,6 @@
 @page "/databases"
 @attribute [Authorize]
-@inject IDatabaseCatalogQuery DatabaseQuery
+@inject Vessel.Application.Authorization.AccessScopedCatalog Catalog
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Databases | Vessel</PageTitle>
@@ -51,7 +51,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        Items = DatabaseQuery.List((await AuthenticationStateProvider.GetAuthenticationStateAsync()).User.GetTeamId());
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        Items = Catalog.ListDatabases(user.GetUserId(), user.GetTeamId());
     }
 
 }

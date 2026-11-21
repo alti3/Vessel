@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using Vessel.Application.Auditing;
 using Vessel.Application.Auth;
+using Vessel.Application.Instance;
 using Vessel.Domain.Auditing;
 using Vessel.Web.Configuration;
 using Vessel.Web.Middleware;
@@ -40,12 +41,20 @@ public sealed class AuthController : ControllerBase
         RegisterRequest request,
         CancellationToken cancellationToken)
     {
-        AuthenticatedUser user = await _authenticationService.RegisterAsync(
-            request.Name,
-            request.Email,
-            request.Password,
-            CorrelationIdMiddleware.GetCorrelationId(HttpContext),
-            cancellationToken);
+        AuthenticatedUser user;
+        try
+        {
+            user = await _authenticationService.RegisterAsync(
+                request.Name,
+                request.Email,
+                request.Password,
+                CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+                cancellationToken);
+        }
+        catch (RegistrationClosedException exception)
+        {
+            return Problem(exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
 
         await SignInAsync(user);
         return Ok(AuthResponse.From(user));
@@ -96,12 +105,20 @@ public sealed class AuthController : ControllerBase
         [FromForm] RegisterFormRequest request,
         CancellationToken cancellationToken)
     {
-        AuthenticatedUser user = await _authenticationService.RegisterAsync(
-            request.Name,
-            request.Email,
-            request.Password,
-            CorrelationIdMiddleware.GetCorrelationId(HttpContext),
-            cancellationToken);
+        AuthenticatedUser user;
+        try
+        {
+            user = await _authenticationService.RegisterAsync(
+                request.Name,
+                request.Email,
+                request.Password,
+                CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+                cancellationToken);
+        }
+        catch (RegistrationClosedException)
+        {
+            return Redirect("/register?error=closed");
+        }
 
         await SignInAsync(user);
         return LocalRedirect("/");

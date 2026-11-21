@@ -1,4 +1,6 @@
+using System.Net;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -22,6 +24,7 @@ using Vessel.Application.Deployments.Settings;
 using Vessel.Application.Common;
 using Vessel.Application.Diagnostics;
 using Vessel.Application.Email;
+using Vessel.Application.Instance;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
 using Vessel.Application.Monitoring;
@@ -34,6 +37,7 @@ using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Resources;
 using Vessel.Application.Security;
+using Vessel.Application.Security.ApiAbuse;
 using Vessel.Application.Storage;
 using Vessel.Application.Terminals;
 using Vessel.Application.Webhooks;
@@ -70,6 +74,7 @@ public static class ServiceCollectionExtensions
         services.AddVesselApplicationServices(configuration);
         services.AddVesselAuthenticationAndAuthorization();
         services.AddVesselRateLimiting(configuration);
+        services.AddVesselForwardedHeaders(configuration);
         services.AddVesselOpenTelemetry(configuration, environment);
         services.AddVesselHealthChecks();
 
@@ -105,6 +110,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<VesselTokenService>();
         services.AddScoped<VesselTeamService>();
         services.AddScoped<VesselAuthorizationService>();
+        // IAM-05 access grants: member layer + request token layer, consulted by VesselAuthorizationService.
+        services.AddScoped<IApiTokenAccessContext, HttpApiTokenAccessContext>();
+        services.AddScoped<IAccessResolver, AccessResolver>();
+        services.AddScoped<AccessScopedCatalog>();
+        services.AddScoped<InstanceSettingsService>();
+        // SEC-07 / SEC-13 abuse throttles (Redis when enabled, otherwise in-process counters).
+        services.TryAddSingleton<IRedisCache, InMemoryRedisCache>();
+        services.AddSingleton<WebhookFailureThrottle>();
+        services.AddScoped<ApiFailedRequestThrottle>();
         services.AddScoped<ResourceManagementService>();
         services.AddScoped<StartDeploymentService>();
         services.AddScoped<DeploymentQueryService>();
@@ -363,6 +377,32 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    private static IServiceCollection AddVesselForwardedHeaders(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ForwardedHeadersSettings settings = configuration
+            .GetSection(ForwardedHeadersSettings.SectionName)
+            .Get<ForwardedHeadersSettings>() ?? new ForwardedHeadersSettings();
+        IReadOnlyList<string> failures = settings.Validate();
+        if (failures.Count > 0) throw new InvalidOperationException(string.Join(' ', failures));
+
+        services.AddSingleton(settings);
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = settings.ForwardLimit;
+            // No blanket trust: drop the framework's loopback defaults and trust only what is configured.
+            options.KnownProxies.Clear();
+            options.KnownIPNetworks.Clear();
+            foreach (var proxy in settings.KnownProxies) options.KnownProxies.Add(IPAddress.Parse(proxy));
+            foreach (var network in settings.KnownNetworks)
+                options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
+        });
+
+        return services;
+    }
+
     private static IServiceCollection AddVesselRateLimiting(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -371,9 +411,20 @@ public static class ServiceCollectionExtensions
             .GetSection(RateLimitOptions.SectionName)
             .Get<RateLimitOptions>() ?? new RateLimitOptions();
 
+        services.AddSingleton(rateLimitOptions.ApiFailedRequests.PermitLimit <= 0
+            ? new ApiFailedRequestThrottleSettings(0, TimeSpan.FromSeconds(60))
+            : new ApiFailedRequestThrottleSettings(rateLimitOptions.ApiFailedRequests.PermitLimit,
+                TimeSpan.FromSeconds(rateLimitOptions.ApiFailedRequests.WindowSeconds)));
+
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            // SEC-13: every /api route shares the "api" budget per client address, not only the endpoints that opt
+            // in. Named policies (auth, terminal, ...) still apply on top.
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase)
+                    ? CreateLimiter(context, rateLimitOptions.Api, "api-global")
+                    : RateLimitPartition.GetNoLimiter("unlimited"));
             options.AddPolicy("auth", context => CreateLimiter(context, rateLimitOptions.Auth));
             options.AddPolicy("webhooks", context => CreateLimiter(context, rateLimitOptions.Webhooks));
             options.AddPolicy("api", context => CreateLimiter(context, rateLimitOptions.Api));
@@ -385,10 +436,12 @@ public static class ServiceCollectionExtensions
 
     private static RateLimitPartition<string> CreateLimiter(
         HttpContext context,
-        RateLimitPolicyOptions options)
+        RateLimitPolicyOptions options,
+        string? bucket = null)
     {
-        var partitionKey = context.Connection.RemoteIpAddress?.ToString()
-                           ?? context.TraceIdentifier;
+        // RemoteIpAddress is the real client only when it was rewritten by ForwardedHeaders from a trusted proxy.
+        var partitionKey = (bucket is null ? string.Empty : bucket + ":")
+                           + (context.Connection.RemoteIpAddress?.ToString() ?? context.TraceIdentifier);
 
         return RateLimitPartition.GetFixedWindowLimiter(
             partitionKey,

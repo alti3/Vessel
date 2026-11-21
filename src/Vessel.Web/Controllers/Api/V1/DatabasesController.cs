@@ -53,7 +53,7 @@ public sealed class DatabasesController : ControllerBase
 
     /// <summary>Queues a lifecycle action; returns 409 while another lifecycle action, backup or restore runs.</summary>
     [HttpPost("{databaseId:guid}/lifecycle/{action}")]
-    [Authorize(Policy = VesselPermissions.ProjectsWrite)]
+    [Authorize(Policy = VesselPermissions.ResourcesLifecycle)]
     public async Task<ActionResult<DatabaseLifecycleResult>> Lifecycle(
         Guid databaseId,
         DatabaseLifecycleAction action,
