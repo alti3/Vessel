@@ -1,3 +1,4 @@
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Domain.Databases;
 
 namespace Vessel.Application.ManagedServices;
@@ -17,12 +18,26 @@ public sealed record DatabaseLifecycleResult(
     DatabaseHealthState HealthState,
     string Message);
 
+/// <summary>
+///     A catalog template. <see cref="Source" /> is <c>vessel</c> (built-in) or <c>coolify</c> (imported Coolify-format
+///     template); <see cref="Warnings" /> lists import findings such as major-version-only image tags and
+///     <see cref="Endpoints" /> the Compose services and ports that service domains route to.
+/// </summary>
 public sealed record ServiceTemplateSummary(
     string Key,
     string Name,
     string Description,
     string Version,
-    IReadOnlyList<ServiceTemplateInput> Inputs);
+    IReadOnlyList<ServiceTemplateInput> Inputs,
+    string Source = ServiceTemplateSources.Vessel,
+    string? Documentation = null,
+    string? Slogan = null,
+    string? Category = null,
+    IReadOnlyList<string>? Tags = null,
+    string? Logo = null,
+    int? Port = null,
+    IReadOnlyList<string>? Warnings = null,
+    IReadOnlyList<ServiceTemplateEndpoint>? Endpoints = null);
 
 public sealed record ServiceTemplateInput(
     string Key,

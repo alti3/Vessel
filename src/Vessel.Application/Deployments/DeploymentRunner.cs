@@ -17,6 +17,7 @@ using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Servers;
 using Vessel.Application.Servers.Files;
+using Vessel.Application.Sources;
 using Vessel.Application.Storage.Persistent;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
@@ -55,6 +56,7 @@ public sealed partial class DeploymentRunner(
     IBackgroundJobDispatcher backgroundJobs,
     IServerDirectoryTransfer? directoryTransfer = null,
     IServerCommandRunner? serverCommands = null,
+    IGitCredentialProvider? gitCredentials = null,
     ResourceStorageProvisioner? storage = null)
     : IDeploymentRunner
 {
@@ -221,6 +223,12 @@ public sealed partial class DeploymentRunner(
                 // Refs are validated again at start (queue-time validation may predate a settings change).
                 GitCheckoutRequest checkout =
                     DeploymentPlanBuilder.Checkout(application, deployment, preview, workspace.RepositoryDirectory);
+                // DEP-08: private sources get short-lived credentials (installation token, OAuth token, deploy key)
+                // and pinned SSH host keys, injected by the git client; they never appear in the URL or the log.
+                (checkout, var sourceName) =
+                    await AuthenticateCheckoutAsync(checkout, application, teamId, buildToken);
+                if (sourceName is not null)
+                    await AppendAsync(deploymentId, "system", $"Using Git source '{sourceName}'.", buildToken);
                 await AppendAsync(deploymentId, "system", CheckoutMessage(checkout), buildToken);
                 await git.CheckoutAsync(checkout, buildToken);
                 GitCommitInfo commit = await git.GetCommitAsync(workspace.RepositoryDirectory, "HEAD", buildToken);
@@ -760,6 +768,21 @@ public sealed partial class DeploymentRunner(
         if (preview.ApplicationId != deployment.ApplicationId)
             throw new InvalidOperationException("Preview does not belong to the deployed application.");
         return preview;
+    }
+
+    private async Task<(GitCheckoutRequest Checkout, string? SourceName)> AuthenticateCheckoutAsync(
+        GitCheckoutRequest checkout, AppEntity application, TeamId teamId, CancellationToken cancellationToken)
+    {
+        if (gitCredentials is null)
+        {
+            if (application.SourceId is not null)
+                throw new DomainException("Private Git sources are not configured on this Vessel instance.");
+            return (checkout, null);
+        }
+
+        GitCloneAccess access = await gitCredentials.ForApplicationAsync(application, teamId, cancellationToken);
+        return (checkout with { RepositoryUrl = access.RepositoryUri, Authentication = access.Authentication },
+            access.SourceName);
     }
 
     private static string CheckoutMessage(GitCheckoutRequest checkout)

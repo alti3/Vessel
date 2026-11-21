@@ -30,6 +30,7 @@ using Vessel.Application.Email;
 using Vessel.Application.Instance;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
@@ -48,6 +49,7 @@ using Vessel.Application.Ssh.Keys;
 using Vessel.Application.Storage;
 using Vessel.Application.Terminals;
 using Vessel.Application.Webhooks;
+using Vessel.Application.Sources;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
@@ -143,6 +145,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<SshHostKeyScanThrottle>();
         services.AddScoped<ServerSshConnectionService>();
         services.AddScoped<SshKeyService>();
+        services.AddScoped<IGitCredentialProvider, GitCredentialResolver>();
+        services.AddScoped<GitSourceService>();
         services.AddScoped<SshKeyRotationService>();
         services.AddScoped<RotateSshKeyJob>();
         services.AddScoped<ServerManagementService>();
@@ -173,7 +177,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DatabaseImportService>();
         services.AddScoped<DatabaseImportArtifactSource>();
         services.AddScoped<CleanupDatabaseImportUploadsJob>();
-        services.AddSingleton<ServiceTemplateCatalog>();
+        services.AddSingleton(provider => ServiceTemplateCatalog.Create(
+            provider.GetService<IServiceTemplateComposeProcessor>(), provider.GetService<IServiceTemplateSource>()));
         services.AddScoped<DomainRoutingService>();
         services.AddScoped<ProxyConfigurationService>();
         services.AddScoped<ProxyLifecycleService>();

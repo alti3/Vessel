@@ -18,6 +18,7 @@ using Vessel.Application.Files;
 using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
@@ -41,6 +42,7 @@ using Vessel.Infrastructure.Git;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.ManagedServices;
+using Vessel.Infrastructure.ManagedServices.Templates;
 using Vessel.Infrastructure.Notifications;
 using Vessel.Infrastructure.Persistence;
 using Vessel.Infrastructure.Processes;
@@ -50,6 +52,7 @@ using Vessel.Infrastructure.Security;
 using Vessel.Infrastructure.Servers;
 using Vessel.Infrastructure.Ssh;
 using Vessel.Infrastructure.Storage;
+using Vessel.Infrastructure.Sources;
 
 namespace Vessel.Infrastructure.Extensions;
 
@@ -141,6 +144,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
         services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
         services.TryAddSingleton<IComposeDocumentBuilder, YamlComposeDocumentBuilder>();
+        services.TryAddSingleton<IServiceTemplateComposeProcessor, YamlServiceTemplateComposeProcessor>();
+        services.TryAddSingleton<IServiceTemplateSource, EmbeddedServiceTemplateSource>();
         services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
         if (OperatingSystem.IsLinux())
@@ -173,6 +178,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddOptions<DatabaseImportOptions>().Bind(configuration.GetSection(DatabaseImportOptions.SectionName));
         services.TryAddSingleton<IDatabaseImportStaging, FileDatabaseImportStaging>();
         services.AddVesselNotificationInfrastructure(configuration);
+        services.AddVesselGitSourceInfrastructure();
         services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));
         services.AddSingleton<IBackupStorageProvider, BackupStorageProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
