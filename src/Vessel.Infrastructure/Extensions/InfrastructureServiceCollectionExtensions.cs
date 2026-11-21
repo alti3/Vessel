@@ -1,3 +1,5 @@
+using Vessel.Application.Monitoring.HostMetrics;
+using Vessel.Infrastructure.Monitoring;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
@@ -150,6 +152,9 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
+        // SRV-03: agentless host telemetry over the server's own connection, and set-based metric retention.
+        services.TryAddSingleton<IServerTelemetryCollector, AgentlessTelemetryCollector>();
+        services.AddScoped<IServerMetricsPruner, EfServerMetricsPruner>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();
         services.TryAddSingleton<ISshClient, SshProcessClient>();
         services.AddOptions<SshOptions>().Bind(configuration.GetSection(SshOptions.SectionName));

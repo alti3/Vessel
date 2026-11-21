@@ -165,6 +165,43 @@ public sealed class DockerApiContainerRuntimeClient(DockerCliContainerRuntimeCli
         return cliFallback.RemoveImageAsync(target, imageReference, cancellationToken);
     }
 
+    // Monitoring, logs and cleanup (SRV-03/04/05/07) use the structured CLI for local and remote targets alike.
+    public Task<IReadOnlyList<ContainerStateReading>> ListContainerStatesAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.ListContainerStatesAsync(target, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<ImageDetails>> ListImageDetailsAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.ListImageDetailsAsync(target, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ProcessOutputLine> StreamContainerLogsAsync(ContainerRuntimeTarget target,
+        string containerId, ContainerLogOptions options, CancellationToken cancellationToken = default)
+    {
+        return cliFallback.StreamContainerLogsAsync(target, containerId, options, cancellationToken);
+    }
+
+    public Task<bool> StopContainersAsync(ContainerRuntimeTarget target, IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.StopContainersAsync(target, containerIds, cancellationToken);
+    }
+
+    public Task<int> RemoveContainersAsync(ContainerRuntimeTarget target, IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.RemoveContainersAsync(target, containerIds, cancellationToken);
+    }
+
+    public Task<RuntimePruneResult> PruneAsync(ContainerRuntimeTarget target, RuntimePruneKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        return cliFallback.PruneAsync(target, kind, cancellationToken);
+    }
+
     private static DockerClient CreateClient(ContainerRuntimeTarget target)
     {
         Uri endpoint = target.ApiEndpoint ?? DefaultDockerEndpoint();

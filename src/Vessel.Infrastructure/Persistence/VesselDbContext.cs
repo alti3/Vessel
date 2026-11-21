@@ -330,6 +330,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         ConfigureWebhooks(modelBuilder);
         ConfigureProxy(modelBuilder);
         ConfigureRouting(modelBuilder);
+        ConfigureMonitoring(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)

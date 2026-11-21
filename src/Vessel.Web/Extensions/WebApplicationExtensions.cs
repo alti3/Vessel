@@ -1,3 +1,5 @@
+using Vessel.Application.Monitoring.HostMetrics;
+using Vessel.Application.Servers.DockerCleanup;
 using System.Diagnostics;
 using Serilog;
 using Vessel.Application.Backups;
@@ -56,6 +58,8 @@ public static class WebApplicationExtensions
             DeploymentLogRecurringJobs.Register(scheduler);
             DeploymentQueueRecurringJobs.Register(scheduler);
             ServerHealthRecurringJobs.Register(scheduler);
+            ServerMetricsRecurringJobs.Register(scheduler);
+            DockerCleanupScheduleSyncJob.Register(scheduler);
             DatabaseRecurringJobs.Register(scheduler);
             BackupRecurringJobs.Register(scheduler);
             NotificationRecurringJobs.Register(scheduler);
