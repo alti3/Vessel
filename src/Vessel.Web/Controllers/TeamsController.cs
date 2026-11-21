@@ -115,6 +115,22 @@ public sealed class TeamsController : ControllerBase
         }
     }
 
+    /// <summary>Form variant used by the invitation landing page: the emailed link only shows a confirm button.</summary>
+    [HttpPost("/teams/invitations/accept")]
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
+    public async Task<IActionResult> AcceptInvitationForm(
+        [FromForm] AcceptInvitationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var accepted = await _teamService.AcceptInvitationAsync(
+            User.GetUserId(),
+            request.Token,
+            CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+            cancellationToken);
+
+        return LocalRedirect(accepted ? "/teams?status=joined" : "/invitations/accept?status=invalid");
+    }
+
     [HttpPost("invitations/accept")]
     [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     public async Task<IActionResult> AcceptInvitation(

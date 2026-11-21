@@ -63,6 +63,14 @@
                     <div>
                         <ResourceCard Href="/notifications" IconName="bell" Title="@item.Name"
                                       Description="@($"{item.Channel} · {(item.IsEnabled ? "enabled" : "disabled")} · {(item.HasCredentials ? "credentials set" : "no credentials")}")"/>
+                        @if (!string.IsNullOrWhiteSpace(item.DisabledReason))
+                        {
+                            <div class="form-alert">Disabled after @NotificationTarget.AutoDisableThreshold failed deliveries: @item.DisabledReason</div>
+                        }
+                        else if (item.ConsecutiveFailureCount > 0)
+                        {
+                            <div class="muted">@item.ConsecutiveFailureCount consecutive configuration failure(s)</div>
+                        }
                         @if (CanManage && item.Channel != NotificationChannel.InApp)
                         {
                             <button class="button button-secondary" @onclick="() => SendTest(item.Id)">Send test</button>
@@ -123,6 +131,20 @@
             <label><InputCheckbox @bind-Value="Form.ServerEvents"/> Server events</label>
         </div>
 
+        <fieldset class="toggle-row">
+            <legend>Events</legend>
+            @foreach (var definition in NotificationEventCatalog.Subscribable)
+            {
+                <label>
+                    <input type="checkbox" checked="@Form.Events.Contains(definition.Key)"
+                           @onchange="args => ToggleEvent(definition.Key, args)"/>
+                    @definition.Key
+                </label>
+            }
+        </fieldset>
+        <p class="muted">Always delivered: certificate failures, API token failures, and channel-disabled notices.
+            Repeated events are throttled (for example disk usage once a day, restart loops once an hour).</p>
+
         <label>
             Public configuration JSON
             <InputTextArea @bind-Value="Form.ConfigurationJson" class="input textarea"/>
@@ -149,7 +171,7 @@
     private string? FormMessage { get; set; }
     private bool CanManage { get; set; }
 
-    private const string SecretPlaceholder = """{"webhookUrl":"https://hooks.slack.com/..."} or {"url":"https://example.test","secret":"..."}""";
+    private const string SecretPlaceholder = """{"webhookUrl":"https://hooks.slack.com/..."} or {"url":"https://example.test","secret":"..."} or {"to":"ops@example.com","useSystemSettings":true}""";
 
     protected override async Task OnInitializedAsync()
     {
@@ -164,7 +186,7 @@
             await TargetService.UpsertTargetAsync(state.User.GetTeamId(), state.User.GetUserId(),
                 new UpsertNotificationTargetRequest(Form.Name, Form.Channel, Form.IsEnabled, Form.MinimumSeverity,
                     Form.DeploymentEvents, Form.BackupEvents, Form.ServerEvents, Form.ConfigurationJson,
-                    Form.SecretJson));
+                    Form.SecretJson, Form.Events.ToArray()));
             FormMessage = "Saved";
         }
         catch (UnauthorizedAccessException)
@@ -181,6 +203,14 @@
         }
 
         await Refresh();
+    }
+
+    private void ToggleEvent(string key, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+            Form.Events.Add(key);
+        else
+            Form.Events.Remove(key);
     }
 
     private async Task SendTest(Guid targetId)
@@ -252,5 +282,6 @@
         public bool ServerEvents { get; set; } = true;
         public string? ConfigurationJson { get; set; } = "{}";
         public string? SecretJson { get; set; }
+        public HashSet<string> Events { get; } = new(NotificationEventCatalog.DefaultSubscriptions, StringComparer.Ordinal);
     }
 }

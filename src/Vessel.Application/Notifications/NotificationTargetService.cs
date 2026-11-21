@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Email;
 using Vessel.Application.OutboundRequests;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
@@ -8,6 +9,7 @@ using Vessel.Domain;
 using Vessel.Domain.Common;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Secrets;
+using Vessel.Domain.Settings;
 using Vessel.Domain.ValueObjects;
 
 namespace Vessel.Application.Notifications;
@@ -39,6 +41,18 @@ public sealed class NotificationTargetService(
             .ToArray();
     }
 
+    /// <summary>The event catalog with defaults and throttle policies (NTF-05). Requires notifications.read.</summary>
+    public IReadOnlyList<NotificationEventCatalogItem> ListEventCatalog(TeamId teamId, UserId actorUserId)
+    {
+        Require(actorUserId, teamId, VesselPermissions.NotificationsRead);
+        return NotificationEventCatalog.All
+            .Where(definition => definition.Key != NotificationEventCatalog.Test)
+            .Select(definition => new NotificationEventCatalogItem(definition.Key, definition.CoolifyKey,
+                definition.Category, definition.DefaultEnabled, definition.AlwaysDeliver,
+                DescribeThrottle(definition.Throttle)))
+            .ToArray();
+    }
+
     public bool CanManage(TeamId teamId, UserId actorUserId)
     {
         return authorization.HasPermission(actorUserId, teamId, VesselPermissions.NotificationsWrite);
@@ -57,6 +71,8 @@ public sealed class NotificationTargetService(
         var policy = new NotificationDeliveryPolicy(request.MinimumSeverity, request.DeploymentEvents,
             request.BackupEvents, request.ServerEvents);
         var configurationJson = NormalizeJson(request.ConfigurationJson);
+        if (request.EventRoutes is { Count: > 0 })
+            ValidateRoutes(request.Channel, request.EventRoutes);
 
         var target = dbContext.NotificationTargets.FirstOrDefault(existing =>
             existing.TeamId == teamId && existing.Channel == request.Channel && existing.Name == name);
@@ -88,20 +104,12 @@ public sealed class NotificationTargetService(
         if (target is null)
         {
             target = NotificationTarget.Create(teamId, name, request.Channel, credentialsReferenceId, now);
-            target.Configure(name, credentialsReferenceId, configurationJson, policy, now);
-            if (!request.IsEnabled)
-                target.Disable(now);
-            else
-                target.Enable(now);
+            ApplySettings(target, name, credentialsReferenceId, configurationJson, policy, request, now);
             await dbContext.NotificationTargetRepository.AddAsync(target, cancellationToken);
         }
         else
         {
-            target.Configure(name, credentialsReferenceId, configurationJson, policy, now);
-            if (!request.IsEnabled)
-                target.Disable(now);
-            else
-                target.Enable(now);
+            ApplySettings(target, name, credentialsReferenceId, configurationJson, policy, request, now);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -142,6 +150,46 @@ public sealed class NotificationTargetService(
         return eventId;
     }
 
+    private static void ApplySettings(NotificationTarget target, ResourceName name,
+        SecretReferenceId? credentialsReferenceId, string configurationJson, NotificationDeliveryPolicy policy,
+        UpsertNotificationTargetRequest request, DateTimeOffset now)
+    {
+        // Any settings change resets the delivery-failure counter (upstream TracksDeliveryFailures).
+        target.Configure(name, credentialsReferenceId, configurationJson, policy, now);
+        if (request.Events is not null)
+            target.SetSubscriptions(request.Events, now);
+        if (request.EventRoutes is not null)
+            target.SetEventRoutes(request.EventRoutes, now);
+        if (!request.IsEnabled)
+            target.Disable(now);
+        else
+            target.Enable(now);
+    }
+
+    private static void ValidateRoutes(NotificationChannel channel, IReadOnlyDictionary<string, string> routes)
+    {
+        if (channel != NotificationChannel.Telegram)
+            throw new DomainException("Per-event routes are supported for Telegram topics only.");
+
+        foreach (var (key, value) in routes)
+        {
+            if (!NotificationEventCatalog.IsKnown(key))
+                throw new DomainException("Unknown notification event in routes.");
+            if (!string.IsNullOrWhiteSpace(value) && !long.TryParse(value.Trim(), out _))
+                throw new DomainException("Telegram topic routes must be numeric message thread ids.");
+        }
+    }
+
+    private static string DescribeThrottle(NotificationThrottlePolicy throttle)
+    {
+        return throttle.Mode switch
+        {
+            NotificationThrottleMode.Interval => $"once per {throttle.Interval!.Value.TotalMinutes:0} minutes",
+            NotificationThrottleMode.OncePerIncident => "once per incident",
+            _ => "none"
+        };
+    }
+
     private void Require(UserId actorUserId, TeamId teamId, string permission)
     {
         if (!authorization.HasPermission(actorUserId, teamId, permission))
@@ -176,12 +224,52 @@ public sealed class NotificationTargetService(
                 RequiredString(root, "chatId", channel);
                 break;
             case NotificationChannel.Email:
-                var host = RequiredString(root, "smtpHost", channel);
-                var check = await outboundUrlPolicy.CheckHostAsync(host, cancellationToken);
-                if (!check.Allowed)
-                    throw new DomainException($"Email SMTP host is not allowed: {check.Reason}");
+                await ValidateEmailSecretAsync(root, cancellationToken);
                 break;
         }
+    }
+
+    private async Task ValidateEmailSecretAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        foreach (var recipient in RequiredString(root, "to", NotificationChannel.Email)
+                     .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            _ = new EmailAddress(recipient);
+
+        // "Use system-wide settings": deliver through the instance email settings (NTF-06).
+        if (OptionalBool(root, "useSystemSettings"))
+            return;
+
+        var host = SmtpServerSettings.NormalizeHost(RequiredString(root, "smtpHost", NotificationChannel.Email));
+        if (!SmtpServerSettings.IsValidHost(host))
+            throw new DomainException("Email SMTP host must be a valid hostname or IP address.");
+        var check = await outboundUrlPolicy.CheckHostAsync(host, cancellationToken);
+        if (!check.Allowed)
+            throw new DomainException($"Email SMTP host is not allowed: {check.Reason}");
+
+        _ = new EmailAddress(RequiredString(root, "from", NotificationChannel.Email));
+        if (OptionalString(root, "encryption") is { } encryption)
+            SmtpEncryptionNames.Parse(encryption);
+        if (OptionalString(root, "ehloDomain") is { } ehlo &&
+            !SmtpServerSettings.IsValidHost(SmtpServerSettings.NormalizeHost(ehlo)))
+            throw new DomainException("Email EHLO domain must be a valid hostname.");
+    }
+
+    private static bool OptionalBool(JsonElement root, string propertyName)
+    {
+        foreach (var property in root.EnumerateObject())
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                return property.Value.ValueKind == JsonValueKind.True;
+        return false;
+    }
+
+    private static string? OptionalString(JsonElement root, string propertyName)
+    {
+        foreach (var property in root.EnumerateObject())
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(property.Value.GetString()))
+                return property.Value.GetString()!.Trim();
+        return null;
     }
 
     private async Task ValidateUrlAsync(string value, NotificationChannel channel,
@@ -213,7 +301,9 @@ public sealed class NotificationTargetService(
     {
         return new NotificationTargetListItem(target.Id.Value, target.Name.Value, target.Channel, target.IsEnabled,
             target.Policy.MinimumSeverity, target.Policy.DeploymentEventsEnabled, target.Policy.BackupEventsEnabled,
-            target.Policy.ServerEventsEnabled, target.CredentialsReferenceId.HasValue);
+            target.Policy.ServerEventsEnabled, target.CredentialsReferenceId.HasValue,
+            target.EffectiveSubscriptions.ToArray(), target.SubscribedEvents is null, target.EventRoutes(),
+            target.ConsecutiveFailureCount, target.DisabledReason, target.AutoDisabledAt);
     }
 
     private static string NormalizeJson(string? json)

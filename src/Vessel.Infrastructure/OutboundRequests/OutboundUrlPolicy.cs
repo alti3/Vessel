@@ -258,7 +258,7 @@ public sealed class OutboundUrlPolicy : IOutboundUrlPolicy
         return (host ?? string.Empty).Trim().Trim('[', ']').TrimEnd('.').ToLowerInvariant();
     }
 
-    private static string DenyReason(AddressClass addressClass)
+    internal static string DenyReason(AddressClass addressClass)
     {
         return addressClass switch
         {
