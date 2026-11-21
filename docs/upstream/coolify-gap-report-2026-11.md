@@ -198,7 +198,7 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | NET-06 | Routing coverage for service-template resources and preview deployments | P1 | L | Phase 9 (9.12) and Phase 11 (11.05) follow-ups; Phase 10 | Done |
 | NET-07 | Proxy configuration history semantics and custom dynamic configs | P1 | M | Phase 10 (10.06) | Done |
 | NTF-03 | Channel delivery-failure tracking, auto-disable, and response classification | P1 | S | 13.08 (extend). | Done |
-| NTF-04 | Notification throttling and dedupe | P1 | M | New: 13.13–13.14 (or Phase 16 reliability). | Partial (delayed resource-stopped recheck needs SRV-04 producer) |
+| NTF-04 | Notification throttling and dedupe | P1 | M | New: 13.13–13.14 (or Phase 16 reliability). | Done |
 | NTF-05 | Granular event catalog and per-event routing | P1 | M | 13.09 (extend), 17.10. | Done |
 | NTF-06 | Email provider parity: instance transactional email, named SMTP servers, Resend, sender split, TLS modes, EHLO | P1 | L | 13.03 (reopen); auth Phase 4 password reset. | Done |
 | NTF-07 | User-defined scheduled tasks (cron commands in application/service containers) | P1 | L | New (suggest Phase 11/12 follow-up, "11.16–11.20 Scheduled… | Open |
@@ -217,12 +217,12 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SEC-12 | SSH connection hardening foundation (host key pinning, fixed options, key lifecycle) | P1 | L | New items under Phase 15 (and the SSH runtime phase), 15.12. | Done |
 | SEC-13 | API abuse controls: failed-request throttle and rate-limit coverage | P1 | S | 15.04, Phase 13. | Done |
 | SRV-02 | Remote server execution foundation: private keys, real validation and install, server lifecycle API | P1 | L. | 7.04/7.05 (extend), new Phase 12b "Remote servers"; Security agent… | Done |
-| SRV-03 | Host and container metrics, fleet Metrics page, and the host-agent decision (Sentinel equivalent) | P1 | L | 12.11/12.12 (re-open), 16.08; new ADR; Phase B is a new phase item. | Open |
-| SRV-04 | Resource runtime status reconciliation, restart limits, and stop notifications | P1 | M. | 12.13 (extend); new item under Phase 12b. | Open |
-| SRV-05 | Runtime (container) logs for applications, databases and services: API, UI, merging, safe export | P1 | M. | 12.01/12.04 (extend to runtime logs). | Open |
+| SRV-03 | Host and container metrics, fleet Metrics page, and the host-agent decision (Sentinel equivalent) | P1 | L | 12.11/12.12 (re-open), 16.08; new ADR; Phase B is a new phase item. | Done |
+| SRV-04 | Resource runtime status reconciliation, restart limits, and stop notifications | P1 | M. | 12.13 (extend); new item under Phase 12b. | Partial (deploy/start flows must signal expected stops to suppress false stop alerts) |
+| SRV-05 | Runtime (container) logs for applications, databases and services: API, UI, merging, safe export | P1 | M. | 12.01/12.04 (extend to runtime logs). | Done |
 | SRV-06 | Container terminal (PTY exec/attach), short-lived session tokens, and continuous re-authorization | P1 | M. | 12.07–12.10 (re-open the container PTY). | Done |
-| SRV-07 | Docker cleanup (scheduled, threshold-based, safe) and the server Images page | P1 | M. | New Phase 12b item; 16.04. | Open |
-| SRV-08 | Disk-usage and reachability alerts (event producers for server notifications) | P1 | S–M. | 13.x follow-up; 12.11. | Open |
+| SRV-07 | Docker cleanup (scheduled, threshold-based, safe) and the server Images page | P1 | M. | New Phase 12b item; 16.04. | Done |
+| SRV-08 | Disk-usage and reachability alerts (event producers for server notifications) | P1 | S–M. | 13.x follow-up; 12.11. | Done |
 | TPL-01 | Service template format compatibility with the Coolify catalog | P1 | XL | 11.05–11.07 (reopen), 17.08, 17.12. | Open |
 | API-02 | MCP server (83 tools, 2 prompts, 2 resources) with per-team toggle, IP allowlist and `is_mcp` deployments | P2 | L | New: Phase 19 "MCP server" (after Phase 6b). | Open |
 | DATA-15 | Non-S3 backup storage types (SFTP, FTPS, WebDAV) | P2 | L | New: Phase 11b | Open |
