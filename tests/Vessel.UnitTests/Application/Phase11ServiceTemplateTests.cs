@@ -1,3 +1,4 @@
+using Vessel.Application.Common;
 using Vessel.Application.ManagedServices;
 using Vessel.Domain.Common;
 
@@ -117,7 +118,7 @@ public sealed class Phase11ServiceTemplateTests
     [InlineData("clickhouse", "clickhouse/clickhouse-server:25.11", "8123:8123", "9000:9000", "CLICKHOUSE_PASSWORD")]
     [InlineData("rustfs", "rustfs/rustfs:latest", "9000:9000", "9001:9001", "RUSTFS_SECRET_KEY")]
     [InlineData("postgres-postgis", "postgis/postgis:17-3.5", "5432:5432", "postgis-data", "POSTGRES_PASSWORD")]
-    [InlineData("postgres-timescale", "timescale/timescaledb:latest-pg17", "5432:5432", "timescaledb-data",
+    [InlineData("postgres-timescale", ComponentVersions.TimescaleImage, "5432:5432", "timescaledb-data",
         "POSTGRES_PASSWORD")]
     public void CreatePlan_EmitsDatabaseAndStorageTemplates(
         string templateKey,
@@ -183,11 +184,11 @@ public sealed class Phase11ServiceTemplateTests
     [Theory]
     [InlineData("redis-insight", "redis/redisinsight:latest", "5540:5540", "redis-insight-data:/data",
         "RI_ENCRYPTION_KEY")]
-    [InlineData("qdrant", "qdrant/qdrant:latest", "6333:6333", "qdrant-storage:/qdrant/storage",
+    [InlineData("qdrant", ComponentVersions.QdrantImage, "6333:6333", "qdrant-storage:/qdrant/storage",
         "QDRANT__SERVICE__API_KEY")]
-    [InlineData("valkey", "valkey/valkey:latest", "6379:6379", "valkey-data:/data", "VALKEY_PASSWORD")]
-    [InlineData("keydb", "eqalpha/keydb:latest", "6379:6379", "keydb-data:/data", "KEYDB_PASSWORD")]
-    [InlineData("dragonfly", "docker.dragonflydb.io/dragonflydb/dragonfly:latest", "6379:6379", "dragonfly-data:/data",
+    [InlineData("valkey", ComponentVersions.ValkeyImage, "6379:6379", "valkey-data:/data", "VALKEY_PASSWORD")]
+    [InlineData("keydb", ComponentVersions.KeyDbImage, "6379:6379", "keydb-data:/data", "KEYDB_PASSWORD")]
+    [InlineData("dragonfly", ComponentVersions.DragonflyImage, "6379:6379", "dragonfly-data:/data",
         "DRAGONFLY_PASSWORD")]
     [InlineData("elasticsearch", "docker.elastic.co/elasticsearch/elasticsearch:8.19.0", "9200:9200",
         "elasticsearch-data:/usr/share/elasticsearch/data", "ELASTIC_PASSWORD")]
@@ -223,7 +224,7 @@ public sealed class Phase11ServiceTemplateTests
         "NEXTCLOUD_ADMIN_PASSWORD")]
     [InlineData("keycloak", "quay.io/keycloak/keycloak:latest", "8087:8080", "KC_BOOTSTRAP_ADMIN_USERNAME",
         "KC_BOOTSTRAP_ADMIN_PASSWORD")]
-    [InlineData("cloudflared", "cloudflare/cloudflared:latest", "tunnel --no-autoupdate run", "restart: unless-stopped",
+    [InlineData("cloudflared", ComponentVersions.CloudflaredImage, "tunnel --no-autoupdate run", "restart: unless-stopped",
         "TOKEN")]
     [InlineData("metabase", "metabase/metabase:latest", "3005:3000", "metabase-data:/metabase-data",
         "MB_ENCRYPTION_SECRET_KEY")]
@@ -267,7 +268,7 @@ public sealed class Phase11ServiceTemplateTests
     [Theory]
     [InlineData("elasticsearch-kibana", "docker.elastic.co/kibana/kibana:8.19.0", "5601:5601",
         "kibana-data:/usr/share/kibana/data")]
-    [InlineData("chromadb", "chromadb/chroma:latest", "8000:8000", "chromadb-data:/data")]
+    [InlineData("chromadb", ComponentVersions.ChromaImage, "8000:8000", "chromadb-data:/data")]
     [InlineData("mediawiki", "mediawiki:latest", "8080:80", "mediawiki-images:/var/www/html/images")]
     [InlineData("qbittorrent", "lscr.io/linuxserver/qbittorrent:latest", "8080:8080", "qbittorrent-config:/config")]
     [InlineData("portainer", "portainer/portainer-ce:alpine", "9443:9443", "portainer-data:/data")]

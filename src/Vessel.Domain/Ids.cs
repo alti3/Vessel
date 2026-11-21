@@ -132,6 +132,19 @@ public readonly record struct BackupExecutionId(Guid Value) : IStronglyTypedId
     }
 }
 
+public readonly record struct BackupDestinationId(Guid Value) : IStronglyTypedId
+{
+    public static BackupDestinationId New()
+    {
+        return new BackupDestinationId(Guid.NewGuid());
+    }
+
+    public override string ToString()
+    {
+        return Value.ToString("D");
+    }
+}
+
 public readonly record struct DeploymentId(Guid Value) : IStronglyTypedId
 {
     public static DeploymentId New()

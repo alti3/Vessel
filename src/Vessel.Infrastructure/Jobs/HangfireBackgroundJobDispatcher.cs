@@ -34,4 +34,9 @@ public sealed class HangfireRecurringJobScheduler(IRecurringJobManager recurring
                 TimeZone = TimeZoneInfo.Utc
             });
     }
+
+    public void RemoveIfExists(string recurringJobId)
+    {
+        recurringJobs.RemoveIfExists(recurringJobId);
+    }
 }

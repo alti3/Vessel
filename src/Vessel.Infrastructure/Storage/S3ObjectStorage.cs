@@ -33,6 +33,15 @@ public sealed class S3ObjectStorage : IObjectStorage, IDisposable
             CreateConfig(storageOptions, Math.Max(storageOptions.TimeoutSeconds, storageOptions.TransferTimeoutSeconds)));
     }
 
+    /// <summary>Wraps explicit clients (per-destination backup storage). The instance owns and disposes them.</summary>
+    internal S3ObjectStorage(IAmazonS3 control, IAmazonS3 transfer)
+    {
+        _control = control;
+        _transfer = transfer;
+    }
+
+    internal IAmazonS3 Control => _control;
+
     public async Task PutAsync(ObjectStoragePutRequest request, CancellationToken cancellationToken = default)
     {
         long? length = request.ContentLength ?? (request.Content.CanSeek

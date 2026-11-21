@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using Serilog;
+using Vessel.Application.Backups;
 using Vessel.Application.Deployments;
 using Vessel.Application.Jobs;
+using Vessel.Application.ManagedServices;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Proxy;
 using Vessel.Web.Middleware;
@@ -44,6 +46,8 @@ public static class WebApplicationExtensions
             CertificateRecurringJobs.Register(scheduler);
             DeploymentLogRecurringJobs.Register(scheduler);
             ServerHealthRecurringJobs.Register(scheduler);
+            DatabaseRecurringJobs.Register(scheduler);
+            BackupRecurringJobs.Register(scheduler);
         }
         catch (BackgroundJobsUnavailableException exception)
         {

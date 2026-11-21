@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Vessel.Application.Common;
 using Vessel.Domain.Common;
 
 namespace Vessel.Application.ManagedServices;
@@ -64,7 +65,7 @@ public sealed partial class ServiceTemplateCatalog
             inputs => $$"""
                         services:
                           qdrant:
-                            image: qdrant/qdrant:latest
+                            image: {{ComponentVersions.QdrantImage}}
                             environment:
                               QDRANT__SERVICE__API_KEY: {{Escape(inputs["apiKey"])}}
                             volumes:
@@ -1094,7 +1095,7 @@ public sealed partial class ServiceTemplateCatalog
             inputs => $$"""
                         services:
                           cloudflared:
-                            image: cloudflare/cloudflared:latest
+                            image: {{ComponentVersions.CloudflaredImage}}
                             command: tunnel --no-autoupdate run --token {{Escape(inputs["token"])}}
                             restart: unless-stopped
                         """),
@@ -1290,7 +1291,7 @@ public sealed partial class ServiceTemplateCatalog
             ],
             inputs => PostgresCompose(
                 "timescaledb",
-                "timescale/timescaledb:latest-pg17",
+                ComponentVersions.TimescaleImage,
                 "timescaledb-data",
                 inputs)),
         new(
@@ -1324,7 +1325,7 @@ public sealed partial class ServiceTemplateCatalog
             [new ServiceTemplateInput("password", "Password", true, true, null)],
             inputs => RedisCompatibleStoreCompose(
                 "valkey",
-                "valkey/valkey:latest",
+                ComponentVersions.ValkeyImage,
                 "valkey-server",
                 "valkey-cli",
                 "valkey-data",
@@ -1338,7 +1339,7 @@ public sealed partial class ServiceTemplateCatalog
             [new ServiceTemplateInput("password", "Password", true, true, null)],
             inputs => RedisCompatibleStoreCompose(
                 "keydb",
-                "eqalpha/keydb:latest",
+                ComponentVersions.KeyDbImage,
                 "keydb-server",
                 "keydb-cli",
                 "keydb-data",
@@ -1353,7 +1354,7 @@ public sealed partial class ServiceTemplateCatalog
             inputs => $$"""
                         services:
                           dragonfly:
-                            image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+                            image: {{ComponentVersions.DragonflyImage}}
                             command: ["--dir=/data", "--requirepass={{Escape(inputs["password"])}}"]
                             environment:
                               DRAGONFLY_PASSWORD: {{Escape(inputs["password"])}}
@@ -1465,10 +1466,10 @@ public sealed partial class ServiceTemplateCatalog
             "Open-source embedding database.",
             "1",
             [],
-            _ => """
+            _ => $$"""
                  services:
                    chromadb:
-                     image: chromadb/chroma:latest
+                     image: {{ComponentVersions.ChromaImage}}
                      environment:
                        IS_PERSISTENT: "TRUE"
                        CHROMA_PERSIST_PATH: /data

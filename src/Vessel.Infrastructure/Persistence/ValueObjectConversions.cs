@@ -48,6 +48,10 @@ internal static class ValueObjectConversions
     public static readonly ValueConverter<VersionLabel, string> VersionLabel = new(value => value.Value,
         value => new VersionLabel(value));
 
+    public static readonly ValueConverter<DatabaseImage?, string?> NullableDatabaseImage = new(
+        value => value.HasValue ? value.Value.Value : null,
+        value => value == null ? null : DatabaseImage.Parse(value));
+
     public static readonly ValueConverter<ServerAddress, string> ServerAddress = new(
         value => FormatServerAddress(value),
         value => ParseServerAddress(value));

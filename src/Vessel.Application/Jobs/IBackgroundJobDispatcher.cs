@@ -15,4 +15,9 @@ public interface IRecurringJobScheduler
         string recurringJobId,
         Expression<Func<TJob, Task>> methodCall,
         string cronExpression);
+
+    /// <summary>Removes a recurring job (no-op when it does not exist), for example when a schedule is disabled.</summary>
+    void RemoveIfExists(string recurringJobId)
+    {
+    }
 }

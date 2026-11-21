@@ -1,4 +1,3 @@
-using Vessel.Domain.Backups;
 using Vessel.Domain.Databases;
 
 namespace Vessel.Application.ManagedServices;
@@ -48,42 +47,6 @@ public sealed record ServiceResourceSummary(
     string TemplateKey,
     string TemplateVersion,
     DatabaseLifecycleState State);
-
-public sealed record CreateBackupScheduleRequest(
-    Guid DatabaseId,
-    string Name,
-    string CronExpression,
-    int RetentionCount,
-    BackupStorageKind StorageKind,
-    int? TimeoutSeconds = null);
-
-public sealed record BackupScheduleSummary(
-    Guid Id,
-    Guid DatabaseId,
-    string Name,
-    string CronExpression,
-    int RetentionCount,
-    BackupStorageKind StorageKind,
-    bool Enabled,
-    DateTimeOffset? LastRunAt,
-    int TimeoutSeconds);
-
-public sealed record BackupExecutionSummary(
-    Guid Id,
-    Guid DatabaseId,
-    Guid? ScheduleId,
-    BackupExecutionStatus Status,
-    BackupStorageKind StorageKind,
-    string? ArtifactBucket,
-    string? ArtifactKey,
-    long? SizeBytes,
-    string? ChecksumSha256,
-    bool Protected,
-    DateTimeOffset CreatedAt,
-    DateTimeOffset? FinishedAt,
-    string? FailureReason,
-    DateTimeOffset? LastRestoreFailedAt,
-    string? LastRestoreFailureReason);
 
 public sealed record RestoreValidationResult(
     Guid BackupExecutionId,
