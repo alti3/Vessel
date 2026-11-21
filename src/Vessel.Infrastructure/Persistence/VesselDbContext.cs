@@ -329,6 +329,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         ConfigureWebhooks(modelBuilder);
         ConfigureProxy(modelBuilder);
         ConfigureRouting(modelBuilder);
+        ConfigurePersistentStorage(modelBuilder);
     }
 
     private static void ConfigureUsers(ModelBuilder modelBuilder)
@@ -879,8 +880,19 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.HasKey(restore => restore.Id);
             builder.Property(restore => restore.Id).HasDatabaseRestoreIdConversion();
             builder.Property(restore => restore.TeamId).HasTeamIdConversion();
-            builder.Property(restore => restore.BackupExecutionId).HasBackupExecutionIdConversion();
+            builder.Property(restore => restore.BackupExecutionId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new BackupExecutionId(value.Value) : null);
             builder.Property(restore => restore.TargetDatabaseResourceId).HasDatabaseResourceIdConversion();
+            // DATA-10: imports have no backup execution; they record their external source instead.
+            builder.Property(restore => restore.ImportSource).HasConversion<string>().HasMaxLength(32)
+                .HasDefaultValue(DatabaseImportSourceKind.None).IsRequired();
+            builder.Property(restore => restore.ImportReference).HasMaxLength(DatabaseRestore.MaxImportReferenceLength);
+            builder.Property(restore => restore.ImportDestinationId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new BackupDestinationId(value.Value) : null);
+            builder.Property(restore => restore.ImportDatabaseName).HasMaxLength(BackupExecution.MaxDatabaseNameLength);
+            builder.Ignore(restore => restore.IsImport);
             builder.Property(restore => restore.RequestedByUserId)
                 .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
                     value => value.HasValue ? new UserId(value.Value) : null);
@@ -900,7 +912,13 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.HasOne<BackupExecution>()
                 .WithMany()
                 .HasForeignKey(restore => restore.BackupExecutionId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne<BackupDestination>()
+                .WithMany()
+                .HasForeignKey(restore => restore.ImportDestinationId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
             builder.HasOne<DatabaseResource>()
                 .WithMany()
                 .HasForeignKey(restore => restore.TargetDatabaseResourceId)

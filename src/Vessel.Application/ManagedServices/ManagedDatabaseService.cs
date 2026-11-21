@@ -1,3 +1,7 @@
+using Vessel.Application.Deployments;
+using Vessel.Application.Servers;
+using Vessel.Application.Storage.Persistent;
+using Vessel.Domain.Storage;
 using System.Text;
 using System.Text.Json;
 using Vessel.Application.Auditing;
@@ -35,7 +39,9 @@ public sealed class ManagedDatabaseService(
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
     ServiceRoutingCoordinator serviceRouting,
-    DatabaseHealthProbe healthProbe)
+    DatabaseHealthProbe healthProbe,
+    ResourceStorageProvisioner? storage = null,
+    IComposeDocumentBuilder? composeDocuments = null)
 {
 
     public IReadOnlyList<ServiceTemplateSummary> ListTemplates()
@@ -186,8 +192,20 @@ public sealed class ManagedDatabaseService(
             (network, token) => runtime.EnsureNetworkAsync(ManagedRuntimeTargets.For(server), network,
                 new Dictionary<string, string> { ["vessel.managed"] = "true" }, token),
             cancellationToken);
+        var composeYaml = routing.ComposeYaml;
+        // DATA-12: service storage (named volumes, resource-directory files) is mounted and prepared before up.
+        if (storage is not null && composeDocuments is not null &&
+            storage.HasStorage(StorageOwnerKind.Service, service.Id.Value))
+        {
+            ServerExecutionTarget storageTarget = ServerExecutionTarget.From(server);
+            composeYaml = composeDocuments.AddStorageMounts(composeYaml,
+                storage.BuildSpec(StorageOwnerKind.Service, service.Id.Value, storageTarget, null, null));
+            await storage.EnsureOnServerAsync(StorageOwnerKind.Service, service.Id.Value, storageTarget, null,
+                (_, _, _) => Task.CompletedTask, cancellationToken);
+        }
+
         ManagedServiceWorkspace workspace = await workspaces.PrepareServiceAsync(service.Id, cancellationToken);
-        await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", routing.ComposeYaml, false,
+        await workspaces.WriteTextAsync(workspace.RootDirectory, "docker-compose.yml", composeYaml, false,
             cancellationToken);
         await workspaces.WriteTextAsync(workspace.RootDirectory, ".env",
             ComposeEnvironmentFile.Format(plan.SecretValues), true, cancellationToken);

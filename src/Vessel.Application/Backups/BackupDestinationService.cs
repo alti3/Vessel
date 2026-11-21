@@ -147,6 +147,10 @@ public sealed class BackupDestinationService(
             .Where(schedule => schedule.DestinationIds.Contains(destination.Id))
             .ToArray();
         foreach (BackupSchedule schedule in schedules) schedule.DetachDestination(destination.Id, Now());
+        foreach (ScheduledVolumeBackup volumeSchedule in dbContext.ScheduledVolumeBackups
+                     .Where(schedule => schedule.TeamId == teamId).AsEnumerable()
+                     .Where(schedule => schedule.DestinationIds.Contains(destination.Id)))
+            volumeSchedule.DetachDestination(destination.Id, Now());
         dbContext.BackupDestinationRepository.Remove(destination);
         SecretReference? secret = dbContext.SecretReferences.SingleOrDefault(reference =>
             reference.Id == destination.CredentialsReferenceId && reference.TeamId == teamId);

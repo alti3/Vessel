@@ -150,6 +150,105 @@ public sealed partial class YamlComposeDocumentBuilder(IPathSafetyService paths)
         return Serialize(root);
     }
 
+    public string AddStorageMounts(string yaml, ComposeStorageSpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+        YamlMappingNode root = Load(yaml);
+        if (spec.Mounts.Count == 0) return Serialize(root);
+        if (!TryGet(root, "services", out YamlNode? servicesNode) || servicesNode is not YamlMappingNode services ||
+            services.Children.Count == 0)
+            throw new ComposeValidationException("Compose file must define services.");
+
+        YamlMappingNode? topVolumes = null;
+        foreach (ComposeStorageMount mount in spec.Mounts)
+        {
+            var serviceName = mount.ServiceName ?? spec.DefaultService ?? (services.Children.Count == 1
+                ? ((YamlScalarNode)services.Children.Keys.Single()).Value
+                : null);
+            if (serviceName is null)
+                throw new ComposeValidationException(
+                    $"Storage mounted at {mount.Target} needs a service name: the stack has several services.");
+            if (!services.Children.TryGetValue(Key(serviceName), out YamlNode? serviceNode) ||
+                serviceNode is not YamlMappingNode service)
+                throw new ComposeValidationException($"Storage refers to compose service '{serviceName}', which does not exist.");
+
+            YamlSequenceNode volumes;
+            if (!TryGet(service, "volumes", out YamlNode? existing) || IsNull(existing))
+            {
+                volumes = new YamlSequenceNode();
+                service.Children[Key("volumes")] = volumes;
+            }
+            else if (existing is YamlSequenceNode list)
+            {
+                volumes = list;
+            }
+            else
+            {
+                throw new ComposeValidationException($"Service '{serviceName}' volumes must be a list.");
+            }
+
+            var target = mount.Target.Length > 1 ? mount.Target.TrimEnd('/') : mount.Target;
+            if (volumes.Children.Any(entry => string.Equals(MountTarget(entry), target, StringComparison.Ordinal)))
+                throw new ComposeValidationException(
+                    $"Service '{serviceName}' already mounts {mount.Target}; remove it from the compose file or use another mount path.");
+
+            var entry = new YamlMappingNode
+            {
+                { "type", Str(mount.Kind == ComposeStorageMountKind.Volume ? "volume" : "bind") },
+                { "source", Str(mount.Source) },
+                { "target", Str(target) }
+            };
+            if (mount.ReadOnly) entry.Children[Key("read_only")] = Bool(true);
+            if (mount.Kind == ComposeStorageMountKind.Bind)
+                // The source is prepared by Vessel; never let the runtime create a missing path as root.
+                entry.Children[Key("bind")] = new YamlMappingNode { { "create_host_path", Bool(false) } };
+            volumes.Add(entry);
+
+            if (mount.Kind != ComposeStorageMountKind.Volume) continue;
+            if (topVolumes is null)
+            {
+                if (!TryGet(root, "volumes", out YamlNode? topNode) || IsNull(topNode))
+                {
+                    topVolumes = new YamlMappingNode();
+                    root.Children[Key("volumes")] = topVolumes;
+                }
+                else
+                {
+                    topVolumes = topNode as YamlMappingNode ??
+                                 throw new ComposeValidationException("Compose top-level 'volumes' must be a mapping.");
+                }
+            }
+
+            // The runtime name is fixed (not prefixed with the compose project), so renames never move data silently.
+            topVolumes.Children[Key(mount.Source)] = new YamlMappingNode { { "name", Str(mount.Source) } };
+        }
+
+        return Serialize(root);
+    }
+
+    /// <summary>Container path of a service volume entry (short <c>src:dst[:mode]</c> or long syntax).</summary>
+    private static string? MountTarget(YamlNode entry)
+    {
+        switch (entry)
+        {
+            case YamlScalarNode { Value: not null } scalar:
+                {
+                    var parts = scalar.Value.Split(':');
+                    var target = parts.Length switch
+                    {
+                        1 => parts[0],
+                        2 => parts[1],
+                        _ => parts[1]
+                    };
+                    return target.Length > 1 ? target.TrimEnd('/') : target;
+                }
+            case YamlMappingNode mapping when TryGetScalar(mapping, "target", out var target):
+                return target.Length > 1 ? target.TrimEnd('/') : target;
+            default:
+                return null;
+        }
+    }
+
     private static YamlMappingNode Load(string yaml)
     {
         var text = yaml.TrimStart('﻿');

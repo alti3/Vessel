@@ -25,7 +25,38 @@ public interface IComposeDocumentBuilder
     /// </summary>
     /// <exception cref="ComposeValidationException">A named service does not exist or cannot join the network.</exception>
     string AttachServicesToNetwork(string yaml, string networkName, IReadOnlyDictionary<string, string> aliasesByService);
+
+    /// <summary>
+    ///     Adds Vessel-managed persistent storage (DATA-12) to a compose document: named volumes (declared top-level with
+    ///     their fixed runtime name) and bind mounts from the owned resource directory. A mount without a service name
+    ///     goes to <see cref="ComposeStorageSpec.DefaultService" /> (or the only service). A target path that the service
+    ///     already mounts is rejected rather than silently replaced.
+    /// </summary>
+    /// <exception cref="ComposeValidationException">A service does not exist or a target path is already mounted.</exception>
+    string AddStorageMounts(string yaml, ComposeStorageSpec spec)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support storage mounts.");
+    }
 }
+
+public enum ComposeStorageMountKind
+{
+    Volume,
+    Bind
+}
+
+/// <summary>
+///     One mount. <see cref="Source" /> is the runtime volume name for volumes or the absolute host path (inside the
+///     owned resource directory) for binds; <see cref="Target" /> is the container path.
+/// </summary>
+public sealed record ComposeStorageMount(
+    ComposeStorageMountKind Kind,
+    string? ServiceName,
+    string Source,
+    string Target,
+    bool ReadOnly = false);
+
+public sealed record ComposeStorageSpec(string? DefaultService, IReadOnlyList<ComposeStorageMount> Mounts);
 
 /// <summary>
 ///     Dockerfile stack input. <see cref="HostPortBinding" /> is <c>"{port}:{port}"</c> for production; previews publish

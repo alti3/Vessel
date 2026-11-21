@@ -594,6 +594,9 @@ public sealed class DatabaseBackupService(
             .Where(restore => restore.Status == DatabaseRestoreStatus.Queued ||
                               restore.Status == DatabaseRestoreStatus.Running)
             .Select(restore => restore.BackupExecutionId)
+            .AsEnumerable()
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
             .ToHashSet();
         candidates = candidates.Where(execution => !restoring.Contains(execution.Id)).ToArray();
 
@@ -815,5 +818,13 @@ public static class BackupRecurringJobs
             job => job.RunAsync(CancellationToken.None), "0 * * * *");
         scheduler.AddOrUpdate<RevalidateBackupDestinationsJob>(RevalidateBackupDestinationsJob.RecurringJobId,
             job => job.RunAsync(CancellationToken.None), "30 * * * *");
+        // DATA-09 volume backups and DATA-10 import uploads.
+        scheduler.AddOrUpdate<Volumes.VolumeBackupRecoveryJob>(Volumes.VolumeBackupRecoveryJob.RecurringJobId,
+            job => job.RunAsync(CancellationToken.None), "*/5 * * * *");
+        scheduler.AddOrUpdate<Volumes.CheckMissingVolumeBackupsJob>(Volumes.CheckMissingVolumeBackupsJob.RecurringJobId,
+            job => job.RunAsync(CancellationToken.None), "15 * * * *");
+        scheduler.AddOrUpdate<ManagedServices.DatabaseImports.CleanupDatabaseImportUploadsJob>(
+            ManagedServices.DatabaseImports.CleanupDatabaseImportUploadsJob.RecurringJobId,
+            job => job.RunAsync(CancellationToken.None), "45 * * * *");
     }
 }

@@ -82,6 +82,27 @@ public sealed class BackupArtifactReader(
         throw new DomainException("No copy of this backup is available any more.");
     }
 
+    /// <summary>
+    ///     Opens an arbitrary object of a team destination (database imports, DATA-10). The caller must have checked that
+    ///     the destination belongs to the acting team; the key is validated by the caller.
+    /// </summary>
+    public async Task<Stream> OpenObjectAsync(BackupDestination destination, string key,
+        CancellationToken cancellationToken = default)
+    {
+        IBackupDestinationClient client = await connector.ConnectAsync(destination, cancellationToken);
+        try
+        {
+            Stream content = await client.OpenReadAsync(new ObjectStorageKey(destination.Bucket, key),
+                cancellationToken);
+            return new OwningStream(content, client);
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
     /// <summary>Disposes the destination client together with the download stream.</summary>
     private sealed class OwningStream(Stream inner, IDisposable owner) : Stream
     {

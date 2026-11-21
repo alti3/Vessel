@@ -45,6 +45,21 @@ public sealed class SshProcessClient(IProcessRunner processRunner) : ISshClient
         return new SshCommandResult(ExitCode(result), result.StandardOutput, result.StandardError);
     }
 
+    public async Task<SshCommandResult> RunCommandStreamingAsync(
+        SshCommandRequest request,
+        ProcessStreams streams,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await processRunner.RunStreamingAsync(new ProcessCommand(
+            "ssh",
+            SshArguments.ForSsh(request.Connection, request.Command),
+            Timeout: request.Timeout ?? TimeSpan.FromHours(1),
+            OutputMode: ProcessOutputMode.Stream,
+            Redaction: new ProcessRedactionProfile(request.SecretValues ?? [], []),
+            MaxOutputBytes: 1024 * 1024), streams, cancellationToken);
+        return new SshCommandResult(ExitCode(result), result.StandardOutput, result.StandardError);
+    }
+
     public async IAsyncEnumerable<ProcessOutputLine> StreamCommandAsync(
         SshCommandRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

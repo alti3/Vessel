@@ -31,6 +31,21 @@ public interface IServerCommandRunner
         TimeSpan timeout,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    ///     Runs with caller-owned binary standard input/output streams (archives, dumps) that are never buffered in memory:
+    ///     locally through <see cref="IProcessRunner.RunStreamingAsync" />, remotely over the SSH connection's standard
+    ///     streams. Standard error is captured as bounded, redacted text.
+    /// </summary>
+    Task<ServerCommandResult> RunStreamingAsync(
+        ServerExecutionTarget target,
+        IReadOnlyList<string> arguments,
+        TimeSpan timeout,
+        ProcessStreams streams,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException($"{GetType().Name} does not support streaming server commands.");
+    }
+
     /// <summary>Runs in <paramref name="workingDirectory" /> and yields output lines as they arrive.</summary>
     IAsyncEnumerable<ProcessOutputLine> StreamAsync(
         ServerExecutionTarget target,

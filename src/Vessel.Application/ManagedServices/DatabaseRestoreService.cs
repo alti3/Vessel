@@ -2,6 +2,7 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Backups;
 using Vessel.Application.Jobs;
+using Vessel.Application.ManagedServices.DatabaseImports;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Realtime;
@@ -34,7 +35,8 @@ public sealed class DatabaseRestoreService(
     IAuditWriter auditWriter,
     IRealtimeNotifier realtime,
     INotificationEventPublisher notifications,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    DatabaseImportArtifactSource? imports = null)
 {
     public const string ConfirmationPhrase = "RESTORE";
 
@@ -114,9 +116,11 @@ public sealed class DatabaseRestoreService(
         // Retry-safe: a destructive restore never runs twice for the same request.
         if (restore.Status != DatabaseRestoreStatus.Queued) return ToSummary(restore);
 
-        BackupExecution execution =
-            await dbContext.BackupExecutionRepository.GetByIdAsync(restore.BackupExecutionId, cancellationToken)
-            ?? throw new InvalidOperationException("Backup execution was not found.");
+        // DATA-10: an import has no backup execution; its dump comes from an upload, a server path or a destination.
+        BackupExecution? execution = restore.BackupExecutionId is { } executionId
+            ? await dbContext.BackupExecutionRepository.GetByIdAsync(executionId, cancellationToken)
+              ?? throw new InvalidOperationException("Backup execution was not found.")
+            : null;
         DatabaseResource target =
             await dbContext.DatabaseResourceRepository.GetByIdAsync(restore.TargetDatabaseResourceId,
                 cancellationToken)
@@ -143,21 +147,25 @@ public sealed class DatabaseRestoreService(
         string? credentials = null;
         try
         {
-            DatabaseEngine sourceEngine = ResolveSourceEngine(execution);
-            EnsureRestorable(execution, target, sourceEngine,
-                new QueueDatabaseRestoreRequest(restore.DryRun, ConfirmationPhrase, restore.ReplaceExisting,
-                    restore.KeepOwners));
+            var options = new QueueDatabaseRestoreRequest(restore.DryRun, ConfirmationPhrase, restore.ReplaceExisting,
+                restore.KeepOwners);
+            DatabaseEngine sourceEngine = execution is null ? target.Engine : ResolveSourceEngine(execution);
+            if (execution is null) EnsureImportable(target, options);
+            else EnsureRestorable(execution, target, sourceEngine, options);
             Server server = dbContext.Servers.Single(item => item.Id == target.ServerId);
             credentials = await secretVault.RevealForDeploymentAsync(restore.TeamId, target.CredentialsReferenceId,
                 deadline.Token);
             var secrets = new RedactionContext([credentials]);
-            await using Stream artifact = await artifacts.OpenAsync(execution, deadline.Token);
+            await using Stream artifact = execution is not null
+                ? await artifacts.OpenAsync(execution, deadline.Token)
+                : await (imports ?? throw new InvalidOperationException("Database imports are not configured."))
+                    .OpenAsync(restore, deadline.Token);
             DatabaseRestoreOutcome outcome = await backupProvider.RestoreAsync(new DatabaseRestoreRequest(
                 target,
                 ManagedRuntimeTargets.For(server),
                 credentials,
                 artifact,
-                execution.ChecksumSha256,
+                execution?.ChecksumSha256,
                 sourceEngine,
                 new DatabaseRestoreOptions(restore.DryRun, restore.ReplaceExisting, restore.KeepOwners),
                 async (line, token) =>
@@ -165,20 +173,21 @@ public sealed class DatabaseRestoreService(
                     restore.AppendLog(redactor.Redact(line, secrets), timeProvider.GetUtcNow());
                     await dbContext.SaveChangesAsync(token);
                     await PublishAsync(restore, token);
-                }, execution.DatabaseName), deadline.Token);
+                }, execution?.DatabaseName ?? restore.ImportDatabaseName), deadline.Token);
 
             restore.RecordDetectedFormat(outcome.Format, timeProvider.GetUtcNow());
             restore.AppendLog(redactor.Redact(outcome.Summary, secrets), timeProvider.GetUtcNow());
             restore.Succeed(timeProvider.GetUtcNow());
-            if (!restore.DryRun)
+            if (!restore.DryRun && execution is not null)
             {
                 execution.MarkRestoreValidated(timeProvider.GetUtcNow());
                 execution.MarkRestoreSucceeded(timeProvider.GetUtcNow());
             }
 
             await dbContext.SaveChangesAsync(CancellationToken.None);
+            if (imports is not null && restore.IsImport) await imports.FinishAsync(restore, true, CancellationToken.None);
             await auditWriter.RecordAsync(restore.TeamId, restore.RequestedByUserId, AuditActions.RestoreCompleted,
-                new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
+                AuditTargetFor(restore), null,
                 new Dictionary<string, object?>
                 {
                     ["restoreId"] = restore.Id.Value.ToString("D"),
@@ -207,7 +216,7 @@ public sealed class DatabaseRestoreService(
         return ToSummary(restore);
     }
 
-    private void EnsureRestorable(BackupExecution execution, DatabaseResource target, DatabaseEngine sourceEngine,
+    private static void EnsureRestorable(BackupExecution execution, DatabaseResource target, DatabaseEngine sourceEngine,
         QueueDatabaseRestoreRequest request)
     {
         if (!execution.HasRestorableArtifact)
@@ -223,6 +232,21 @@ public sealed class DatabaseRestoreService(
             throw new DomainException("Replace-existing and keep-owners options apply to PostgreSQL restores only.");
     }
 
+    private static void EnsureImportable(DatabaseResource target, QueueDatabaseRestoreRequest request)
+    {
+        if (target.LifecycleState != DatabaseLifecycleState.Running || string.IsNullOrWhiteSpace(target.ContainerName))
+            throw new DomainException("The target database must be running before data can be imported.");
+        if ((request.ReplaceExisting || request.KeepOwners) && target.Engine != DatabaseEngine.PostgreSql)
+            throw new DomainException("Replace-existing and keep-owners options apply to PostgreSQL imports only.");
+    }
+
+    private static AuditTarget AuditTargetFor(DatabaseRestore restore)
+    {
+        return restore.BackupExecutionId is { } executionId
+            ? new AuditTarget("backup", executionId.Value.ToString("D"))
+            : new AuditTarget("database", restore.TargetDatabaseResourceId.Value.ToString("D"));
+    }
+
     private DatabaseEngine ResolveSourceEngine(BackupExecution execution)
     {
         return dbContext.DatabaseResources.Where(database => database.Id == execution.DatabaseResourceId)
@@ -230,16 +254,16 @@ public sealed class DatabaseRestoreService(
                ?? throw new DomainException("The source database of this backup no longer exists.");
     }
 
-    private async Task FailAsync(DatabaseRestore restore, BackupExecution execution, string reason,
+    private async Task FailAsync(DatabaseRestore restore, BackupExecution? execution, string reason,
         CancellationToken cancellationToken)
     {
-        restore.AppendLog($"Restore failed: {reason}", timeProvider.GetUtcNow());
+        restore.AppendLog($"{(restore.IsImport ? "Import" : "Restore")} failed: {reason}", timeProvider.GetUtcNow());
         restore.Fail(reason, timeProvider.GetUtcNow());
-        if (!restore.DryRun && execution.HasRestorableArtifact)
+        if (!restore.DryRun && execution is { HasRestorableArtifact: true })
             execution.MarkRestoreFailed(reason.Length > 1000 ? reason[..1000] : reason, timeProvider.GetUtcNow());
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditWriter.RecordAsync(restore.TeamId, restore.RequestedByUserId, AuditActions.RestoreFailed,
-            new AuditTarget("backup", execution.Id.Value.ToString("D")), null,
+            AuditTargetFor(restore), null,
             new Dictionary<string, object?>
             {
                 ["restoreId"] = restore.Id.Value.ToString("D"),
@@ -251,7 +275,8 @@ public sealed class DatabaseRestoreService(
         if (dbContext.DatabaseResources.Where(database => database.Id == restore.TargetDatabaseResourceId)
                 .Select(database => database.Name).SingleOrDefault() is { } targetName)
             await notifications.PublishAsync(restore.TeamId,
-                OperationalNotifications.RestoreFailed(execution.Id.Value, restore.TargetDatabaseResourceId.Value,
+                OperationalNotifications.RestoreFailed(execution?.Id.Value ?? restore.Id.Value,
+                    restore.TargetDatabaseResourceId.Value,
                     targetName.Value), cancellationToken);
     }
 
@@ -267,6 +292,7 @@ public sealed class DatabaseRestoreService(
                     TargetDatabaseId = restore.TargetDatabaseResourceId.Value,
                     Status = restore.Status.ToString(),
                     restore.DryRun,
+                    Import = restore.IsImport,
                     restore.FailureReason
                 }),
                 cancellationToken);
@@ -310,10 +336,10 @@ public sealed class DatabaseRestoreService(
 
     internal static DatabaseRestoreSummary ToSummary(DatabaseRestore restore)
     {
-        return new DatabaseRestoreSummary(restore.Id.Value, restore.BackupExecutionId.Value,
+        return new DatabaseRestoreSummary(restore.Id.Value, restore.BackupExecutionId?.Value,
             restore.TargetDatabaseResourceId.Value, restore.Status, restore.DryRun, restore.ReplaceExisting,
             restore.KeepOwners, restore.DetectedFormat, restore.FailureReason, restore.CreatedAt, restore.StartedAt,
-            restore.FinishedAt, restore.Log);
+            restore.FinishedAt, restore.Log, restore.ImportSource, restore.ImportReference);
     }
 }
 

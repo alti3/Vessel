@@ -26,6 +26,7 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
+using Vessel.Domain.Storage;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
 using Vessel.Domain.Users;
@@ -54,7 +55,26 @@ internal sealed class BackupTestDbContext : IVesselDbContext
     public List<DatabaseRestore> RestoreItems { get; } = [];
     public List<BackupDestination> DestinationItems { get; } = [];
     public List<SecretReference> SecretReferenceItems { get; } = [];
+    public List<PersistentVolume> VolumeItems { get; } = [];
+    public List<FileMount> FileMountItems { get; } = [];
+    public List<ScheduledVolumeBackup> VolumeScheduleItems { get; } = [];
+    public List<VolumeBackupExecution> VolumeExecutionItems { get; } = [];
+    public List<VolumeBackupRestore> VolumeRestoreItems { get; } = [];
+    public List<DatabaseImportUpload> ImportUploadItems { get; } = [];
     public int SaveCount { get; private set; }
+
+    public IQueryable<PersistentVolume> PersistentVolumes => VolumeItems.AsQueryable();
+    public IQueryable<FileMount> FileMounts => FileMountItems.AsQueryable();
+    public IQueryable<ScheduledVolumeBackup> ScheduledVolumeBackups => VolumeScheduleItems.AsQueryable();
+    public IQueryable<VolumeBackupExecution> VolumeBackupExecutions => VolumeExecutionItems.AsQueryable();
+    public IQueryable<VolumeBackupRestore> VolumeBackupRestores => VolumeRestoreItems.AsQueryable();
+    public IQueryable<DatabaseImportUpload> DatabaseImportUploads => ImportUploadItems.AsQueryable();
+    public IRepository<PersistentVolume, PersistentVolumeId> PersistentVolumeRepository => new ListRepository<PersistentVolume, PersistentVolumeId>(VolumeItems);
+    public IRepository<FileMount, FileMountId> FileMountRepository => new ListRepository<FileMount, FileMountId>(FileMountItems);
+    public IRepository<ScheduledVolumeBackup, ScheduledVolumeBackupId> ScheduledVolumeBackupRepository => new ListRepository<ScheduledVolumeBackup, ScheduledVolumeBackupId>(VolumeScheduleItems);
+    public IRepository<VolumeBackupExecution, VolumeBackupExecutionId> VolumeBackupExecutionRepository => new ListRepository<VolumeBackupExecution, VolumeBackupExecutionId>(VolumeExecutionItems);
+    public IRepository<VolumeBackupRestore, VolumeBackupRestoreId> VolumeBackupRestoreRepository => new ListRepository<VolumeBackupRestore, VolumeBackupRestoreId>(VolumeRestoreItems);
+    public IRepository<DatabaseImportUpload, DatabaseImportUploadId> DatabaseImportUploadRepository => new ListRepository<DatabaseImportUpload, DatabaseImportUploadId>(ImportUploadItems);
 
     public IQueryable<User> Users => UserItems.AsQueryable();
     public IQueryable<Team> Teams => TeamItems.AsQueryable();

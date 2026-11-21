@@ -17,6 +17,7 @@ using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Servers;
 using Vessel.Application.Servers.Files;
+using Vessel.Application.Storage.Persistent;
 using Vessel.Domain;
 using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
@@ -24,6 +25,7 @@ using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Servers;
+using Vessel.Domain.Storage;
 using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
@@ -52,7 +54,8 @@ public sealed partial class DeploymentRunner(
     IDeploymentCancellationRegistry cancellations,
     IBackgroundJobDispatcher backgroundJobs,
     IServerDirectoryTransfer? directoryTransfer = null,
-    IServerCommandRunner? serverCommands = null)
+    IServerCommandRunner? serverCommands = null,
+    ResourceStorageProvisioner? storage = null)
     : IDeploymentRunner
 {
     /// <summary>
@@ -265,6 +268,13 @@ public sealed partial class DeploymentRunner(
                 await proxyLifecycle.EnsureForDeploymentAsync(server.Id, plan.NetworkName, buildToken);
             await AppendAsync(deploymentId, proxy.Succeeded ? "system" : "stderr", proxy.Message, buildToken);
             await ThrowIfCanceledAsync(deploymentId, buildToken);
+
+            // DATA-12: content files and directories exist in the owned resource directory before containers start.
+            if (plan.HasStorage)
+                await storage!.EnsureOnServerAsync(StorageOwnerKind.Application, application.Id.Value,
+                    ServerExecutionTarget.From(server), plan.Naming?.PreviewSuffix,
+                    (line, isWarning, token) => AppendAsync(deploymentId, isWarning ? "stderr" : "system", line, token),
+                    buildToken);
 
             if (application.BuildConfiguration.BuildPack == ApplicationBuildPack.Dockerfile && !reuseImage)
             {
@@ -536,6 +546,18 @@ public sealed partial class DeploymentRunner(
                 await AppendAsync(deploymentId, "system", warning, cancellationToken);
         }
 
+        // DATA-12: named volumes and resource-directory mounts; previews get their own volumes and directory.
+        var hasStorage = storage is not null && storage.HasStorage(StorageOwnerKind.Application, application.Id.Value);
+        if (hasStorage)
+        {
+            ComposeStorageSpec storageSpec = storage!.BuildSpec(StorageOwnerKind.Application, application.Id.Value,
+                ServerExecutionTarget.From(server), naming.PreviewSuffix, serviceName);
+            compose = composeDocuments.AddStorageMounts(compose, storageSpec);
+            await AppendAsync(deploymentId, "system",
+                $"Mounting {storageSpec.Mounts.Count} persistent storage entr{(storageSpec.Mounts.Count == 1 ? "y" : "ies")}.",
+                cancellationToken);
+        }
+
         return new DeploymentRuntimePlan(
             naming.ProjectName,
             serviceName,
@@ -548,7 +570,10 @@ public sealed partial class DeploymentRunner(
             healthUrl,
             naming,
             port,
-            healthPath);
+            healthPath)
+        {
+            HasStorage = hasStorage
+        };
     }
 
     private async Task<ComposeNormalizationResult?> CreateComposePassthroughAsync(
