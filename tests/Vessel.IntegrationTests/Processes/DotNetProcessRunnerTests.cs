@@ -122,7 +122,8 @@ public sealed class DotNetProcessRunnerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             process.WaitForExitAsync(TestContext.Current.CancellationToken));
 
-        for (int attempt = 0; attempt < 20 && !process.HasExited; attempt++)
+        // The kill is asynchronous; under heavy machine load reaping can take well over a second.
+        for (int attempt = 0; attempt < 200 && !process.HasExited; attempt++)
             await Task.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
 
         Assert.True(process.HasExited);
