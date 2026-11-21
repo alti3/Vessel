@@ -15,6 +15,7 @@ using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy;
+using Vessel.Application.Resources.Status;
 using Vessel.Application.Realtime;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
@@ -27,6 +28,7 @@ using Vessel.Domain.Applications;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
+using Vessel.Domain.Monitoring;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Registries;
 using Vessel.Domain.Servers;
@@ -61,7 +63,8 @@ public sealed partial class DeploymentRunner(
     IServerDirectoryTransfer? directoryTransfer = null,
     IServerCommandRunner? serverCommands = null,
     IGitCredentialProvider? gitCredentials = null,
-    ResourceStorageProvisioner? storage = null)
+    ResourceStorageProvisioner? storage = null,
+    ExpectedStopRecorder? expectedStops = null)
     : IDeploymentRunner
 {
     /// <summary>
@@ -316,6 +319,10 @@ public sealed partial class DeploymentRunner(
                 throw new DeploymentCanceledException();
             run.Dispose();
             await AppendAsync(deploymentId, "system", "Deploy phase started; replacing containers.", cancellationToken);
+            // SRV-04: replacing production containers is an intended stop, not an outage.
+            if (preview is null && expectedStops is not null)
+                await expectedStops.ExpectStopAsync(ResourceRuntimeKind.Application, application.Id.Value, teamId,
+                    server.Id, cancellationToken: cancellationToken);
 
             // Images Vessel built (or reused) are never rebuilt by compose; only Docker Compose services build here.
             var composeBuilds = !reuseImage && application.BuildConfiguration.BuildPack == ApplicationBuildPack.DockerCompose;

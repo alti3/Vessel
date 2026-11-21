@@ -3,6 +3,7 @@ using Vessel.Application.Auditing;
 using Vessel.Application.Jobs;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
+using Vessel.Application.Resources.Status;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Servers;
@@ -10,6 +11,7 @@ using Vessel.Application.Servers.Files;
 using Vessel.Application.Storage;
 using Vessel.Application.Storage.Persistent;
 using Vessel.Domain;
+using Vessel.Domain.Monitoring;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Common;
@@ -40,9 +42,21 @@ public sealed class VolumeBackupService(
     IEnumerable<IServerFileChannel> channels,
     IAuditWriter auditWriter,
     INotificationEventPublisher notifications,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ExpectedStopRecorder? expectedStops = null)
 {
     public const string ConfirmationPhrase = "RESTORE";
+
+    /// <summary>SRV-04: pausing the resource that uses the storage is an intended stop, not an outage.</summary>
+    private Task ExpectStopAsync(StorageOwnerContext owner, CancellationToken cancellationToken)
+    {
+        if (expectedStops is null) return Task.CompletedTask;
+        ResourceRuntimeKind kind = owner.Kind == StorageOwnerKind.Application
+            ? ResourceRuntimeKind.Application
+            : ResourceRuntimeKind.Service;
+        return expectedStops.ExpectStopAsync(kind, owner.Id, owner.TeamId, owner.ServerId,
+            cancellationToken: cancellationToken);
+    }
 
     public const int MaxPageSize = 100;
 
@@ -276,7 +290,11 @@ public sealed class VolumeBackupService(
 
             try
             {
-                if (stopped.Count > 0) await runner.StopContainersAsync(serverTarget, stopped, deadline.Token);
+                if (stopped.Count > 0)
+                {
+                    await ExpectStopAsync(owner, deadline.Token);
+                    await runner.StopContainersAsync(serverTarget, stopped, deadline.Token);
+                }
                 archive = await runner.ArchiveAsync(serverTarget, source, execution.Id.Value, timeout,
                     deadline.Token);
             }
@@ -491,7 +509,11 @@ public sealed class VolumeBackupService(
             await dbContext.SaveChangesAsync(CancellationToken.None);
             try
             {
-                if (containers.Count > 0) await runner.StopContainersAsync(serverTarget, containers, deadline.Token);
+                if (containers.Count > 0)
+                {
+                    await ExpectStopAsync(owner, deadline.Token);
+                    await runner.StopContainersAsync(serverTarget, containers, deadline.Token);
+                }
                 await using Stream artifact = await OpenArtifactAsync(execution, deadline.Token);
                 await runner.RestoreAsync(serverTarget, source, artifact, execution.ChecksumSha256,
                     restore.ReplaceExisting, restore.Id.Value, RestoreTimeout,

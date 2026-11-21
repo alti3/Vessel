@@ -12,6 +12,7 @@ using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
+using Vessel.Application.Resources.Status;
 using Vessel.Application.Processes;
 using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Redis;
@@ -22,6 +23,7 @@ using Vessel.Domain.Auditing;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Common;
 using Vessel.Domain.Databases;
+using Vessel.Domain.Monitoring;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.ValueObjects;
@@ -42,7 +44,8 @@ public sealed class ManagedDatabaseService(
     ServiceRoutingCoordinator serviceRouting,
     DatabaseHealthProbe healthProbe,
     ResourceStorageProvisioner? storage = null,
-    IComposeDocumentBuilder? composeDocuments = null)
+    IComposeDocumentBuilder? composeDocuments = null,
+    ExpectedStopRecorder? expectedStops = null)
 {
     private ServiceTemplateRuntimeResolver? _templateRuntime;
 
@@ -113,6 +116,12 @@ public sealed class ManagedDatabaseService(
             return new DatabaseLifecycleResult(database.Id.Value, database.LifecycleState, database.HealthState,
                 $"Database {action} skipped: another database operation is running.");
         }
+
+        // SRV-04: an explicit stop, restart or delete is not an outage.
+        if (expectedStops is not null && action is DatabaseLifecycleAction.Stop or DatabaseLifecycleAction.Restart
+                or DatabaseLifecycleAction.Delete)
+            await expectedStops.ExpectStopAsync(ResourceRuntimeKind.Database, database.Id.Value, teamId, server.Id,
+                cancellationToken: cancellationToken);
 
         try
         {

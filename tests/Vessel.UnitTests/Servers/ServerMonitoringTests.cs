@@ -260,6 +260,40 @@ public sealed class ServerMonitoringTests
     }
 
     [Fact]
+    public async Task ExpectedStop_SuppressesStoppedNotificationForVesselInitiatedStops()
+    {
+        CrossTeamFixture fixture = CrossTeamFixture.Create();
+        var notifications = new RecordingNotificationEventPublisher();
+        var time = new ManualTime(Now);
+        var recorder = new ExpectedStopRecorder(fixture.Store.Context, time,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ExpectedStopRecorder>.Instance);
+        CancellationToken token = TestContext.Current.CancellationToken;
+
+        // A resource never observed before gets a status row carrying the expectation.
+        await recorder.ExpectStopAsync(ResourceRuntimeKind.Database, Guid.NewGuid(), fixture.TeamA.Id,
+            fixture.ServerA.Id, cancellationToken: token);
+        Assert.True(Assert.Single(fixture.Store.Set<ResourceRuntimeStatus>()).IsStopExpected(Now));
+
+        var status = ResourceRuntimeStatus.Create(ResourceRuntimeKind.Application, fixture.ApplicationA.Id.Value,
+            fixture.TeamA.Id, fixture.ServerA.Id, Now);
+        status.Observe(new AggregatedRuntimeStatus(ResourceRuntimeState.Running, ResourceHealth.Healthy), 1, 1, 0, Now);
+        fixture.Store.Set<ResourceRuntimeStatus>().Add(status);
+        await recorder.ExpectStopAsync(ResourceRuntimeKind.Application, status.ResourceId, fixture.TeamA.Id,
+            fixture.ServerA.Id, cancellationToken: token);
+        status.Observe(new AggregatedRuntimeStatus(ResourceRuntimeState.Exited, ResourceHealth.Unknown), 1, 0, 0,
+            Now.AddMinutes(1));
+
+        var job = new NotifyResourceStoppedJob(fixture.Store.Context, notifications, time);
+        Assert.False(await job.RunAsync(ResourceRuntimeKind.Application, status.ResourceId,
+            status.StateChangedAt.UtcTicks, token));
+        Assert.Empty(notifications.Published);
+
+        // Once the window has passed, a stop is unexpected again.
+        time.Now += ResourceRuntimeStatus.ExpectedStopWindow + TimeSpan.FromMinutes(1);
+        Assert.False(status.IsStopExpected(time.GetUtcNow()));
+    }
+
+    [Fact]
     public async Task StoppedNotificationIsSentOnlyWhenStillStoppedAndNotDeploying()
     {
         CrossTeamFixture fixture = CrossTeamFixture.Create();

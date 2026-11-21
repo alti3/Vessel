@@ -193,6 +193,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ServerMetricsRetentionJob>();
         services.AddScoped<ServerAlertEvaluator>();
         services.AddScoped<ResourceStatusReconciler>();
+        services.AddScoped<ExpectedStopRecorder>();
         services.AddScoped<ResourceRuntimeStatusService>();
         services.AddScoped<NotifyResourceStoppedJob>();
         services.AddScoped<RuntimeLogQueryService>();

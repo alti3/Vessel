@@ -161,36 +161,36 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SEC-04 | Secret encryption key management: hard-coded fallback key, no rotation or re-encryption, plaintext TOTP secrets | P0 | M | 15.08, Phase 14 (installer key generation). | Done |
 | SEC-05 | Repository file reads follow symlinks; path containment is lexical only | P0 | S | 15.10, Phase 8 follow-up. | Done |
 | SRV-01 | Server-targeted operations silently run on the Vessel host (health, connectivity, terminal) | P0 | S | 12.07, 12.11, 7.05 (re-open); 15.01/15.12. | Done |
-| API-01 | No OpenAPI document and no API compatibility policy; upstream REST surface grew from 96 to 233 paths | P1 | M | 6.07 follow-up; New: Phase 6b "Public API completeness"; 17.x for… | Open |
+| API-01 | No OpenAPI document and no API compatibility policy; upstream REST surface grew from 96 to 233 paths | P1 | M | 6.07 follow-up; New: Phase 6b "Public API completeness"; 17.x for… | Done |
 | DATA-03 | Backup, restore and lifecycle operations do not exclude each other | P1 | S | 11.04, 11.12, 16.06 | Done |
 | DATA-04 | Database health is never actually probed | P1 | M | 11.01-11.03 (reopen), 12.x monitoring | Done |
 | DATA-05 | Credentials with `$` break in the generated `.env`, and the Redis password quoting semantics are missing | P1 | S | 11.01-11.03 | Done |
 | DATA-06 | Team-scoped backup destinations (S3 storages) with validation, usability state and multiple destinations | P1 | L | 5.22/5.24 (extend), 11.08; New: Phase 11b "Backup destinations" | Done |
 | DATA-07 | Backup schedule model parity (database selection, formats, retention, timeout, edit/delete) | P1 | L | 11.10, 11.11 (reopen) | Done |
 | DATA-08 | Backup notifications, missing-backup alerts and failure throttling | P1 | M | 13.x (event producers), 11.10 | Done |
-| DATA-09 | Scheduled volume and directory backups | P1 | XL | 11.08 (reopen); New: Phase 11b | Open |
-| DATA-10 | Database import from upload, server path or S3 (API and UI) | P1 | L | 11.12; 17.x (migration) | Open |
+| DATA-09 | Scheduled volume and directory backups | P1 | XL | 11.08 (reopen); New: Phase 11b | Done |
+| DATA-10 | Database import from upload, server path or S3 (API and UI) | P1 | L | 11.12; 17.x (migration) | Done |
 | DATA-11 | Default images, Valkey and the "latest" default | P1 | S | 11.01-11.03 | Done |
-| DATA-12 | Application and service persistent storage model (volumes and file mounts) | P1 | XL | 7.x/8.11 (extend); New: Phase 11b or a dedicated storage phase | Open |
-| DATA-13 | Backup the control-plane database before self-update, and instance backup settings | P1 | M | 14.11-14.15, 14.20, 16.12 | Open |
+| DATA-12 | Application and service persistent storage model (volumes and file mounts) | P1 | XL | 7.x/8.11 (extend); New: Phase 11b or a dedicated storage phase | Partial (key-ring re-encryption of file mount content remains) |
+| DATA-13 | Backup the control-plane database before self-update, and instance backup settings | P1 | M | 14.11-14.15, 14.20, 16.12 | Done |
 | DATA-14 | Backup API contract (list, update, delete, executions, downloads) and sensitivity rules | P1 | M | 6.x API, 11.14 | Done |
 | DEP-03 | Deployment log streaming redacts only known patterns, not environment values (`redact_all_env_values_in_logs`) | P1 | S | 15.07; 8.14. | Done |
 | DEP-04 | Deployment queue admission: queue instead of reject, dedupe, limits, trigger source, stuck recovery | P1 | M | 8.02/8.04 rework; 16.05/16.06. | Done |
 | DEP-05 | Auto-cancel superseded deployments (v4.7.0 breaking default) | P1 | M | New items in Phase 8/9 rework (8.20 extension). | Done |
-| DEP-06 | Rollback (local and registry images, restricted targets) | P1 | M | New Phase 8 follow-up (or Phase 9b); 18.12. | Partial (local images; registry rollback needs registry push support) |
+| DEP-06 | Rollback (local and registry images, restricted targets) | P1 | M | New Phase 8 follow-up (or Phase 9b); 18.12. | Done |
 | DEP-07 | Preview lifecycle: cleanup, stop, API and settings | P1 | M | 9.14 completion; Phase 10 for preview domains (cross-ref Proxy… | Done |
 | DEP-08 | Private Git sources (GitHub App, GitLab App, Gitea/Forgejo App, deploy keys, HTTPS credentials, SSH host-key pinning) | P1 | XL | 9.08 (marked done but only refs discovery exists) → new Phase 9b… | Open |
-| DEP-09 | Build packs: Railpack (and Static) unimplemented, Nixpacks deprecated, build-time variables never passed | P1 | L | New Phase 8b "Build packs"; 17.06 import mapping. | Open |
-| DEP-10 | Environment variable value semantics (exact values, literal/multiline, empty values, order, preview copies, duplicates) | P1 | M | 7.13/8.09 rework; 17.07. | Open |
-| DEP-11 | Docker Compose build pack: parse and validate instead of raw passthrough | P1 | L | 8.08 rework; new Compose items; Phase 10 (routing) cross-ref. | Open |
+| DEP-09 | Build packs: Railpack (and Static) unimplemented, Nixpacks deprecated, build-time variables never passed | P1 | L | New Phase 8b "Build packs"; 17.06 import mapping. | Done |
+| DEP-10 | Environment variable value semantics (exact values, literal/multiline, empty values, order, preview copies, duplicates) | P1 | M | 7.13/8.09 rework; 17.07. | Done |
+| DEP-11 | Docker Compose build pack: parse and validate instead of raw passthrough | P1 | L | 8.08 rework; new Compose items; Phase 10 (routing) cross-ref. | Partial (per-service domains for multi-service compose remain) |
 | DEP-12 | Webhook fan-out and repository matching correctness | P1 | S–M | 9.10 fix. | Done |
 | IAM-03 | Member role is read-only upstream; Vessel members can still deploy and cancel, and role hierarchy is not enforced | P1 | S–M | 4.08/4.09/4.16 (reopen). | Done |
-| IAM-04 | Token ability model is behind (no `delete`, wrong hierarchy, no pause/roll/edit, no sensitive-response policy) | P1 | M | 4.06/4.07 (reopen). | Partial (7-day token expiry warning job remains) |
+| IAM-04 | Token ability model is behind (no `delete`, wrong hierarchy, no pause/roll/edit, no sensitive-response policy) | P1 | M | 4.06/4.07 (reopen). | Done |
 | IAM-05 | Fine-grained access grants (team, project, environment and resource scopes) for members, invitations and tokens | P1 | XL | New: Phase 4b "Fine-grained access" (before Phase 15). | Done |
 | IAM-06 | No instance-admin / root-team concept and no registration policy | P1 | M | 4.02 follow-up; 14.05 (CLI). | Done |
-| IAM-07 | OIDC/OAuth sign-in with provider identities and registration policy (ROADMAP 4.04/4.05) | P1 | L | 4.04, 4.05. | Open |
-| IAM-08 | Audit log falls short of upstream's team audit events (context, transactional writes, retention, query API/UI) | P1 | M–L | 4.13–4.15 (reopen); 15.09; 16.01. | Open |
-| IAM-09 | Sessions and the active team: no revocation, no persisted current team, and login lands in an invited team the user is not a member of | P1 | M | 4.02/4.08 (reopen). | Open |
+| IAM-07 | OIDC/OAuth sign-in with provider identities and registration policy (ROADMAP 4.04/4.05) | P1 | L | 4.04, 4.05. | Done |
+| IAM-08 | Audit log falls short of upstream's team audit events (context, transactional writes, retention, query API/UI) | P1 | M–L | 4.13–4.15 (reopen); 15.09; 16.01. | Done |
+| IAM-09 | Sessions and the active team: no revocation, no persisted current team, and login lands in an invited team the user is not a member of | P1 | M | 4.02/4.08 (reopen). | Done |
 | IAM-10 | Transactional auth emails are not delivered (password reset, invitations, verification) | P1 | M | 4.02 (reopen); 13.x. | Done |
 | NET-03 | Domain identity, validation and conflicts | P1 | M | Phase 10 (10.07) and 15.05. | Done |
 | NET-04 | TLS certificate truth from Traefik `acme.json` (inventory, delete/unused, backup/restore) | P1 | M | Phase 10 (10.08–10.10 rework); new task, Phase 10 follow-up. | Done |
@@ -201,10 +201,10 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | NTF-04 | Notification throttling and dedupe | P1 | M | New: 13.13–13.14 (or Phase 16 reliability). | Done |
 | NTF-05 | Granular event catalog and per-event routing | P1 | M | 13.09 (extend), 17.10. | Done |
 | NTF-06 | Email provider parity: instance transactional email, named SMTP servers, Resend, sender split, TLS modes, EHLO | P1 | L | 13.03 (reopen); auth Phase 4 password reset. | Done |
-| NTF-07 | User-defined scheduled tasks (cron commands in application/service containers) | P1 | L | New (suggest Phase 11/12 follow-up, "11.16–11.20 Scheduled… | Open |
-| NTF-08 | Scheduled-job runtime semantics (durable runs, missed runs, retries, timezone) | P1 | L | 11.10 (reopen), 5.25 (jobs foundation), 16.x reliability. | Open |
-| OPS-01 | Update channels, version manifest, and automatic-update policy for Phase 14 | P1 | M | 14.11–14.15 (extend), new 14.23 "update channels & auto-update… | Open |
-| OPS-02 | Pre-update control-plane database backup, upgrade status, job draining, and single-flight upgrades | P1 | M | 14.11–14.15, 14.20, 16.12. | Open |
+| NTF-07 | User-defined scheduled tasks (cron commands in application/service containers) | P1 | L | New (suggest Phase 11/12 follow-up, "11.16–11.20 Scheduled… | Done |
+| NTF-08 | Scheduled-job runtime semantics (durable runs, missed runs, retries, timezone) | P1 | L | 11.10 (reopen), 5.25 (jobs foundation), 16.x reliability. | Done |
+| OPS-01 | Update channels, version manifest, and automatic-update policy for Phase 14 | P1 | M | 14.11–14.15 (extend), new 14.23 "update channels & auto-update… | Done |
+| OPS-02 | Pre-update control-plane database backup, upgrade status, job draining, and single-flight upgrades | P1 | M | 14.11–14.15, 14.20, 16.12. | Done |
 | PLT-03 | YAML handling through a real parser/emitter | P1 | S | Phase 5 / 15.05 | Done |
 | PLT-05 | CI supply-chain hardening | P1 | S | 15.14, 15.15, 18.06 | Done |
 | PLT-06 | Ecosystem image pins for runtime components Vessel deploys | P1 | S–M | 10.x, 11.x, 15.14 | Done |
@@ -212,13 +212,13 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SEC-07 | Manual webhook secret strength, failure throttling, and real client IP | P1 | S | 15.04, Phase 9 follow-up. | Done |
 | SEC-08 | Outbound URL / SSRF guard for notifications and SMTP | P1 | M | Phase 13 follow-up, 15.05. | Done |
 | SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Done |
-| SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Open |
-| SEC-11 | Git-based Docker Compose validation and host-path policy | P1 | M | 15.05/15.10, Phase 8 follow-up. | Open |
+| SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Done |
+| SEC-11 | Git-based Docker Compose validation and host-path policy | P1 | M | 15.05/15.10, Phase 8 follow-up. | Done |
 | SEC-12 | SSH connection hardening foundation (host key pinning, fixed options, key lifecycle) | P1 | L | New items under Phase 15 (and the SSH runtime phase), 15.12. | Done |
 | SEC-13 | API abuse controls: failed-request throttle and rate-limit coverage | P1 | S | 15.04, Phase 13. | Done |
 | SRV-02 | Remote server execution foundation: private keys, real validation and install, server lifecycle API | P1 | L. | 7.04/7.05 (extend), new Phase 12b "Remote servers"; Security agent… | Done |
 | SRV-03 | Host and container metrics, fleet Metrics page, and the host-agent decision (Sentinel equivalent) | P1 | L | 12.11/12.12 (re-open), 16.08; new ADR; Phase B is a new phase item. | Done |
-| SRV-04 | Resource runtime status reconciliation, restart limits, and stop notifications | P1 | M. | 12.13 (extend); new item under Phase 12b. | Partial (deploy/start flows must signal expected stops to suppress false stop alerts) |
+| SRV-04 | Resource runtime status reconciliation, restart limits, and stop notifications | P1 | M. | 12.13 (extend); new item under Phase 12b. | Done |
 | SRV-05 | Runtime (container) logs for applications, databases and services: API, UI, merging, safe export | P1 | M. | 12.01/12.04 (extend to runtime logs). | Done |
 | SRV-06 | Container terminal (PTY exec/attach), short-lived session tokens, and continuous re-authorization | P1 | M. | 12.07–12.10 (re-open the container PTY). | Done |
 | SRV-07 | Docker cleanup (scheduled, threshold-based, safe) and the server Images page | P1 | M. | New Phase 12b item; 16.04. | Done |
