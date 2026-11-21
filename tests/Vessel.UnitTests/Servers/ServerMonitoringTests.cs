@@ -1,4 +1,5 @@
 using Vessel.Application.Authorization;
+using Vessel.Application.Deployments;
 using Vessel.Application.Docker;
 using Vessel.Application.Monitoring.HostMetrics;
 using Vessel.Application.Notifications;
@@ -6,7 +7,6 @@ using Vessel.Application.Resources.RuntimeLogs;
 using Vessel.Application.Resources.Status;
 using Vessel.Application.Servers.Alerts;
 using Vessel.Application.Servers.DockerCleanup;
-using Vessel.Application.Deployments;
 using Vessel.Domain;
 using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;

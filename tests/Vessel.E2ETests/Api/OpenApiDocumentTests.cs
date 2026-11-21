@@ -156,17 +156,17 @@ public sealed class OpenApiDocumentTests
             var prefix = controller.GetCustomAttribute<RouteAttribute>()?.Template ?? string.Empty;
             foreach (MethodInfo action in controller.GetMethods(BindingFlags.Instance | BindingFlags.Public
                                                                 | BindingFlags.DeclaredOnly))
-            foreach (HttpMethodAttribute verb in action.GetCustomAttributes<HttpMethodAttribute>(true))
-            {
-                if (verb.HttpMethods.All(method => method is "GET" or "HEAD")) continue;
+                foreach (HttpMethodAttribute verb in action.GetCustomAttributes<HttpMethodAttribute>(true))
+                {
+                    if (verb.HttpMethods.All(method => method is "GET" or "HEAD")) continue;
 
-                var template = verb.Template ?? string.Empty;
-                var route = template.StartsWith('/') ? template.TrimStart('/')
-                    : string.IsNullOrEmpty(template) ? prefix : $"{prefix}/{template}";
-                if (!prefixes.Any(p => route.StartsWith(p, StringComparison.OrdinalIgnoreCase))) continue;
+                    var template = verb.Template ?? string.Empty;
+                    var route = template.StartsWith('/') ? template.TrimStart('/')
+                        : string.IsNullOrEmpty(template) ? prefix : $"{prefix}/{template}";
+                    if (!prefixes.Any(p => route.StartsWith(p, StringComparison.OrdinalIgnoreCase))) continue;
 
-                yield return (controller, action, string.Join('|', verb.HttpMethods), route);
-            }
+                    yield return (controller, action, string.Join('|', verb.HttpMethods), route);
+                }
         }
     }
 

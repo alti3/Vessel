@@ -134,7 +134,9 @@ public sealed class BuildPackAndEnvironmentTests
         BuildPlan plan = BuildPackPlanner.Plan(
             BuildConfiguration.Default(ApplicationBuildPack.Static) with
             {
-                BaseDirectory = "/web", PublishDirectory = "dist", IsSpa = true
+                BaseDirectory = "/web",
+                PublishDirectory = "dist",
+                IsSpa = true
             }, 3000, []);
 
         Assert.Equal("web/dist", plan.ContextPath);
@@ -157,7 +159,8 @@ public sealed class BuildPackAndEnvironmentTests
         BuildPlan plan = BuildPackPlanner.Plan(
             BuildConfiguration.Default(ApplicationBuildPack.Railpack) with
             {
-                InstallCommand = "pnpm i", StartCommand = "node server.js"
+                InstallCommand = "pnpm i",
+                StartCommand = "node server.js"
             }, 8080, [new("RAILPACK_DEPLOY_APT_PACKAGES", "ffmpeg"), new("TOKEN", "x")]);
 
         RailpackPrepareStep prepare = Assert.IsType<RailpackPrepareStep>(plan.Steps[0]);
@@ -183,7 +186,8 @@ public sealed class BuildPackAndEnvironmentTests
         DockerfileBuildStep dockerfile = Assert.IsType<DockerfileBuildStep>(Assert.Single(BuildPackPlanner.Plan(
             BuildConfiguration.Default(ApplicationBuildPack.Dockerfile) with
             {
-                BaseDirectory = "/api", DockerfilePath = "docker/Dockerfile"
+                BaseDirectory = "/api",
+                DockerfilePath = "docker/Dockerfile"
             }, 80, []).Steps));
         Assert.Equal("docker/Dockerfile", dockerfile.DockerfilePath);
     }
@@ -199,7 +203,10 @@ public sealed class BuildPackAndEnvironmentTests
     {
         Assert.Throws<DomainException>(() => (BuildConfiguration.Default(ApplicationBuildPack.Static) with
         {
-            PublishDirectory = publish, RegistryImage = registry, BuildCommand = command, ComposeService = service
+            PublishDirectory = publish,
+            RegistryImage = registry,
+            BuildCommand = command,
+            ComposeService = service
         }).Validated());
     }
 

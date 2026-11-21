@@ -254,9 +254,9 @@ public sealed class CoolifyTemplateFormatTests
             new ResourceName("app"), "coolify-sample", "coolify-1", "{}", Now);
         CoolifyComposeTemplate template = SampleDefinition().Coolify!;
 
-        ServiceTemplateRuntimeValues first = await resolver.ResolveAsync(service, template);
+        ServiceTemplateRuntimeValues first = await resolver.ResolveAsync(service, template, TestContext.Current.CancellationToken);
         SecretReferenceId reference = service.GeneratedSecretsReferenceId!.Value;
-        ServiceTemplateRuntimeValues second = await resolver.ResolveAsync(service, template);
+        ServiceTemplateRuntimeValues second = await resolver.ResolveAsync(service, template, TestContext.Current.CancellationToken);
 
         Assert.Equal(first.GeneratedValues["SERVICE_PASSWORD_APP"], second.GeneratedValues["SERVICE_PASSWORD_APP"]);
         Assert.Equal(reference, service.GeneratedSecretsReferenceId);
@@ -277,15 +277,16 @@ public sealed class CoolifyTemplateFormatTests
         var resolver = new ServiceTemplateRuntimeResolver(db, vault, TimeProvider.System);
         ServiceResource service = ServiceResource.Create(TeamId.New(), EnvironmentId.New(), ServerId.New(),
             new ResourceName("app"), "coolify-sample", "coolify-1", "{}", Now);
-        await resolver.StoreSecretInputsAsync(service, new Dictionary<string, string> { ["SMTP_PASSWORD"] = "pw" });
+        await resolver.StoreSecretInputsAsync(service, new Dictionary<string, string> { ["SMTP_PASSWORD"] = "pw" },
+            TestContext.Current.CancellationToken);
         CoolifyComposeTemplate template = SampleDefinition().Coolify!;
-        ServiceTemplateRuntimeValues first = await resolver.ResolveAsync(service, template);
+        ServiceTemplateRuntimeValues first = await resolver.ResolveAsync(service, template, TestContext.Current.CancellationToken);
         CoolifyComposeTemplate newer = template with
         {
             GeneratedVariables = [.. template.GeneratedVariables, ServiceMagicVariable.Parse("SERVICE_USER_APP")]
         };
 
-        ServiceTemplateRuntimeValues second = await resolver.ResolveAsync(service, newer);
+        ServiceTemplateRuntimeValues second = await resolver.ResolveAsync(service, newer, TestContext.Current.CancellationToken);
 
         Assert.Equal(first.GeneratedValues["SERVICE_PASSWORD_APP"], second.GeneratedValues["SERVICE_PASSWORD_APP"]);
         Assert.Equal(16, second.GeneratedValues["SERVICE_USER_APP"].Length);

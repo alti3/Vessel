@@ -3,6 +3,7 @@ using Vessel.Application.Git;
 using Vessel.Application.Redis;
 using Vessel.Application.Security;
 using Vessel.Application.Sources;
+using Vessel.Application.Webhooks;
 using Vessel.Domain;
 using Vessel.Domain.Common;
 using Vessel.Domain.Secrets;
@@ -10,7 +11,6 @@ using Vessel.Domain.Sources;
 using Vessel.Domain.Ssh;
 using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Webhooks;
-using Vessel.Application.Webhooks;
 using Vessel.UnitTests.Security;
 
 namespace Vessel.UnitTests.Sources;

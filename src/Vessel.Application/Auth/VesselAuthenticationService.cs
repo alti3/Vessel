@@ -241,7 +241,8 @@ public sealed class VesselAuthenticationService
             user.StartPasswordReset(TokenHashing.Sha256(token), expiresAt, now);
 
             await _auditWriter.StageAsync(new AuditEntry(null, user.Id, AuditActions.PasswordResetRequested,
-                new AuditTarget("user", user.Id.ToString())) { CorrelationId = correlationId }, cancellationToken);
+                new AuditTarget("user", user.Id.ToString()))
+            { CorrelationId = correlationId }, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             // IAM-10: deliver the token by email (link from the configured instance URL). The response stays the
             // same whether or not the account exists or mail is configured.
@@ -251,7 +252,8 @@ public sealed class VesselAuthenticationService
         {
             // Unknown accounts are audited under a one-way subject so the log never stores the typed address.
             await _auditWriter.RecordAsync(new AuditEntry(null, null, AuditActions.PasswordResetRequested,
-                AnonymousSubject(emailAddress.Value)) { CorrelationId = correlationId }, cancellationToken);
+                AnonymousSubject(emailAddress.Value))
+            { CorrelationId = correlationId }, cancellationToken);
         }
     }
 

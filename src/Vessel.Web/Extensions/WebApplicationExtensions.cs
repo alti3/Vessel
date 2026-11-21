@@ -1,5 +1,3 @@
-using Vessel.Application.Monitoring.HostMetrics;
-using Vessel.Application.Servers.DockerCleanup;
 using System.Diagnostics;
 using Serilog;
 using Vessel.Application.Backups;
@@ -9,8 +7,10 @@ using Vessel.Application.Jobs;
 using Vessel.Application.Jobs.Scheduling;
 using Vessel.Application.ManagedServices;
 using Vessel.Application.Monitoring;
+using Vessel.Application.Monitoring.HostMetrics;
 using Vessel.Application.Notifications;
 using Vessel.Application.Proxy;
+using Vessel.Application.Servers.DockerCleanup;
 using Vessel.Web.Configuration;
 using Vessel.Web.Middleware;
 

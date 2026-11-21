@@ -16,7 +16,7 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261121081335_Wave2aParity";
+    public override string LastMigrationId => "20261121113532_Wave2bParity";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -35,8 +35,8 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<string>("BuildConfiguration")
                     .IsRequired()
-                    .HasMaxLength(2048)
-                    .HasColumnType("character varying(2048)");
+                    .HasMaxLength(8192)
+                    .HasColumnType("character varying(8192)");
 
                 b.Property<Guid>("ConcurrencyStamp")
                     .IsConcurrencyToken()
@@ -75,12 +75,17 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.Property<Guid>("ServerId")
                     .HasColumnType("uuid");
 
+                b.Property<Guid?>("SourceId")
+                    .HasColumnType("uuid");
+
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("timestamp with time zone");
 
                 b.HasKey("Id");
 
                 b.HasIndex("ServerId");
+
+                b.HasIndex("SourceId");
 
                 b.HasIndex("EnvironmentId", "Name")
                     .IsUnique();
@@ -145,8 +150,30 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .HasMaxLength(160)
                     .HasColumnType("character varying(160)");
 
+                b.Property<string>("ActorName")
+                    .HasMaxLength(120)
+                    .HasColumnType("character varying(120)");
+
+                b.Property<Guid?>("ActorTokenId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ActorTokenName")
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<string>("ActorType")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
                 b.Property<Guid?>("ActorUserId")
                     .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset?>("AnonymizedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("ChangesJson")
+                    .HasColumnType("jsonb");
 
                 b.Property<Guid>("ConcurrencyStamp")
                     .HasColumnType("uuid");
@@ -158,9 +185,31 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("Description")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
+
+                b.Property<string>("IpAddress")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<string>("Level")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
                 b.Property<string>("RedactedMetadataJson")
                     .IsRequired()
                     .HasColumnType("jsonb");
+
+                b.Property<string>("ResourceName")
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<string>("Source")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
 
                 b.Property<string>("Target")
                     .IsRequired()
@@ -173,13 +222,139 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("UserAgent")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
                 b.HasKey("Id");
 
                 b.HasIndex("ActorUserId");
 
-                b.HasIndex("TeamId", "CreatedAt");
+                b.HasIndex("CreatedAt");
+
+                b.HasIndex("TeamId", "Action", "CreatedAt");
+
+                b.HasIndex("TeamId", "CreatedAt", "Id");
+
+                b.HasIndex("TeamId", "Source", "CreatedAt");
 
                 b.ToTable("audit_logs", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Auth.AuthProvider", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<bool>("AllowRegistration")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("AllowedDomains")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<string>("Authority")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<Guid?>("AutoJoinTeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ClientId")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("Kind")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(120)
+                    .HasColumnType("character varying(120)");
+
+                b.Property<string>("ProtectedClientSecret")
+                    .HasMaxLength(4096)
+                    .HasColumnType("character varying(4096)");
+
+                b.Property<bool>("RequireVerifiedEmail")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(true);
+
+                b.Property<string>("Scopes")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("AutoJoinTeamId");
+
+                b.ToTable("auth_providers", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Auth.OauthIdentity", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Email")
+                    .HasMaxLength(320)
+                    .HasColumnType("character varying(320)");
+
+                b.Property<string>("Issuer")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<DateTimeOffset>("LastLoginAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("ProviderId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("Subject")
+                    .IsRequired()
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("UserId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("UserId")
+                    .IsUnique();
+
+                b.HasIndex("ProviderId", "Subject")
+                    .IsUnique();
+
+                b.ToTable("oauth_identities", "vessel");
             });
 
         modelBuilder.Entity("Vessel.Domain.Backups.BackupDestination", b =>
@@ -409,6 +584,10 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.Property<long>("LocalRetentionMaxBytes")
                     .HasColumnType("bigint");
 
+                b.Property<string>("MissedRunPolicy")
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
                 b.Property<int>("MissingAlertDays")
                     .HasColumnType("integer");
 
@@ -439,6 +618,10 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<Guid>("TeamId")
                     .HasColumnType("uuid");
+
+                b.Property<string>("TimeZone")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
 
                 b.Property<int>("TimeoutSeconds")
                     .ValueGeneratedOnAdd()
@@ -475,12 +658,69 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("backup_schedule_destinations", "vessel");
             });
 
+        modelBuilder.Entity("Vessel.Domain.Backups.DatabaseImportUpload", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset?>("CompletedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset?>("ConsumedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("CreatedByUserId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("DatabaseResourceId")
+                    .HasColumnType("uuid");
+
+                b.Property<long>("DeclaredSizeBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<DateTimeOffset>("ExpiresAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("FileName")
+                    .IsRequired()
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<long>("ReceivedBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CreatedByUserId");
+
+                b.HasIndex("ExpiresAt");
+
+                b.HasIndex("TeamId");
+
+                b.HasIndex("DatabaseResourceId", "CreatedAt");
+
+                b.ToTable("database_import_uploads", "vessel");
+            });
+
         modelBuilder.Entity("Vessel.Domain.Backups.DatabaseRestore", b =>
             {
                 b.Property<Guid>("Id")
                     .HasColumnType("uuid");
 
-                b.Property<Guid>("BackupExecutionId")
+                b.Property<Guid?>("BackupExecutionId")
                     .HasColumnType("uuid");
 
                 b.Property<Guid>("ConcurrencyStamp")
@@ -503,6 +743,24 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<DateTimeOffset?>("FinishedAt")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("ImportDatabaseName")
+                    .HasMaxLength(63)
+                    .HasColumnType("character varying(63)");
+
+                b.Property<Guid?>("ImportDestinationId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ImportReference")
+                    .HasMaxLength(1024)
+                    .HasColumnType("character varying(1024)");
+
+                b.Property<string>("ImportSource")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)")
+                    .HasDefaultValue("None");
 
                 b.Property<bool>("KeepOwners")
                     .HasColumnType("boolean");
@@ -539,6 +797,8 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.HasIndex("BackupExecutionId");
 
+                b.HasIndex("ImportDestinationId");
+
                 b.HasIndex("RequestedByUserId");
 
                 b.HasIndex("TargetDatabaseResourceId", "Status");
@@ -546,6 +806,287 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("TeamId", "TargetDatabaseResourceId", "CreatedAt");
 
                 b.ToTable("database_restores", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.ScheduledVolumeBackup", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("CronExpression")
+                    .IsRequired()
+                    .HasMaxLength(120)
+                    .HasColumnType("character varying(120)");
+
+                b.Property<bool>("DisableLocalCopy")
+                    .HasColumnType("boolean");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("boolean");
+
+                b.Property<DateTimeOffset?>("FailingSince")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastFailureNotifiedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastRunAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastSucceededAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("LocalRetentionCount")
+                    .HasColumnType("integer");
+
+                b.Property<int>("LocalRetentionDays")
+                    .HasColumnType("integer");
+
+                b.Property<long>("LocalRetentionMaxBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<int>("MissingAlertDays")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset?>("MissingAlertSentAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("OwnerId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("OwnerKind")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<int>("RemoteRetentionCount")
+                    .HasColumnType("integer");
+
+                b.Property<int>("RemoteRetentionDays")
+                    .HasColumnType("integer");
+
+                b.Property<long>("RemoteRetentionMaxBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<bool>("StopDuringBackup")
+                    .HasColumnType("boolean");
+
+                b.Property<Guid>("TargetId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("TargetKind")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("TimeoutSeconds")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TeamId");
+
+                b.HasIndex("OwnerKind", "OwnerId");
+
+                b.HasIndex("TargetKind", "TargetId")
+                    .IsUnique();
+
+                b.ToTable("scheduled_volume_backups", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.ScheduledVolumeBackupDestination", b =>
+            {
+                b.Property<Guid>("ScheduledVolumeBackupId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("BackupDestinationId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("ScheduledVolumeBackupId", "BackupDestinationId");
+
+                b.HasIndex("BackupDestinationId");
+
+                b.ToTable("scheduled_volume_backup_destinations", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.VolumeBackupExecution", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ArtifactBucket")
+                    .HasMaxLength(160)
+                    .HasColumnType("character varying(160)");
+
+                b.Property<string>("ArtifactKey")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<string>("ChecksumSha256")
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("FailureReason")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<DateTimeOffset?>("FinishedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("Manual")
+                    .HasColumnType("boolean");
+
+                b.Property<bool>("Protected")
+                    .HasColumnType("boolean");
+
+                b.Property<int>("RecoveryAttempts")
+                    .HasColumnType("integer");
+
+                b.Property<string>("RecoveryError")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<DateTimeOffset?>("RecoveryLastAttemptAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("RecoveryNeedsAttention")
+                    .HasColumnType("boolean");
+
+                b.Property<Guid>("ScheduleId")
+                    .HasColumnType("uuid");
+
+                b.Property<long?>("SizeBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<DateTimeOffset?>("StartedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<bool>("StopRecoveryPending")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("StoppedContainerIds")
+                    .HasMaxLength(4000)
+                    .HasColumnType("character varying(4000)");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Warning")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TeamId");
+
+                b.HasIndex("ScheduleId", "CreatedAt");
+
+                b.HasIndex("Status", "StopRecoveryPending");
+
+                b.ToTable("volume_backup_executions", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.VolumeBackupRestore", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("FailureReason")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<DateTimeOffset?>("FinishedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Log")
+                    .IsRequired()
+                    .HasMaxLength(65536)
+                    .HasColumnType("character varying(65536)");
+
+                b.Property<int>("RecoveryAttempts")
+                    .HasColumnType("integer");
+
+                b.Property<string>("RecoveryError")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<bool>("RecoveryNeedsAttention")
+                    .HasColumnType("boolean");
+
+                b.Property<bool>("ReplaceExisting")
+                    .HasColumnType("boolean");
+
+                b.Property<Guid?>("RequestedByUserId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset?>("StartedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<bool>("StopRecoveryPending")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("StoppedContainerIds")
+                    .HasMaxLength(4000)
+                    .HasColumnType("character varying(4000)");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("VolumeBackupExecutionId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("RequestedByUserId");
+
+                b.HasIndex("TeamId");
+
+                b.HasIndex("VolumeBackupExecutionId", "Status");
+
+                b.ToTable("volume_backup_restores", "vessel");
             });
 
         modelBuilder.Entity("Vessel.Domain.Certificates.Certificate", b =>
@@ -931,6 +1472,11 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .HasMaxLength(8000)
                     .HasColumnType("character varying(8000)");
 
+                b.Property<bool>("PreserveComposeNull")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false);
+
                 b.Property<Guid?>("ProjectId")
                     .HasColumnType("uuid");
 
@@ -939,6 +1485,11 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<Guid?>("ServerId")
                     .HasColumnType("uuid");
+
+                b.Property<int>("SortOrder")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(0);
 
                 b.Property<string>("TargetType")
                     .IsRequired()
@@ -950,6 +1501,11 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<DateTimeOffset>("UpdatedAt")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("UsesLegacyEscaping")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(false);
 
                 b.Property<string>("ValueKind")
                     .IsRequired()
@@ -966,6 +1522,351 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 NpgsqlIndexBuilderExtensions.AreNullsDistinct(index, false);
 
                 b.ToTable("environment_variables", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ContainerMetricSample", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CollectedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ContainerId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<string>("ContainerName")
+                    .IsRequired()
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<decimal?>("CpuPercent")
+                    .HasPrecision(9, 2)
+                    .HasColumnType("numeric(9,2)");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<long?>("MemoryLimitBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<long?>("MemoryUsedBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<long?>("NetworkRxBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<long?>("NetworkTxBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<Guid?>("ResourceId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ResourceKind")
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<Guid>("ServerId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CollectedAt");
+
+                b.HasIndex("ServerId", "CollectedAt");
+
+                b.ToTable("container_metric_samples", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.DockerCleanupExecution", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<bool>("BuildCachePruned")
+                    .HasColumnType("boolean");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("FinishedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Log")
+                    .IsRequired()
+                    .HasMaxLength(32768)
+                    .HasColumnType("character varying(32768)");
+
+                b.Property<string>("Message")
+                    .HasMaxLength(1000)
+                    .HasColumnType("character varying(1000)");
+
+                b.Property<long>("ReclaimedBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<int>("RemovedContainers")
+                    .HasColumnType("integer");
+
+                b.Property<int>("RemovedImages")
+                    .HasColumnType("integer");
+
+                b.Property<Guid?>("RequestedByUserId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ServerId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("StartedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Status");
+
+                b.HasIndex("ServerId", "StartedAt");
+
+                b.ToTable("docker_cleanup_executions", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ResourceRuntimeStatus", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("ContainerCount")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("ExpectedStopUntil")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Health")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<string>("Kind")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<DateTimeOffset?>("LastCheckedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastRestartAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastSeenRunningAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("MaxRestartCount")
+                    .HasColumnType("integer");
+
+                b.Property<Guid>("ResourceId")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("RestartCount")
+                    .HasColumnType("integer");
+
+                b.Property<bool>("RestartLimitReached")
+                    .HasColumnType("boolean");
+
+                b.Property<int>("RunningContainerCount")
+                    .HasColumnType("integer");
+
+                b.Property<Guid>("ServerId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("State")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<DateTimeOffset>("StateChangedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ResourceId");
+
+                b.HasIndex("ServerId");
+
+                b.HasIndex("Kind", "ResourceId")
+                    .IsUnique();
+
+                b.ToTable("resource_runtime_statuses", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ServerMetricSample", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("BucketStart")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("ContainersRunning")
+                    .HasColumnType("integer");
+
+                b.Property<int>("ContainersTotal")
+                    .HasColumnType("integer");
+
+                b.Property<int?>("CpuCount")
+                    .HasColumnType("integer");
+
+                b.Property<decimal?>("CpuPercent")
+                    .HasPrecision(7, 2)
+                    .HasColumnType("numeric(7,2)");
+
+                b.Property<decimal?>("CpuPercentMax")
+                    .HasPrecision(7, 2)
+                    .HasColumnType("numeric(7,2)");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("DiskMount")
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<long?>("DiskTotalBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<long?>("DiskUsedBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<decimal?>("Load1")
+                    .HasPrecision(9, 2)
+                    .HasColumnType("numeric(9,2)");
+
+                b.Property<decimal?>("Load15")
+                    .HasPrecision(9, 2)
+                    .HasColumnType("numeric(9,2)");
+
+                b.Property<decimal?>("Load5")
+                    .HasPrecision(9, 2)
+                    .HasColumnType("numeric(9,2)");
+
+                b.Property<long?>("MemoryTotalBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<long?>("MemoryUsedBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<long?>("NetworkRxBytesPerSecond")
+                    .HasColumnType("bigint");
+
+                b.Property<long?>("NetworkTxBytesPerSecond")
+                    .HasColumnType("bigint");
+
+                b.Property<string>("Resolution")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<int>("SampleCount")
+                    .HasColumnType("integer");
+
+                b.Property<Guid>("ServerId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Resolution", "BucketStart");
+
+                b.HasIndex("ServerId", "Resolution", "BucketStart")
+                    .IsUnique();
+
+                b.ToTable("server_metric_samples", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ServerMonitoringSettings", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid")
+                    .HasColumnName("ServerId");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("DiskAlertArmed")
+                    .HasColumnType("boolean");
+
+                b.Property<int>("DiskAlertIntervalHours")
+                    .HasColumnType("integer");
+
+                b.Property<int>("DiskAlertThresholdPercent")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset?>("LastDiskAlertAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastDockerCleanupAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastMetricsCollectedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastMetricsFailureAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("MetricsEnabled")
+                    .HasColumnType("boolean");
+
+                b.Property<int>("MetricsIntervalSeconds")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.ToTable("server_monitoring_settings", "vessel");
             });
 
         modelBuilder.Entity("Vessel.Domain.Notifications.InAppNotification", b =>
@@ -1273,6 +2174,137 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("notification_throttles", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Operations.ControlPlaneBackup", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ChecksumSha256")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("FailureReason")
+                    .HasMaxLength(2000)
+                    .HasColumnType("character varying(2000)");
+
+                b.Property<DateTimeOffset?>("FinishedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("RelativePath")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<Guid?>("RequestedByUserId")
+                    .HasColumnType("uuid");
+
+                b.Property<long>("SizeBytes")
+                    .HasColumnType("bigint");
+
+                b.Property<DateTimeOffset>("StartedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("WorkerHost")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("RequestedByUserId");
+
+                b.HasIndex("Trigger", "StartedAt");
+
+                b.ToTable("control_plane_backups", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Operations.UpgradeRun", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("Channel")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("FinishedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("FromVersion")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<DateTimeOffset>("HeartbeatAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Message")
+                    .IsRequired()
+                    .HasMaxLength(2000)
+                    .HasColumnType("character varying(2000)");
+
+                b.Property<Guid?>("PreUpdateBackupId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("StartedByUserId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<string>("TargetVersion")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("WorkerHost")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("PreUpdateBackupId");
+
+                b.HasIndex("StartedByUserId");
+
+                b.HasIndex("Status", "CreatedAt");
+
+                b.ToTable("upgrade_runs", "vessel");
             });
 
         modelBuilder.Entity("Vessel.Domain.Projects.Environment", b =>
@@ -1591,6 +2623,255 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("registry_credentials", "vessel");
             });
 
+        modelBuilder.Entity("Vessel.Domain.ScheduledTasks.ScheduledTask", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("Command")
+                    .IsRequired()
+                    .HasMaxLength(8000)
+                    .HasColumnType("character varying(8000)");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<int>("ConsecutiveFailures")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(0);
+
+                b.Property<string>("ContainerName")
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("CronExpression")
+                    .IsRequired()
+                    .HasMaxLength(120)
+                    .HasColumnType("character varying(120)");
+
+                b.Property<string>("DisabledReason")
+                    .HasMaxLength(500)
+                    .HasColumnType("character varying(500)");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("boolean");
+
+                b.Property<DateTimeOffset?>("FailingSince")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastRunAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("MissedRunPolicy")
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(120)
+                    .HasColumnType("character varying(120)");
+
+                b.Property<Guid>("OwnerId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("OwnerKind")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("TimeZone")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<int>("TimeoutSeconds")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("UseShell")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("boolean")
+                    .HasDefaultValue(true);
+
+                b.HasKey("Id");
+
+                b.HasIndex("OwnerKind", "OwnerId");
+
+                b.HasIndex("TeamId", "Enabled");
+
+                b.ToTable("scheduled_tasks", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.ScheduledTasks.ScheduledTaskExecution", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ContainerName")
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<double?>("DurationSeconds")
+                    .HasColumnType("double precision");
+
+                b.Property<int?>("ExitCode")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset?>("FinishedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Message")
+                    .HasMaxLength(2000)
+                    .HasColumnType("character varying(2000)");
+
+                b.Property<string>("Output")
+                    .IsRequired()
+                    .HasMaxLength(262171)
+                    .HasColumnType("character varying(262171)");
+
+                b.Property<bool>("OutputTruncated")
+                    .HasColumnType("boolean");
+
+                b.Property<Guid?>("RunId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ScheduledTaskId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("StartedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("WorkerHost")
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("RunId");
+
+                b.HasIndex("ScheduledTaskId", "StartedAt");
+
+                b.ToTable("scheduled_task_executions", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Scheduling.ScheduledJobRun", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("ClaimToken")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("EnqueueCount")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer")
+                    .HasDefaultValue(0);
+
+                b.Property<DateTimeOffset?>("EnqueuedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid?>("ExecutionId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset?>("FinishedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Kind")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Message")
+                    .HasMaxLength(2000)
+                    .HasColumnType("character varying(2000)");
+
+                b.Property<Guid>("ScheduleId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("ScheduledFor")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("StartedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Status")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<Guid?>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<int>("TimeoutSeconds")
+                    .HasColumnType("integer");
+
+                b.Property<string>("Trigger")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("WorkerHost")
+                    .HasMaxLength(128)
+                    .HasColumnType("character varying(128)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TeamId");
+
+                b.HasIndex("Status", "EnqueuedAt");
+
+                b.HasIndex("Status", "WorkerHost");
+
+                b.HasIndex("Kind", "ScheduleId", "ScheduledFor")
+                    .IsUnique()
+                    .HasDatabaseName("ux_scheduled_job_runs_occurrence")
+                    .HasFilter("\"Trigger\" = 'Scheduled'");
+
+                b.ToTable("scheduled_job_runs", "vessel");
+            });
+
         modelBuilder.Entity("Vessel.Domain.Secrets.SecretReference", b =>
             {
                 b.Property<Guid>("Id")
@@ -1729,6 +3010,9 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasMaxLength(32)
                     .HasColumnType("character varying(32)");
+
+                b.Property<int>("ConsecutiveFailedHealthChecks")
+                    .HasColumnType("integer");
 
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
@@ -1945,6 +3229,9 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.Property<Guid>("EnvironmentId")
                     .HasColumnType("uuid");
 
+                b.Property<Guid?>("GeneratedSecretsReferenceId")
+                    .HasColumnType("uuid");
+
                 b.Property<string>("Name")
                     .IsRequired()
                     .HasMaxLength(120)
@@ -2094,6 +3381,152 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("settings", "vessel");
             });
 
+        modelBuilder.Entity("Vessel.Domain.Sources.GitKnownHost", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Host")
+                    .IsRequired()
+                    .HasMaxLength(253)
+                    .HasColumnType("character varying(253)");
+
+                b.Property<string>("Key")
+                    .IsRequired()
+                    .HasMaxLength(8192)
+                    .HasColumnType("character varying(8192)");
+
+                b.Property<string>("KeyType")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<string>("Origin")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<int>("Port")
+                    .HasColumnType("integer");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TeamId", "Host", "Port", "KeyType")
+                    .IsUnique();
+
+                b.ToTable("git_known_hosts", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Sources.GitSourceConnection", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset?>("AccessTokenExpiresAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid?>("AccessTokenReferenceId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("ApiUrl")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<long?>("AppId")
+                    .HasColumnType("bigint");
+
+                b.Property<string>("ClientId")
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<Guid?>("ClientSecretReferenceId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int?>("CustomSshPort")
+                    .HasColumnType("integer");
+
+                b.Property<string>("CustomSshUser")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<string>("HtmlUrl")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<long?>("InstallationId")
+                    .HasColumnType("bigint");
+
+                b.Property<bool>("IsSystemWide")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("Kind")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(120)
+                    .HasColumnType("character varying(120)");
+
+                b.Property<string>("Organization")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<Guid?>("PrivateKeyReferenceId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("RefreshTokenReferenceId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid?>("SshKeyId")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Username")
+                    .HasMaxLength(255)
+                    .HasColumnType("character varying(255)");
+
+                b.Property<Guid?>("WebhookSecretReferenceId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("IsSystemWide");
+
+                b.HasIndex("SshKeyId");
+
+                b.HasIndex("TeamId", "Name")
+                    .IsUnique();
+
+                b.ToTable("git_sources", "vessel");
+            });
+
         modelBuilder.Entity("Vessel.Domain.Ssh.SshKey", b =>
             {
                 b.Property<Guid>("Id")
@@ -2156,6 +3589,121 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("ssh_keys", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Storage.FileMount", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<long>("ContentLength")
+                    .HasColumnType("bigint");
+
+                b.Property<bool>("ContentPendingWrite")
+                    .HasColumnType("boolean");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<bool>("IsDirectory")
+                    .HasColumnType("boolean");
+
+                b.Property<bool>("IsHostFile")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("MountPath")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<Guid>("OwnerId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("OwnerKind")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Path")
+                    .IsRequired()
+                    .HasMaxLength(400)
+                    .HasColumnType("character varying(400)");
+
+                b.Property<string>("ProtectedContent")
+                    .HasColumnType("text");
+
+                b.Property<string>("ServiceName")
+                    .HasMaxLength(63)
+                    .HasColumnType("character varying(63)");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TeamId");
+
+                b.HasIndex("OwnerKind", "OwnerId", "Path")
+                    .IsUnique();
+
+                b.ToTable("file_mounts", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Storage.PersistentVolume", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ConcurrencyStamp")
+                    .IsConcurrencyToken()
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("MountPath")
+                    .IsRequired()
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(63)
+                    .HasColumnType("character varying(63)");
+
+                b.Property<Guid>("OwnerId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("OwnerKind")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("ServiceName")
+                    .HasMaxLength(63)
+                    .HasColumnType("character varying(63)");
+
+                b.Property<Guid>("TeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TeamId");
+
+                b.HasIndex("OwnerKind", "OwnerId", "Name")
+                    .IsUnique();
+
+                b.ToTable("persistent_volumes", "vessel");
             });
 
         modelBuilder.Entity("Vessel.Domain.Teams.Team", b =>
@@ -2380,6 +3928,9 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<DateTimeOffset?>("ExpirationWarningSentAt")
+                    .HasColumnType("timestamp with time zone");
+
                 b.Property<DateTimeOffset?>("ExpiresAt")
                     .HasColumnType("timestamp with time zone");
 
@@ -2423,6 +3974,8 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("TokenHash")
                     .IsUnique();
 
+                b.HasIndex("ExpiresAt", "ExpirationWarningSentAt");
+
                 b.HasIndex("UserId", "CreatedAt");
 
                 b.ToTable("personal_access_tokens", "vessel");
@@ -2439,6 +3992,9 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<DateTimeOffset>("CreatedAt")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<Guid?>("CurrentTeamId")
+                    .HasColumnType("uuid");
 
                 b.Property<string>("Email")
                     .IsRequired()
@@ -2499,10 +4055,66 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
 
                 b.HasKey("Id");
 
+                b.HasIndex("CurrentTeamId");
+
                 b.HasIndex("Email")
                     .IsUnique();
 
                 b.ToTable("users", "vessel");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Users.UserSession", b =>
+            {
+                b.Property<Guid>("Id")
+                    .HasColumnType("uuid");
+
+                b.Property<Guid>("ActiveTeamId")
+                    .HasColumnType("uuid");
+
+                b.Property<string>("AuthenticationMethod")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset>("ExpiresAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("IpAddress")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<DateTimeOffset>("LastSeenAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("RevocationReason")
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
+
+                b.Property<DateTimeOffset?>("RevokedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("UserAgent")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<Guid>("UserId")
+                    .HasColumnType("uuid");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ActiveTeamId");
+
+                b.HasIndex("ExpiresAt");
+
+                b.HasIndex("UserId", "RevokedAt");
+
+                b.ToTable("user_sessions", "vessel");
             });
 
         modelBuilder.Entity("Vessel.Domain.Webhooks.ApplicationPreview", b =>
@@ -2727,6 +4339,11 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("ServerId")
                     .OnDelete(DeleteBehavior.Restrict)
                     .IsRequired();
+
+                b.HasOne("Vessel.Domain.Sources.GitSourceConnection", null)
+                    .WithMany()
+                    .HasForeignKey("SourceId")
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
         modelBuilder.Entity("Vessel.Domain.Applications.ApplicationDomain", b =>
@@ -2749,6 +4366,29 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .WithMany()
                     .HasForeignKey("TeamId")
                     .OnDelete(DeleteBehavior.SetNull);
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Auth.AuthProvider", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("AutoJoinTeamId")
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Auth.OauthIdentity", b =>
+            {
+                b.HasOne("Vessel.Domain.Auth.AuthProvider", null)
+                    .WithMany()
+                    .HasForeignKey("ProviderId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Vessel.Domain.Users.User", null)
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("Vessel.Domain.Backups.BackupDestination", b =>
@@ -2864,13 +4504,38 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .IsRequired();
             });
 
+        modelBuilder.Entity("Vessel.Domain.Backups.DatabaseImportUpload", b =>
+            {
+                b.HasOne("Vessel.Domain.Users.User", null)
+                    .WithMany()
+                    .HasForeignKey("CreatedByUserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Vessel.Domain.Databases.DatabaseResource", null)
+                    .WithMany()
+                    .HasForeignKey("DatabaseResourceId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
         modelBuilder.Entity("Vessel.Domain.Backups.DatabaseRestore", b =>
             {
                 b.HasOne("Vessel.Domain.Backups.BackupExecution", null)
                     .WithMany()
                     .HasForeignKey("BackupExecutionId")
-                    .OnDelete(DeleteBehavior.Cascade)
-                    .IsRequired();
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Vessel.Domain.Backups.BackupDestination", null)
+                    .WithMany()
+                    .HasForeignKey("ImportDestinationId")
+                    .OnDelete(DeleteBehavior.SetNull);
 
                 b.HasOne("Vessel.Domain.Users.User", null)
                     .WithMany()
@@ -2886,6 +4551,113 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                 b.HasOne("Vessel.Domain.Teams.Team", null)
                     .WithMany()
                     .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.ScheduledVolumeBackup", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.ScheduledVolumeBackupDestination", b =>
+            {
+                b.HasOne("Vessel.Domain.Backups.BackupDestination", null)
+                    .WithMany()
+                    .HasForeignKey("BackupDestinationId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Vessel.Domain.Backups.ScheduledVolumeBackup", null)
+                    .WithMany("Destinations")
+                    .HasForeignKey("ScheduledVolumeBackupId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.VolumeBackupExecution", b =>
+            {
+                b.HasOne("Vessel.Domain.Backups.ScheduledVolumeBackup", null)
+                    .WithMany()
+                    .HasForeignKey("ScheduleId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.OwnsMany("Vessel.Domain.Backups.VolumeBackupReplica", "Replicas", b1 =>
+                    {
+                        b1.Property<Guid>("Id")
+                            .HasColumnType("uuid");
+
+                        b1.Property<Guid?>("BackupDestinationId")
+                            .HasColumnType("uuid");
+
+                        b1.Property<string>("Bucket")
+                            .IsRequired()
+                            .HasMaxLength(63)
+                            .HasColumnType("character varying(63)");
+
+                        b1.Property<DateTimeOffset>("CreatedAt")
+                            .HasColumnType("timestamp with time zone");
+
+                        b1.Property<DateTimeOffset?>("DeletedAt")
+                            .HasColumnType("timestamp with time zone");
+
+                        b1.Property<string>("Message")
+                            .HasMaxLength(1000)
+                            .HasColumnType("character varying(1000)");
+
+                        b1.Property<bool>("Uploaded")
+                            .HasColumnType("boolean");
+
+                        b1.Property<Guid>("VolumeBackupExecutionId")
+                            .HasColumnType("uuid");
+
+                        b1.HasKey("Id");
+
+                        b1.HasIndex("BackupDestinationId");
+
+                        b1.HasIndex("VolumeBackupExecutionId");
+
+                        b1.ToTable("volume_backup_replicas", "vessel");
+
+                        b1.HasOne("Vessel.Domain.Backups.BackupDestination", null)
+                            .WithMany()
+                            .HasForeignKey("BackupDestinationId")
+                            .OnDelete(DeleteBehavior.SetNull);
+
+                        b1.WithOwner()
+                            .HasForeignKey("VolumeBackupExecutionId");
+                    });
+
+                b.Navigation("Replicas");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.VolumeBackupRestore", b =>
+            {
+                b.HasOne("Vessel.Domain.Users.User", null)
+                    .WithMany()
+                    .HasForeignKey("RequestedByUserId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Vessel.Domain.Backups.VolumeBackupExecution", null)
+                    .WithMany()
+                    .HasForeignKey("VolumeBackupExecutionId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
             });
@@ -2978,6 +4750,93 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .IsRequired();
             });
 
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ContainerMetricSample", b =>
+            {
+                b.HasOne("Vessel.Domain.Servers.Server", null)
+                    .WithMany()
+                    .HasForeignKey("ServerId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.DockerCleanupExecution", b =>
+            {
+                b.HasOne("Vessel.Domain.Servers.Server", null)
+                    .WithMany()
+                    .HasForeignKey("ServerId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ResourceRuntimeStatus", b =>
+            {
+                b.HasOne("Vessel.Domain.Servers.Server", null)
+                    .WithMany()
+                    .HasForeignKey("ServerId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ServerMetricSample", b =>
+            {
+                b.HasOne("Vessel.Domain.Servers.Server", null)
+                    .WithMany()
+                    .HasForeignKey("ServerId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Monitoring.ServerMonitoringSettings", b =>
+            {
+                b.HasOne("Vessel.Domain.Servers.Server", null)
+                    .WithOne()
+                    .HasForeignKey("Vessel.Domain.Monitoring.ServerMonitoringSettings", "Id")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.OwnsOne("Vessel.Domain.Monitoring.DockerCleanupPolicy", "DockerCleanup", b1 =>
+                    {
+                        b1.Property<Guid>("ServerMonitoringSettingsId")
+                            .HasColumnType("uuid");
+
+                        b1.Property<string>("CronExpression")
+                            .IsRequired()
+                            .HasMaxLength(120)
+                            .HasColumnType("character varying(120)")
+                            .HasColumnName("docker_cleanup_cron");
+
+                        b1.Property<bool>("DeleteUnusedNetworks")
+                            .HasColumnType("boolean")
+                            .HasColumnName("docker_cleanup_delete_unused_networks");
+
+                        b1.Property<bool>("DeleteUnusedVolumes")
+                            .HasColumnType("boolean")
+                            .HasColumnName("docker_cleanup_delete_unused_volumes");
+
+                        b1.Property<bool>("ForceScheduledCleanup")
+                            .HasColumnType("boolean")
+                            .HasColumnName("docker_cleanup_force_scheduled");
+
+                        b1.Property<bool>("ScheduleEnabled")
+                            .HasColumnType("boolean")
+                            .HasColumnName("docker_cleanup_schedule_enabled");
+
+                        b1.Property<int>("ThresholdPercent")
+                            .HasColumnType("integer")
+                            .HasColumnName("docker_cleanup_threshold_percent");
+
+                        b1.HasKey("ServerMonitoringSettingsId");
+
+                        b1.ToTable("server_monitoring_settings", "vessel");
+
+                        b1.WithOwner()
+                            .HasForeignKey("ServerMonitoringSettingsId");
+                    });
+
+                b.Navigation("DockerCleanup")
+                    .IsRequired();
+            });
+
         modelBuilder.Entity("Vessel.Domain.Notifications.InAppNotification", b =>
             {
                 b.HasOne("Vessel.Domain.Notifications.NotificationEvent", null)
@@ -3050,6 +4909,27 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .IsRequired();
             });
 
+        modelBuilder.Entity("Vessel.Domain.Operations.ControlPlaneBackup", b =>
+            {
+                b.HasOne("Vessel.Domain.Users.User", null)
+                    .WithMany()
+                    .HasForeignKey("RequestedByUserId")
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Operations.UpgradeRun", b =>
+            {
+                b.HasOne("Vessel.Domain.Operations.ControlPlaneBackup", null)
+                    .WithMany()
+                    .HasForeignKey("PreUpdateBackupId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                b.HasOne("Vessel.Domain.Users.User", null)
+                    .WithMany()
+                    .HasForeignKey("StartedByUserId")
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
         modelBuilder.Entity("Vessel.Domain.Projects.Environment", b =>
             {
                 b.HasOne("Vessel.Domain.Projects.Project", null)
@@ -3118,6 +4998,32 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("TeamId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.ScheduledTasks.ScheduledTask", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.ScheduledTasks.ScheduledTaskExecution", b =>
+            {
+                b.HasOne("Vessel.Domain.ScheduledTasks.ScheduledTask", null)
+                    .WithMany()
+                    .HasForeignKey("ScheduledTaskId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Scheduling.ScheduledJobRun", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
         modelBuilder.Entity("Vessel.Domain.Secrets.SecretReference", b =>
@@ -3270,6 +5176,29 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
+        modelBuilder.Entity("Vessel.Domain.Sources.GitKnownHost", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Sources.GitSourceConnection", b =>
+            {
+                b.HasOne("Vessel.Domain.Ssh.SshKey", null)
+                    .WithMany()
+                    .HasForeignKey("SshKeyId")
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
         modelBuilder.Entity("Vessel.Domain.Ssh.SshKey", b =>
             {
                 b.HasOne("Vessel.Domain.Secrets.SecretReference", null)
@@ -3278,6 +5207,24 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .OnDelete(DeleteBehavior.Restrict)
                     .IsRequired();
 
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Storage.FileMount", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("TeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Storage.PersistentVolume", b =>
+            {
                 b.HasOne("Vessel.Domain.Teams.Team", null)
                     .WithMany()
                     .HasForeignKey("TeamId")
@@ -3345,6 +5292,29 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
                     .IsRequired();
             });
 
+        modelBuilder.Entity("Vessel.Domain.Users.User", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("CurrentTeamId")
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Users.UserSession", b =>
+            {
+                b.HasOne("Vessel.Domain.Teams.Team", null)
+                    .WithMany()
+                    .HasForeignKey("ActiveTeamId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.HasOne("Vessel.Domain.Users.User", null)
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
         modelBuilder.Entity("Vessel.Domain.Webhooks.ApplicationPreview", b =>
             {
                 b.HasOne("Vessel.Domain.Applications.Application", null)
@@ -3383,6 +5353,11 @@ partial class VesselDbContextModelSnapshot : ModelSnapshot
             });
 
         modelBuilder.Entity("Vessel.Domain.Backups.BackupSchedule", b =>
+            {
+                b.Navigation("Destinations");
+            });
+
+        modelBuilder.Entity("Vessel.Domain.Backups.ScheduledVolumeBackup", b =>
             {
                 b.Navigation("Destinations");
             });

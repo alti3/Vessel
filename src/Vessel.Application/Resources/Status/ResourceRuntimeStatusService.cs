@@ -1,8 +1,8 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
 using Vessel.Domain;
-using Vessel.Application.Monitoring;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Monitoring;
 

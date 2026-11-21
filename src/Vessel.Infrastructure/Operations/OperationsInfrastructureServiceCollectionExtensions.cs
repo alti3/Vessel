@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Vessel.Application.OutboundRequests;
 using Vessel.Application.Operations.ControlPlaneBackups;
 using Vessel.Application.Operations.Updates;
+using Vessel.Application.OutboundRequests;
 using Vessel.Infrastructure.Configuration;
 using Vessel.Infrastructure.OutboundRequests;
 

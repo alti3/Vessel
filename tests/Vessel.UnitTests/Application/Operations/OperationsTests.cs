@@ -84,7 +84,7 @@ public sealed class OperationsTests
         Assert.Equal(UpdateCheckStatus.NotConfigured, result.Status);
         Assert.Empty(Manifests.Fetched);
         Assert.Empty(new UpdateCheckScheduleSource(_s.Store, Checks).ListActiveSchedules());
-        Assert.NotEqual(UpdatePolicyService.GenerateCheckCron(), "0 0 * * *");
+        Assert.NotEqual("0 0 * * *", UpdatePolicyService.GenerateCheckCron());
     }
 
     [Fact]

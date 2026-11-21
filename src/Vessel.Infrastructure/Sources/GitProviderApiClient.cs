@@ -203,7 +203,7 @@ public sealed class GitProviderApiClient(HttpClient http, TimeProvider timeProvi
     private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> createRequest,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1;; attempt++)
+        for (var attempt = 1; ; attempt++)
         {
             using HttpRequestMessage request = createRequest();
             try

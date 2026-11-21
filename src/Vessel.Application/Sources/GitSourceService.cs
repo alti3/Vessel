@@ -64,56 +64,56 @@ public sealed partial class GitSourceService(
         switch (request.Kind)
         {
             case GitSourceKind.GitHubApp:
-            {
-                if (request.AppId is not { } appId) throw new DomainException("GitHub App id is required.");
-                var privateKey = ValidateGitHubPrivateKey(request.PrivateKey);
-                SecretReference key = await StoreAsync(teamId, "github-app-private-key", privateKey,
-                    cancellationToken);
-                SecretReference? webhook = await StoreOptionalAsync(teamId, "webhook-secret", request.WebhookSecret,
-                    cancellationToken);
-                source = GitSourceConnection.CreateGitHubApp(teamId, name, htmlUrl!, request.ApiUrl, appId,
-                    request.InstallationId, request.ClientId, key.Id, webhook?.Id, request.Organization,
-                    request.IsSystemWide, now);
-                break;
-            }
-            case GitSourceKind.GitLabApp or GitSourceKind.GiteaApp:
-            {
-                SecretReference? clientSecret = await StoreOptionalAsync(teamId, "oauth-client-secret",
-                    request.ClientSecret, cancellationToken);
-                SecretReference? webhook = await StoreOptionalAsync(teamId, "webhook-secret", request.WebhookSecret,
-                    cancellationToken);
-                source = GitSourceConnection.CreateOAuthApp(request.Kind, teamId, name, htmlUrl!, request.ApiUrl,
-                    request.ClientId, clientSecret?.Id, webhook?.Id, request.Organization, request.CustomSshUser,
-                    request.CustomSshPort, request.IsSystemWide, now);
-                if (!string.IsNullOrWhiteSpace(request.AccessToken))
                 {
-                    SecretReference access = await StoreAsync(teamId, "oauth-access-token", request.AccessToken,
+                    if (request.AppId is not { } appId) throw new DomainException("GitHub App id is required.");
+                    var privateKey = ValidateGitHubPrivateKey(request.PrivateKey);
+                    SecretReference key = await StoreAsync(teamId, "github-app-private-key", privateKey,
                         cancellationToken);
-                    SecretReference? refresh = await StoreOptionalAsync(teamId, "oauth-refresh-token",
-                        request.RefreshToken, cancellationToken);
-                    source.AttachAccessToken(access.Id, refresh?.Id, request.AccessTokenExpiresAt, now);
+                    SecretReference? webhook = await StoreOptionalAsync(teamId, "webhook-secret", request.WebhookSecret,
+                        cancellationToken);
+                    source = GitSourceConnection.CreateGitHubApp(teamId, name, htmlUrl!, request.ApiUrl, appId,
+                        request.InstallationId, request.ClientId, key.Id, webhook?.Id, request.Organization,
+                        request.IsSystemWide, now);
+                    break;
                 }
+            case GitSourceKind.GitLabApp or GitSourceKind.GiteaApp:
+                {
+                    SecretReference? clientSecret = await StoreOptionalAsync(teamId, "oauth-client-secret",
+                        request.ClientSecret, cancellationToken);
+                    SecretReference? webhook = await StoreOptionalAsync(teamId, "webhook-secret", request.WebhookSecret,
+                        cancellationToken);
+                    source = GitSourceConnection.CreateOAuthApp(request.Kind, teamId, name, htmlUrl!, request.ApiUrl,
+                        request.ClientId, clientSecret?.Id, webhook?.Id, request.Organization, request.CustomSshUser,
+                        request.CustomSshPort, request.IsSystemWide, now);
+                    if (!string.IsNullOrWhiteSpace(request.AccessToken))
+                    {
+                        SecretReference access = await StoreAsync(teamId, "oauth-access-token", request.AccessToken,
+                            cancellationToken);
+                        SecretReference? refresh = await StoreOptionalAsync(teamId, "oauth-refresh-token",
+                            request.RefreshToken, cancellationToken);
+                        source.AttachAccessToken(access.Id, refresh?.Id, request.AccessTokenExpiresAt, now);
+                    }
 
-                break;
-            }
+                    break;
+                }
             case GitSourceKind.DeployKey:
-            {
-                if (request.IsSystemWide) throw new DomainException("Deploy key sources cannot be system-wide.");
-                SshKeyId keyId = RequireDeployKey(teamId, request.SshKeyId);
-                source = GitSourceConnection.CreateDeployKey(teamId, name, keyId, request.HtmlUrl,
-                    request.CustomSshUser, request.CustomSshPort, now);
-                break;
-            }
+                {
+                    if (request.IsSystemWide) throw new DomainException("Deploy key sources cannot be system-wide.");
+                    SshKeyId keyId = RequireDeployKey(teamId, request.SshKeyId);
+                    source = GitSourceConnection.CreateDeployKey(teamId, name, keyId, request.HtmlUrl,
+                        request.CustomSshUser, request.CustomSshPort, now);
+                    break;
+                }
             case GitSourceKind.HttpsCredential:
-            {
-                if (request.IsSystemWide) throw new DomainException("HTTPS credential sources cannot be system-wide.");
-                if (string.IsNullOrWhiteSpace(request.Username)) throw new DomainException("Username is required.");
-                SecretReference token = await StoreAsync(teamId, "https-token",
-                    RequireSecret(request.Password, "Password or access token"), cancellationToken);
-                source = GitSourceConnection.CreateHttpsCredential(teamId, name, htmlUrl!, request.Username, token.Id,
-                    now);
-                break;
-            }
+                {
+                    if (request.IsSystemWide) throw new DomainException("HTTPS credential sources cannot be system-wide.");
+                    if (string.IsNullOrWhiteSpace(request.Username)) throw new DomainException("Username is required.");
+                    SecretReference token = await StoreAsync(teamId, "https-token",
+                        RequireSecret(request.Password, "Password or access token"), cancellationToken);
+                    source = GitSourceConnection.CreateHttpsCredential(teamId, name, htmlUrl!, request.Username, token.Id,
+                        now);
+                    break;
+                }
             default:
                 throw new DomainException("Unsupported Git source kind.");
         }
@@ -529,10 +529,10 @@ public sealed partial class GitSourceService(
     private int ApplicationCount(GitSourceConnectionId sourceId, TeamId teamId)
     {
         return (from application in dbContext.Applications
-            join environment in dbContext.Environments on application.EnvironmentId equals environment.Id
-            join project in dbContext.Projects on environment.ProjectId equals project.Id
-            where application.SourceId == sourceId && project.TeamId == teamId
-            select application.Id).Count();
+                join environment in dbContext.Environments on application.EnvironmentId equals environment.Id
+                join project in dbContext.Projects on environment.ProjectId equals project.Id
+                where application.SourceId == sourceId && project.TeamId == teamId
+                select application.Id).Count();
     }
 
     private GitSourceSummary ToSummary(GitSourceConnection source, TeamId teamId)
@@ -566,7 +566,9 @@ public sealed partial class GitSourceService(
             new AuditTarget("git-source", source.Id.Value.ToString("D")), null,
             new Dictionary<string, object?>
             {
-                ["kind"] = source.Kind.ToString(), ["name"] = source.Name.Value, ["systemWide"] = source.IsSystemWide
+                ["kind"] = source.Kind.ToString(),
+                ["name"] = source.Name.Value,
+                ["systemWide"] = source.IsSystemWide
             }, cancellationToken);
     }
 

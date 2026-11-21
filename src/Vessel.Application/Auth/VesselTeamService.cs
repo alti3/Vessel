@@ -185,7 +185,8 @@ public sealed class VesselTeamService
             team.AddMember(userId, invitation.Role, DateTimeOffset.UtcNow, invitation.AccessGrants);
         invitation.Accept(DateTimeOffset.UtcNow);
         await _auditWriter.StageAsync(new AuditEntry(team.Id, userId, AuditActions.TeamInvitationAccepted,
-            new AuditTarget("team_invitation", invitation.Id.ToString())) { CorrelationId = correlationId },
+            new AuditTarget("team_invitation", invitation.Id.ToString()))
+        { CorrelationId = correlationId },
             cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

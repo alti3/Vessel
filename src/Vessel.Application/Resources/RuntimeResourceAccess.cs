@@ -37,33 +37,33 @@ public static class RuntimeResourceAccess
         switch (kind)
         {
             case ResourceRuntimeKind.Application:
-            {
-                var applicationId = new ApplicationId(resourceId);
-                authorization.Demand(actorUserId, teamId, ResourceRef.Application(applicationId), permission);
-                AppEntity application = dbContext.Applications.Single(item => item.Id == applicationId);
-                return new AuthorizedRuntimeResource(kind, resourceId, application.Name.Value, teamId,
-                    application.EnvironmentId, ServerOf(dbContext, application.ServerId), application);
-            }
+                {
+                    var applicationId = new ApplicationId(resourceId);
+                    authorization.Demand(actorUserId, teamId, ResourceRef.Application(applicationId), permission);
+                    AppEntity application = dbContext.Applications.Single(item => item.Id == applicationId);
+                    return new AuthorizedRuntimeResource(kind, resourceId, application.Name.Value, teamId,
+                        application.EnvironmentId, ServerOf(dbContext, application.ServerId), application);
+                }
             case ResourceRuntimeKind.Database:
-            {
-                var databaseId = new DatabaseResourceId(resourceId);
-                authorization.Demand(actorUserId, teamId, ResourceRef.Database(databaseId), permission);
-                DatabaseResource database = dbContext.DatabaseResources.Single(item => item.Id == databaseId);
-                return new AuthorizedRuntimeResource(kind, resourceId, database.Name.Value, teamId,
-                    database.EnvironmentId, ServerOf(dbContext, database.ServerId), Database: database);
-            }
+                {
+                    var databaseId = new DatabaseResourceId(resourceId);
+                    authorization.Demand(actorUserId, teamId, ResourceRef.Database(databaseId), permission);
+                    DatabaseResource database = dbContext.DatabaseResources.Single(item => item.Id == databaseId);
+                    return new AuthorizedRuntimeResource(kind, resourceId, database.Name.Value, teamId,
+                        database.EnvironmentId, ServerOf(dbContext, database.ServerId), Database: database);
+                }
             case ResourceRuntimeKind.Service:
-            {
-                var serviceId = new ServiceResourceId(resourceId);
-                ServiceResource service = dbContext.ServiceResources.SingleOrDefault(item => item.Id == serviceId)
-                                          ?? throw new UnauthorizedAccessException(
-                                              "Service is outside the active team.");
-                authorization.Demand(actorUserId, teamId, ResourceRef.Environment(service.EnvironmentId), permission);
-                if (service.TeamId != teamId)
-                    throw new UnauthorizedAccessException("Service is outside the active team.");
-                return new AuthorizedRuntimeResource(kind, resourceId, service.Name.Value, teamId,
-                    service.EnvironmentId, ServerOf(dbContext, service.ServerId), Service: service);
-            }
+                {
+                    var serviceId = new ServiceResourceId(resourceId);
+                    ServiceResource service = dbContext.ServiceResources.SingleOrDefault(item => item.Id == serviceId)
+                                              ?? throw new UnauthorizedAccessException(
+                                                  "Service is outside the active team.");
+                    authorization.Demand(actorUserId, teamId, ResourceRef.Environment(service.EnvironmentId), permission);
+                    if (service.TeamId != teamId)
+                        throw new UnauthorizedAccessException("Service is outside the active team.");
+                    return new AuthorizedRuntimeResource(kind, resourceId, service.Name.Value, teamId,
+                        service.EnvironmentId, ServerOf(dbContext, service.ServerId), Service: service);
+                }
             default:
                 throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown resource kind.");
         }
