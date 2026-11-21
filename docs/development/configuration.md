@@ -31,6 +31,11 @@ $env:Vessel__Redis__ConnectionString = "localhost:6379"
 
 Do not commit real passwords, tokens, object storage keys, OAuth secrets, or webhook secrets.
 
+`Vessel:Host:PublicUrl` (for example `https://vessel.example.com`) is the instance's public base URL. Password reset,
+invitation, verification, and channel-disabled emails, and absolute links in notifications, are built only from it,
+never from the request `Host` header. Without it, Vessel does not send auth emails. Startup fails when it is set but is
+not an absolute `http(s)` URL without credentials, query, or fragment.
+
 ## Health Endpoints
 
 Vessel exposes:

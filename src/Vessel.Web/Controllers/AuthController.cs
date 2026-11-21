@@ -17,14 +17,17 @@ namespace Vessel.Web.Controllers;
 public sealed class AuthController : ControllerBase
 {
     private readonly IAuditWriter _auditWriter;
+    private readonly AuthEmailService _authEmails;
     private readonly VesselAuthenticationService _authenticationService;
     private readonly VesselHostOptions _hostOptions;
 
     public AuthController(
         VesselAuthenticationService authenticationService,
         IAuditWriter auditWriter,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        AuthEmailService authEmails)
     {
+        _authEmails = authEmails;
         _authenticationService = authenticationService;
         _auditWriter = auditWriter;
         _hostOptions = configuration.GetSection(VesselHostOptions.SectionName).Get<VesselHostOptions>()
@@ -148,6 +151,76 @@ public sealed class AuthController : ControllerBase
         return succeeded ? NoContent() : BadRequest();
     }
 
+    /// <summary>Form variant of the reset request used by the password-reset page; never reveals account existence.</summary>
+    [HttpPost("/auth/password-reset/request")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> RequestPasswordResetForm(
+        [FromForm] PasswordResetRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _authenticationService.RequestPasswordResetAsync(
+                request.Email,
+                CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+                cancellationToken);
+        }
+        catch (Vessel.Domain.Common.DomainException)
+        {
+            // Invalid address: same response as for unknown accounts.
+        }
+
+        return LocalRedirect("/password-reset?status=requested");
+    }
+
+    /// <summary>Form variant of the reset completion used by the emailed link (IAM-10).</summary>
+    [HttpPost("/auth/password-reset/complete")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> ResetPasswordForm(
+        [FromForm] PasswordResetCompleteRequest request,
+        CancellationToken cancellationToken)
+    {
+        bool succeeded;
+        try
+        {
+            succeeded = await _authenticationService.ResetPasswordAsync(
+                request.Email,
+                request.Token,
+                request.NewPassword,
+                CorrelationIdMiddleware.GetCorrelationId(HttpContext),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
+                                              or Vessel.Domain.Common.DomainException)
+        {
+            succeeded = false;
+        }
+
+        return LocalRedirect(succeeded ? "/login?status=password-reset" : "/password-reset?status=invalid");
+    }
+
+    /// <summary>Sends a new verification email to the signed-in user (IAM-10).</summary>
+    [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
+    [HttpPost("email-verification/send")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> SendEmailVerification(CancellationToken cancellationToken)
+    {
+        var queued = await _authEmails.RequestEmailVerificationAsync(User.GetUserId(), cancellationToken);
+        return queued ? Accepted() : Problem("Email verification is unavailable or the address is already verified.",
+            statusCode: StatusCodes.Status409Conflict);
+    }
+
+    /// <summary>Confirms an emailed verification token (POST only, so link scanners cannot redeem it).</summary>
+    [HttpPost("/auth/verify-email")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> VerifyEmailForm([FromForm] VerifyEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var verified = await _authEmails.ConfirmEmailVerificationAsync(request.Token,
+            CorrelationIdMiddleware.GetCorrelationId(HttpContext), cancellationToken);
+        return LocalRedirect(verified ? "/verify-email?status=verified" : "/verify-email?status=invalid");
+    }
+
     [Authorize(Policy = VesselAuthorizationPolicies.InteractiveSession)]
     [HttpPost("2fa/setup")]
     [EnableRateLimiting("auth")]
@@ -228,6 +301,8 @@ public sealed record RegisterFormRequest(string Name, string Email, string Passw
 public sealed record PasswordResetRequest(string Email);
 
 public sealed record PasswordResetCompleteRequest(string Email, string Token, string NewPassword);
+
+public sealed record VerifyEmailRequest(string Token);
 
 public sealed record TwoFactorConfirmRequest(string Code);
 

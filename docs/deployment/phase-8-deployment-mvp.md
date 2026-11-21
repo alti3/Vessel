@@ -4,12 +4,12 @@ Phase 8 wires the first end-to-end deployment path while preserving Vessel's mod
 
 ## Behavior
 
-- `StartDeploymentService` validates `deployments.start`, resource ownership, and active deployment state before creating a queued deployment.
+- `StartDeploymentService` validates `deployments.start` and resource ownership, then hands the request to the deployment queue (`DeploymentQueueService`): a request while another deployment runs is queued, identical requests are deduplicated, and server concurrency limits apply. See [deployment-queue-rollback-previews.md](./deployment-queue-rollback-previews.md).
 - `RunDeploymentJob` is intentionally thin and delegates execution to `IDeploymentRunner`.
 - `DeploymentRunner` records state transitions, performs Git clone/checkout through `IGitClient`, writes deterministic `.env` and Compose snapshots through `IDeploymentWorkspaceManager`, and starts containers through `IContainerRuntimeClient`.
 - Deployment logs are persisted incrementally on the deployment aggregate and published to the deployment SignalR group as redacted `deployment.log` messages.
 - Status changes are persisted and published to deployment and application groups as `deployment.status` messages.
-- Cancellation moves running deployments to `CancelRequested`; the runner observes this between major steps and then records `CanceledByUser`.
+- Cancellation moves running deployments to `CancelRequested` and signals the run; the runner stops its build and records `CanceledByUser`. Once the deploy phase started (containers are being replaced) the deployment finishes instead.
 
 ## Runtime Scope
 

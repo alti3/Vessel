@@ -26,6 +26,16 @@ namespace Vessel.Application.Persistence;
 
 public interface IVesselDbContext : IUnitOfWork
 {
+    /// <summary>
+    ///     Re-reads a tracked entity's current database values, discarding stale tracked state. Long-running work
+    ///     (deployment runs, queue decisions) calls it before acting on state other scopes may have changed. In-memory
+    ///     contexts share instances and need no refresh.
+    /// </summary>
+    Task RefreshAsync<TEntity>(TEntity entity, CancellationToken cancellationToken = default) where TEntity : class
+    {
+        return Task.CompletedTask;
+    }
+
     IQueryable<User> Users { get; }
 
     IQueryable<Team> Teams { get; }
@@ -75,6 +85,10 @@ public interface IVesselDbContext : IUnitOfWork
     IQueryable<InAppNotification> InAppNotifications { get; }
 
     IQueryable<NotificationDeliveryAttempt> NotificationDeliveryAttempts { get; }
+
+    /// <summary>The singleton instance email settings row (NTF-06); empty until an administrator saves it.</summary>
+    IQueryable<InstanceEmailSettings> InstanceEmailSettings =>
+        Enumerable.Empty<InstanceEmailSettings>().AsQueryable();
 
     IQueryable<AuditLog> AuditLogs { get; }
 
@@ -149,6 +163,9 @@ public interface IVesselDbContext : IUnitOfWork
 
     IRepository<NotificationDeliveryAttempt, NotificationDeliveryAttemptId> NotificationDeliveryAttemptRepository =>
         throw new InvalidOperationException("Notification delivery attempt persistence is not available.");
+
+    IRepository<InstanceEmailSettings, InstanceEmailSettingsId> InstanceEmailSettingsRepository =>
+        throw new InvalidOperationException("Instance email settings persistence is not available.");
 
     IRepository<WebhookEvent, WebhookEventId> WebhookEventRepository { get; }
 

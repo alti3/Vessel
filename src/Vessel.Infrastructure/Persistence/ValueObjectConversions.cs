@@ -135,7 +135,9 @@ internal static class ValueObjectConversions
     {
         return string.Join('|', value.AutoDeployEnabled.ToString(), value.PreviewDeploymentsEnabled.ToString(),
             value.ForceRebuild.ToString(), Escape(value.WatchPaths ?? string.Empty),
-            value.PublicPreviewsEnabled.ToString());
+            value.PublicPreviewsEnabled.ToString(), value.AutoCancelQueuedDeployments.ToString(),
+            value.AutoCancelBuildingDeployments.ToString(), value.RedactAllEnvValuesInLogs.ToString(),
+            value.ImagesToKeep.ToString(CultureInfo.InvariantCulture));
     }
 
     private static string FormatStorageConfiguration(StorageConfiguration value)
@@ -212,9 +214,17 @@ internal static class ValueObjectConversions
     private static DeploymentSettings ParseDeploymentSettings(string value)
     {
         var parts = SplitEscaped(value);
-        // Rows written before PublicPreviewsEnabled existed have four parts and default to same-repository-only previews.
+        // Older rows have fewer parts; missing settings take their defaults (same-repository-only previews, auto-cancel
+        // of queued webhook deployments on, building off, all env values redacted (upstream default), two images kept).
         return new DeploymentSettings(bool.Parse(parts[0]), bool.Parse(parts[1]), bool.Parse(parts[2]),
-            EmptyToNull(parts[3]), parts.Length > 4 && bool.Parse(parts[4]));
+            EmptyToNull(parts[3]),
+            parts.Length > 4 && bool.Parse(parts[4]),
+            parts.Length <= 5 || bool.Parse(parts[5]),
+            parts.Length > 6 && bool.Parse(parts[6]),
+            parts.Length <= 7 || bool.Parse(parts[7]),
+            parts.Length > 8
+                ? int.Parse(parts[8], CultureInfo.InvariantCulture)
+                : Vessel.Domain.Applications.DeploymentSettings.DefaultImagesToKeep);
     }
 
     private static StorageConfiguration ParseStorageConfiguration(string value)

@@ -51,6 +51,23 @@ public sealed class Server : Entity<ServerId>
 
     public string Labels { get; private set; } = string.Empty;
 
+    public const int DefaultConcurrentBuilds = 2;
+    public const int DefaultDeploymentQueueLimit = 25;
+    public const int MaxConcurrentBuilds = 100;
+    public const int MaxDeploymentQueueLimit = 1000;
+
+    /// <summary>
+    ///     How many deployments may build/run on this server at once (Coolify <c>concurrent_builds</c>, default 2).
+    ///     Further admitted deployments wait in the queue.
+    /// </summary>
+    public int ConcurrentBuilds { get; private set; } = DefaultConcurrentBuilds;
+
+    /// <summary>
+    ///     How many deployments may wait in this server's queue (Coolify <c>deployment_queue_limit</c>, default 25).
+    ///     Admission rejects new deployments once the queue is full.
+    /// </summary>
+    public int DeploymentQueueLimit { get; private set; } = DefaultDeploymentQueueLimit;
+
     /// <summary>
     /// True when operations against this server execute on the Vessel control-plane host itself
     /// (local runtime or the host Docker socket). Host-local execution is host-root-equivalent.
@@ -98,6 +115,17 @@ public sealed class Server : Entity<ServerId>
         ConnectionType = connectionType;
         Runtime = runtime;
         Labels = DomainValidation.Optional(labels, nameof(Labels), 1000) ?? string.Empty;
+        Touch(now);
+    }
+
+    public void UpdateDeploymentLimits(int concurrentBuilds, int deploymentQueueLimit, DateTimeOffset now)
+    {
+        if (concurrentBuilds is < 1 or > MaxConcurrentBuilds)
+            throw new DomainException($"Concurrent builds must be between 1 and {MaxConcurrentBuilds}.");
+        if (deploymentQueueLimit is < 1 or > MaxDeploymentQueueLimit)
+            throw new DomainException($"Deployment queue limit must be between 1 and {MaxDeploymentQueueLimit}.");
+        ConcurrentBuilds = concurrentBuilds;
+        DeploymentQueueLimit = deploymentQueueLimit;
         Touch(now);
     }
 

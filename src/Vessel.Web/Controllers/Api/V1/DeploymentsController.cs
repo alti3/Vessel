@@ -103,10 +103,12 @@ public sealed class DeploymentsController : ControllerBase
         StartDeploymentRequest request,
         CancellationToken cancellationToken)
     {
+        // REST deployments are API-triggered: only they may pass cancel_previous (none|queued|building).
         StartDeploymentResult result = await _starter.StartAsync(
             User.GetUserId(),
             User.GetTeamId(),
             request,
+            Domain.Deployments.DeploymentTrigger.Api,
             cancellationToken);
         return AcceptedAtAction(nameof(Get), new { deploymentId = result.DeploymentId }, result);
     }

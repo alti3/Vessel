@@ -24,11 +24,12 @@ public sealed class DiscordNotificationProvider(HttpClient httpClient) : INotifi
 
             return response.IsSuccessStatusCode
                 ? NotificationDeliveryResult.Succeeded()
-                : NotificationDeliveryResult.Failed($"Discord notification delivery failed with HTTP {(int)response.StatusCode}.");
+                : NotificationDeliveryResult.FromHttpStatus("Discord", (int)response.StatusCode,
+                    NotificationHttpFailures.DiscordConfigurationStatuses);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or UriFormatException)
+        catch (Exception ex) when (NotificationHttpFailures.IsHandled(ex, cancellationToken))
         {
-            return NotificationDeliveryResult.Failed($"Discord notification delivery failed: {ex.GetType().Name}.");
+            return NotificationHttpFailures.FromException("Discord", ex, cancellationToken);
         }
     }
 }

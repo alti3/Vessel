@@ -288,8 +288,51 @@ public sealed class Phase12OperationalTests
         Assert.Equal(DeploymentStatus.Failed, deployment.Status);
     }
 
+    [Fact]
+    public async Task DeploymentRunnerLeavesQueuedDeploymentQueuedOnRunLockContention()
+    {
+        Scenario scenario = Scenario.Create();
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            "0123456789abcdef0123", scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+        var locks = new InMemoryDistributedLockManager(TimeProvider.System);
+        // Another run of the same application holds the run lock.
+        await using DistributedLockHandle? held = await locks.TryAcquireAsync(
+            $"deployment:{scenario.Application.Id.Value:D}", TimeSpan.FromMinutes(5), TimeSpan.Zero,
+            TestContext.Current.CancellationToken);
+        var jobs = new TestJobDispatcher();
+        var notifications = new RecordingNotificationEventPublisher();
+
+        await CreateRunner(scenario, locks, notifications, jobs)
+            .RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        // DEP-04: Queued -> Failed was the old (invalid) behavior; the deployment stays queued and is retried.
+        Assert.Equal(DeploymentStatus.Queued, deployment.Status);
+        Assert.Equal(1, jobs.Scheduled);
+        Assert.Empty(notifications.Published);
+        Assert.Contains(deployment.LogLines, line => line.Message.Contains("run lock", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DeploymentRunnerFailsOrphanedRunningDeploymentInsteadOfRunningItTwice()
+    {
+        Scenario scenario = Scenario.Create();
+        Deployment deployment = Deployment.Queue(scenario.Application.Id, scenario.Server.Id, scenario.User.Id,
+            "0123456789abcdef0123", scenario.Now);
+        deployment.Start(scenario.Now);
+        scenario.Db.DeploymentItems.Add(deployment);
+        var notifications = new RecordingNotificationEventPublisher();
+
+        await CreateRunner(scenario, new InMemoryDistributedLockManager(TimeProvider.System), notifications)
+            .RunAsync(deployment.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(DeploymentStatus.Failed, deployment.Status);
+        Assert.Contains(deployment.LogLines, line => line.Message.Contains("worker that ran it stopped",
+            StringComparison.Ordinal));
+    }
+
     private static DeploymentRunner CreateRunner(Scenario scenario, IDistributedLockManager locks,
-        INotificationEventPublisher notifications)
+        INotificationEventPublisher notifications, TestJobDispatcher? dispatcher = null)
     {
         var authorization = new VesselAuthorizationService(scenario.Db);
         var proxyLifecycle = new ProxyLifecycleService(scenario.Db, authorization, locks, [],
@@ -298,11 +341,32 @@ public sealed class Phase12OperationalTests
         var proxy = new Vessel.Application.Proxy.ProxyConfigurationService(scenario.Db, authorization,
             ThrowingProxy.Create<Vessel.Application.Proxy.IProxyProvider>(), proxyLifecycle, locks,
             new TestAuditWriter(), new TestRedactor(), TimeProvider.System, notifications);
+        TestJobDispatcher jobs = dispatcher ?? new TestJobDispatcher();
+        var cancellations = new Vessel.Application.Deployments.Queue.DeploymentCancellationRegistry();
+        var queue = new Vessel.Application.Deployments.Queue.DeploymentQueueService(scenario.Db, locks, jobs,
+            cancellations, new TestRealtimeNotifier(), TimeProvider.System);
         return new DeploymentRunner(scenario.Db, ThrowingProxy.Create<Vessel.Application.Git.IGitClient>(),
             new TestContainerRuntime(), ThrowingProxy.Create<IDeploymentWorkspaceManager>(), locks,
             ThrowingProxy.Create<ISecretVault>(), new TestRedactor(), new TestRealtimeNotifier(),
             ThrowingProxy.Create<IComposeDocumentBuilder>(), proxy,
-            proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications, authorization);
+            proxyLifecycle, new TestAuditWriter(), TimeProvider.System, notifications, authorization, queue,
+            cancellations, jobs);
+    }
+
+    private sealed class TestJobDispatcher : IBackgroundJobDispatcher
+    {
+        public int Scheduled { get; private set; }
+
+        public string Enqueue<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall)
+        {
+            return "job";
+        }
+
+        public string Schedule<TJob>(System.Linq.Expressions.Expression<Func<TJob, Task>> methodCall, TimeSpan delay)
+        {
+            Scheduled++;
+            return "job";
+        }
     }
 
     private sealed class SwallowingPublisher : INotificationEventPublisher

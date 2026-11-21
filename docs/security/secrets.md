@@ -44,3 +44,9 @@ Earlier alpha builds silently used a public built-in key when `MasterKey` was em
 ## TOTP secrets
 
 TOTP shared secrets are stored encrypted with the same key ring (purpose-bound associated data per user). Legacy plaintext values remain readable and are upgraded on the next successful 2FA login or by the re-encryption command.
+
+## Log redaction
+
+Deployment logs, build output and compose output are redacted with each deployment's secret context (all secret
+values always, plain values when `redactAllEnvValuesInLogs` is enabled) and with the Coolify-parity pattern set of
+`SecretRedactor`. See [deployment-queue-rollback-previews.md](../deployment/deployment-queue-rollback-previews.md#log-redaction-dep-03-sec-09).

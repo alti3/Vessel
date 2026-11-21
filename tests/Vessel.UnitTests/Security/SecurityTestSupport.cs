@@ -50,6 +50,8 @@ public class InMemoryVesselDb : DispatchProxy
     {
         ArgumentNullException.ThrowIfNull(targetMethod);
         if (targetMethod.Name == nameof(IUnitOfWork.SaveChangesAsync)) return Task.FromResult(1);
+        // List-backed entities are shared instances, so there is nothing stale to refresh.
+        if (targetMethod.Name == nameof(IVesselDbContext.RefreshAsync)) return Task.CompletedTask;
         if (targetMethod.Name == "get_" + nameof(IVesselDbContext.TeamMemberships))
             return Set<Team>().SelectMany(team => team.Memberships).AsQueryable();
 

@@ -3,18 +3,26 @@ using Vessel.Domain.Deployments;
 
 namespace Vessel.Application.Deployments;
 
+/// <summary>
+///     A deployment request. <paramref name="CancelPrevious" /> (<c>none</c>|<c>queued</c>|<c>building</c>, default
+///     none) is honored for API deployments only; <paramref name="ParentDeploymentId" /> links a redeploy to the
+///     deployment it repeats. The trigger source is decided by the endpoint, never by the request body.
+/// </summary>
 public sealed record StartDeploymentRequest(
     Guid ApplicationId,
     bool ForceRebuild = false,
     string? CommitSha = null,
     Guid? PreviewId = null,
-    Guid? WebhookEventId = null);
+    string? CancelPrevious = null,
+    Guid? ParentDeploymentId = null);
 
+/// <summary><paramref name="Deduplicated" /> is true when an identical deployment was already queued or running.</summary>
 public sealed record StartDeploymentResult(
     Guid DeploymentId,
     Guid ApplicationId,
     DeploymentStatus Status,
-    string Message);
+    string Message,
+    bool Deduplicated = false);
 
 public sealed record DeploymentDetails(
     Guid Id,
@@ -33,7 +41,13 @@ public sealed record DeploymentDetails(
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
     DateTimeOffset? CancellationRequestedAt,
-    IReadOnlyList<DeploymentLogEntry> Logs);
+    IReadOnlyList<DeploymentLogEntry> Logs,
+    DeploymentTrigger Trigger = DeploymentTrigger.Manual,
+    Guid? ParentDeploymentId = null,
+    bool IsRollback = false,
+    string? RollbackImage = null,
+    DateTimeOffset? DeployPhaseStartedAt = null,
+    string? CancellationReason = null);
 
 public sealed record DeploymentLogEntry(
     int Sequence,
@@ -74,6 +88,9 @@ public sealed record DeploymentRuntimePlan(
 public interface IDeploymentRunner
 {
     Task RunAsync(DeploymentId deploymentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Runs a deployment; <paramref name="attempt" /> counts retries after run-lock contention.</summary>
+    Task RunAsync(DeploymentId deploymentId, int attempt, CancellationToken cancellationToken = default);
 }
 
 public interface IDeploymentWorkspaceManager

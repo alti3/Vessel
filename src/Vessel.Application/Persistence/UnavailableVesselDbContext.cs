@@ -171,6 +171,12 @@ public class UnavailableVesselDbContext : IVesselDbContext
     public IRepository<TerminalSession, TerminalSessionId> TerminalSessionRepository { get; } =
         new UnavailableRepository<TerminalSession, TerminalSessionId>();
 
+    public virtual IQueryable<InstanceEmailSettings> InstanceEmailSettings =>
+        Enumerable.Empty<InstanceEmailSettings>().AsQueryable();
+
+    public virtual IRepository<InstanceEmailSettings, InstanceEmailSettingsId> InstanceEmailSettingsRepository
+    { get; } = new UnavailableRepository<InstanceEmailSettings, InstanceEmailSettingsId>();
+
     public virtual Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         throw new InvalidOperationException("Vessel database persistence is disabled.");

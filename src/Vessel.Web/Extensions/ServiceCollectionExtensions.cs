@@ -15,7 +15,13 @@ using Vessel.Application.Backups;
 using Vessel.Application.Authorization;
 using Vessel.Application.Dashboard;
 using Vessel.Application.Deployments;
+using Vessel.Application.Deployments.Previews;
+using Vessel.Application.Deployments.Queue;
+using Vessel.Application.Deployments.Rollback;
+using Vessel.Application.Deployments.Settings;
+using Vessel.Application.Common;
 using Vessel.Application.Diagnostics;
+using Vessel.Application.Email;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
 using Vessel.Application.Monitoring;
@@ -82,6 +88,14 @@ public static class ServiceCollectionExtensions
             .Validate(options => options.InvitationExpirationDays > 0, "Invitation expiration must be positive.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<InstanceUrlOptions>()
+            .Bind(configuration.GetSection(InstanceUrlOptions.SectionName))
+            .Validate(options => string.IsNullOrWhiteSpace(options.PublicUrl)
+                                 || InstanceUrlOptions.ParseBaseUrl(options.PublicUrl) is not null,
+                "Vessel:Host:PublicUrl must be an absolute http(s) URL without credentials, query, or fragment.")
+            .ValidateOnStart();
+
         services.TryAddScoped<IVesselDbContext, UnavailableVesselDbContext>();
         services.TryAddScoped<IUnitOfWork>(provider => provider.GetRequiredService<IVesselDbContext>());
         services.TryAddScoped<IAuditWriter, NoopAuditWriter>();
@@ -94,6 +108,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DeploymentQueryService>();
         services.AddScoped<DeploymentLogRetentionService>();
         services.AddScoped<IDeploymentRunner, DeploymentRunner>();
+        services.AddSingleton<IDeploymentCancellationRegistry, DeploymentCancellationRegistry>();
+        services.AddScoped<DeploymentQueueService>();
+        services.AddScoped<DeploymentQueueJob>();
+        services.AddScoped<PreviewLifecycleService>();
+        services.AddScoped<CleanupPreviewJob>();
+        services.AddScoped<RollbackService>();
+        services.AddScoped<DeploymentSettingsService>();
         services.AddScoped<TerminalSessionManager>();
         services.AddScoped<ServerHealthPollingService>();
         services.AddScoped<ServerHealthPollingJob>();
@@ -124,6 +145,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<NotificationDispatchService>();
         services.AddScoped<DispatchNotificationJob>();
         services.AddScoped<RaiseNotificationJob>();
+        services.AddScoped<NotificationThrottlePurgeJob>();
+        services.AddSingleton<InstanceLinkBuilder>();
+        services.AddScoped<InstanceEmailSender>();
+        services.AddScoped<InstanceEmailOutbox>();
+        services.AddScoped<SendInstanceEmailJob>();
+        services.AddScoped<InstanceEmailSettingsService>();
+        services.AddScoped<AuthEmailService>();
         services.AddScoped<TotpService>();
         services.AddScoped<SecretReencryptionService>();
         services.AddScoped<SecretReencryptionJob>();

@@ -20,7 +20,7 @@ public sealed class Phase13NotificationDispatchTests
         var dbContext = new TestDbContext();
         var dispatcher = new RecordingDispatcher();
         var provider = new FailingProvider();
-        var service = new NotificationDispatchService(dbContext, [provider], new TestSecretVault(),
+        var service = Notifications.NotificationTestKit.CreateDispatch(dbContext, [provider], new TestSecretVault(),
             new TestRedactor(), dispatcher, new FakeTimeProvider(now));
 
         var target = NotificationTarget.Create(teamId, new ResourceName("Ops webhook"), NotificationChannel.Webhook,
@@ -53,7 +53,7 @@ public sealed class Phase13NotificationDispatchTests
         var dbContext = new TestDbContext();
         var dispatcher = new RecordingDispatcher();
         var provider = new FailingProvider();
-        var service = new NotificationDispatchService(dbContext, [provider], new TestSecretVault(),
+        var service = Notifications.NotificationTestKit.CreateDispatch(dbContext, [provider], new TestSecretVault(),
             new TestRedactor(), dispatcher, new FakeTimeProvider(now));
 
         var successfulTarget = NotificationTarget.Create(teamId, new ResourceName("Succeeded webhook"),
