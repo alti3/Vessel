@@ -89,3 +89,51 @@ public sealed record DockerBuildCommand(
     IReadOnlyDictionary<string, string> BuildArguments,
     TimeSpan? Timeout = null,
     ProcessRedactionProfile? Redaction = null);
+
+/// <summary>
+///     One container from <c>inspect</c> (never its environment or command line): identity, image, labels and state,
+///     including the health and restart count used by status reconciliation (SRV-04) and cleanup (SRV-07).
+/// </summary>
+public sealed record ContainerStateReading(
+    string Id,
+    string Name,
+    string Image,
+    string ImageId,
+    string State,
+    string? Health,
+    int RestartCount,
+    int? ExitCode,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? FinishedAt,
+    IReadOnlyDictionary<string, string> Labels);
+
+/// <summary>One local image with size, creation time and labels (server Images page, cleanup planning).</summary>
+public sealed record ImageDetails(
+    string Id,
+    IReadOnlyList<string> RepoTags,
+    long SizeBytes,
+    DateTimeOffset? CreatedAt,
+    IReadOnlyDictionary<string, string> Labels);
+
+/// <summary>Options of a container log read (<c>docker logs</c>). Lines always carry the runtime timestamp.</summary>
+/// <param name="Tail">Last lines per container; null reads the whole log.</param>
+/// <param name="Since">Only lines at or after this time.</param>
+/// <param name="Follow">Keep streaming new lines until cancelled.</param>
+public sealed record ContainerLogOptions(int? Tail, DateTimeOffset? Since, bool Follow);
+
+public enum RuntimePruneKind
+{
+    /// <summary>Dangling (untagged) images only.</summary>
+    DanglingImages = 0,
+
+    /// <summary>Builder cache (<c>docker builder prune -af</c>).</summary>
+    BuildCache = 1,
+
+    /// <summary>Unused networks.</summary>
+    Networks = 2,
+
+    /// <summary>Unused anonymous volumes only (never named volumes).</summary>
+    AnonymousVolumes = 3
+}
+
+public sealed record RuntimePruneResult(bool Succeeded, long ReclaimedBytes, bool Supported = true);

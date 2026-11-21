@@ -4,6 +4,7 @@ using System.Text.Json;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
 using Vessel.Domain;
+using Vessel.Domain.Sources;
 using Vessel.Domain.ValueObjects;
 using Vessel.Domain.Webhooks;
 using AppEntity = Vessel.Domain.Applications.Application;
@@ -31,7 +32,8 @@ public static class WebhookApplicationMatching
             return dbContext.Applications.Where(application => application.Id == applicationId).ToArray();
         }
 
-        if (parsed.Branch is null) return [];
+        // SEC-10: a branch that is not a valid git ref never matches (and never reaches git).
+        if (parsed.Branch is null || !GitRef.TryParse(parsed.Branch, out _)) return [];
         RepositoryIdentity? webhookRepository =
             RepositoryIdentity.FromFullName(parsed.Repository, parsed.RepositoryWebUrl);
         if (webhookRepository is null) return [];
@@ -70,15 +72,47 @@ public static class WebhookApplicationMatching
                     configuration.ApplicationId == application.Id &&
                     configuration.Provider == provider &&
                     configuration.IsEnabled);
-            if (configuration is null) continue;
+            if (configuration is not null)
+            {
+                var secret = await secretVault.RevealForDeploymentAsync(TeamForApplication(dbContext, application),
+                    configuration.SecretReferenceId, cancellationToken);
+                if (Verify(provider, supplied, rawBody, secret))
+                {
+                    verified.Add(application.Id);
+                    continue;
+                }
+            }
 
-            var secret = await secretVault.RevealForDeploymentAsync(TeamForApplication(dbContext, application),
-                configuration.SecretReferenceId, cancellationToken);
-            if (Verify(provider, supplied, rawBody, secret))
+            // DEP-08: app sources (GitHub App, GitLab/Gitea app) sign deliveries with the source webhook secret. It
+            // verifies only applications that use that source and only for the source's own provider.
+            if (await VerifiedBySourceAsync(dbContext, secretVault, provider, application, supplied, rawBody,
+                    cancellationToken))
                 verified.Add(application.Id);
         }
 
         return verified;
+    }
+
+    private static async Task<bool> VerifiedBySourceAsync(IVesselDbContext dbContext, ISecretVault secretVault,
+        WebhookProvider provider, AppEntity application, string supplied, string rawBody,
+        CancellationToken cancellationToken)
+    {
+        if (application.SourceId is not { } sourceId) return false;
+        GitSourceConnection? source = dbContext.GitSourceConnections.SingleOrDefault(item => item.Id == sourceId);
+        if (source?.WebhookSecretReferenceId is not { } secretReference) return false;
+        var sourceProvider = source.Kind switch
+        {
+            GitSourceKind.GitHubApp => WebhookProvider.GitHub,
+            GitSourceKind.GitLabApp => WebhookProvider.GitLab,
+            GitSourceKind.GiteaApp => WebhookProvider.Gitea,
+            _ => (WebhookProvider?)null
+        };
+        if (sourceProvider != provider) return false;
+        // The source must still be usable by the application's team (system-wide or owned by it).
+        TeamId applicationTeam = TeamForApplication(dbContext, application);
+        if (source.TeamId != applicationTeam && !source.IsSystemWide) return false;
+        var secret = await secretVault.RevealForDeploymentAsync(source.TeamId, secretReference, cancellationToken);
+        return Verify(provider, supplied, rawBody, secret);
     }
 
     public static bool Verify(WebhookProvider provider, string? supplied, string rawBody, string secret)

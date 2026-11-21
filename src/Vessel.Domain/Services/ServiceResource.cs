@@ -49,6 +49,13 @@ public sealed class ServiceResource : Entity<ServiceResourceId>
 
     public string? ComposeSnapshotReference { get; private set; }
 
+    /// <summary>
+    ///     Vault reference holding the values generated for the template's magic variables (TPL-01:
+    ///     <c>SERVICE_PASSWORD_*</c>, <c>SERVICE_USER_*</c>, ...) as a JSON object. Generated once per service instance and
+    ///     never regenerated on re-provision; never exposed through APIs.
+    /// </summary>
+    public SecretReferenceId? GeneratedSecretsReferenceId { get; private set; }
+
     public static ServiceResource Create(
         TeamId teamId,
         EnvironmentId environmentId,
@@ -61,6 +68,14 @@ public sealed class ServiceResource : Entity<ServiceResourceId>
     {
         return new ServiceResource(ServiceResourceId.New(), teamId, environmentId, serverId, name, templateKey,
             templateVersion, configurationJson, now);
+    }
+
+    public void AttachGeneratedSecrets(SecretReferenceId secretReferenceId, DateTimeOffset now)
+    {
+        if (GeneratedSecretsReferenceId.HasValue && GeneratedSecretsReferenceId.Value != secretReferenceId)
+            throw new DomainException("Generated template secrets are already attached to this service.");
+        GeneratedSecretsReferenceId = secretReferenceId;
+        Touch(now);
     }
 
     public void MarkProvisioning(DateTimeOffset now)

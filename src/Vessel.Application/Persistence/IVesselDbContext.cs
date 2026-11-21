@@ -5,6 +5,7 @@ using Vessel.Domain.Backups;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Deployments;
+using Vessel.Domain.Monitoring;
 using Vessel.Domain.EnvironmentVariables;
 using Vessel.Domain.Notifications;
 using Vessel.Domain.Projects;
@@ -14,6 +15,7 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
+using Vessel.Domain.Sources;
 using Vessel.Domain.Ssh;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
@@ -113,6 +115,17 @@ public partial interface IVesselDbContext : IUnitOfWork
 
     IQueryable<SshKey> SshKeys => Enumerable.Empty<SshKey>().AsQueryable();
 
+    IQueryable<GitSourceConnection> GitSourceConnections =>
+        Enumerable.Empty<GitSourceConnection>().AsQueryable();
+
+    IQueryable<GitKnownHost> GitKnownHosts => Enumerable.Empty<GitKnownHost>().AsQueryable();
+
+    IRepository<GitSourceConnection, GitSourceConnectionId> GitSourceConnectionRepository =>
+        throw new InvalidOperationException("Git source persistence is not available.");
+
+    IRepository<GitKnownHost, GitKnownHostId> GitKnownHostRepository =>
+        throw new InvalidOperationException("Git known host persistence is not available.");
+
     IQueryable<ProxyDynamicConfiguration> ProxyDynamicConfigurations =>
         Enumerable.Empty<ProxyDynamicConfiguration>().AsQueryable();
 
@@ -202,4 +215,34 @@ public partial interface IVesselDbContext : IUnitOfWork
 
     IRepository<SettingEntry, SettingId> SettingRepository =>
         throw new InvalidOperationException("Setting persistence is not available.");
+
+    // Server monitoring, runtime status and Docker cleanup (SRV-03/04/07/08).
+    IQueryable<ServerMetricSample> ServerMetricSamples => Enumerable.Empty<ServerMetricSample>().AsQueryable();
+
+    IQueryable<ContainerMetricSample> ContainerMetricSamples =>
+        Enumerable.Empty<ContainerMetricSample>().AsQueryable();
+
+    IQueryable<ServerMonitoringSettings> ServerMonitoringSettings =>
+        Enumerable.Empty<ServerMonitoringSettings>().AsQueryable();
+
+    IQueryable<ResourceRuntimeStatus> ResourceRuntimeStatuses =>
+        Enumerable.Empty<ResourceRuntimeStatus>().AsQueryable();
+
+    IQueryable<DockerCleanupExecution> DockerCleanupExecutions =>
+        Enumerable.Empty<DockerCleanupExecution>().AsQueryable();
+
+    IRepository<ServerMetricSample, ServerMetricSampleId> ServerMetricSampleRepository =>
+        throw new InvalidOperationException("Server metric persistence is not available.");
+
+    IRepository<ContainerMetricSample, ContainerMetricSampleId> ContainerMetricSampleRepository =>
+        throw new InvalidOperationException("Container metric persistence is not available.");
+
+    IRepository<ServerMonitoringSettings, ServerId> ServerMonitoringSettingsRepository =>
+        throw new InvalidOperationException("Server monitoring settings persistence is not available.");
+
+    IRepository<ResourceRuntimeStatus, ResourceRuntimeStatusId> ResourceRuntimeStatusRepository =>
+        throw new InvalidOperationException("Resource runtime status persistence is not available.");
+
+    IRepository<DockerCleanupExecution, DockerCleanupExecutionId> DockerCleanupExecutionRepository =>
+        throw new InvalidOperationException("Docker cleanup execution persistence is not available.");
 }

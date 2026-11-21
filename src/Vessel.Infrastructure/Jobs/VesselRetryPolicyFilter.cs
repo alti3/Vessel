@@ -46,8 +46,8 @@ public sealed class VesselRetryPolicyFilter : JobFilterAttribute, IElectStateFil
     public static void Install(JobFilterCollection filters)
     {
         ArgumentNullException.ThrowIfNull(filters);
-        filters.Remove(typeof(AutomaticRetryAttribute));
-        filters.Remove(typeof(VesselRetryPolicyFilter));
+        filters.Remove<AutomaticRetryAttribute>();
+        filters.Remove<VesselRetryPolicyFilter>();
         filters.Add(new VesselRetryPolicyFilter());
     }
 

@@ -101,6 +101,16 @@ public sealed class VesselVersion : IComparable<VesselVersion>, IEquatable<Vesse
         return obj is VesselVersion other && Equals(other);
     }
 
+    public static bool operator ==(VesselVersion? left, VesselVersion? right)
+    {
+        return left is null ? right is null : left.Equals(right);
+    }
+
+    public static bool operator !=(VesselVersion? left, VesselVersion? right)
+    {
+        return !(left == right);
+    }
+
     public override int GetHashCode()
     {
         return HashCode.Combine(Major, Minor, Patch, string.Join('.', PreRelease));

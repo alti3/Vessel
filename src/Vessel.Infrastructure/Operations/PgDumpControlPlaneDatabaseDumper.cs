@@ -33,7 +33,7 @@ public sealed class ControlPlaneBackupOptions
 ///     backup directory, renamed atomically, and accompanied by a <c>sha256sum</c>-format checksum file. Files are
 ///     created with owner-only permissions: a dump contains every Vessel row (secrets stay encrypted at rest).
 /// </summary>
-public sealed class PgDumpControlPlaneDatabaseDumper(
+public sealed partial class PgDumpControlPlaneDatabaseDumper(
     IProcessRunner processRunner,
     IPathSafetyService pathSafety,
     IOptions<ControlPlaneBackupOptions> options,
@@ -105,7 +105,7 @@ public sealed class PgDumpControlPlaneDatabaseDumper(
         }
         catch (Exception exception) when (exception is not ControlPlaneDumpException and not OperationCanceledException)
         {
-            logger.LogError(exception, "Control-plane database dump failed.");
+            LogDumpFailed(logger, exception);
             throw new ControlPlaneDumpException("The database dump could not be written.");
         }
         finally
@@ -191,7 +191,7 @@ public sealed class PgDumpControlPlaneDatabaseDumper(
         {
             var free = new DriveInfo(root).AvailableFreeSpace;
             if (free < options.Value.LowDiskWarningBytes)
-                logger.LogWarning("Only {FreeBytes} bytes are free for control-plane database dumps.", free);
+                LogLowDisk(logger, free);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -218,4 +218,10 @@ public sealed class PgDumpControlPlaneDatabaseDumper(
         {
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Control-plane database dump failed.")]
+    private static partial void LogDumpFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Only {FreeBytes} bytes are free for control-plane database dumps.")]
+    private static partial void LogLowDisk(ILogger logger, long freeBytes);
 }

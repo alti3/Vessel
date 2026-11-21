@@ -1,3 +1,5 @@
+using Vessel.Application.Monitoring.HostMetrics;
+using Vessel.Infrastructure.Monitoring;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +16,7 @@ using Vessel.Application.Files;
 using Vessel.Application.Git;
 using Vessel.Application.Jobs;
 using Vessel.Application.ManagedServices;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Notifications;
 using Vessel.Application.Persistence;
@@ -37,6 +40,7 @@ using Vessel.Infrastructure.Git;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Infrastructure.Jobs;
 using Vessel.Infrastructure.ManagedServices;
+using Vessel.Infrastructure.ManagedServices.Templates;
 using Vessel.Infrastructure.Notifications;
 using Vessel.Infrastructure.Operations;
 using Vessel.Infrastructure.Persistence;
@@ -47,6 +51,7 @@ using Vessel.Infrastructure.Security;
 using Vessel.Infrastructure.Servers;
 using Vessel.Infrastructure.Ssh;
 using Vessel.Infrastructure.Storage;
+using Vessel.Infrastructure.Sources;
 
 namespace Vessel.Infrastructure.Extensions;
 
@@ -138,6 +143,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<IPathSafetyService, PathSafetyService>();
         services.TryAddSingleton<IDeploymentWorkspaceManager, LocalDeploymentWorkspaceManager>();
         services.TryAddSingleton<IComposeDocumentBuilder, YamlComposeDocumentBuilder>();
+        services.TryAddSingleton<IServiceTemplateComposeProcessor, YamlServiceTemplateComposeProcessor>();
+        services.TryAddSingleton<IServiceTemplateSource, EmbeddedServiceTemplateSource>();
         services.TryAddSingleton<IManagedServiceWorkspace, LocalManagedServiceWorkspace>();
         services.TryAddSingleton<IProcessRunner, DotNetProcessRunner>();
         if (OperatingSystem.IsLinux())
@@ -146,6 +153,9 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddSingleton<ITerminalProcessBridge, InteractiveTerminalProcessBridge>();
         services.TryAddSingleton<DockerCliContainerRuntimeClient>();
         services.TryAddSingleton<IContainerRuntimeClient, DockerApiContainerRuntimeClient>();
+        // SRV-03: agentless host telemetry over the server's own connection, and set-based metric retention.
+        services.TryAddSingleton<IServerTelemetryCollector, AgentlessTelemetryCollector>();
+        services.AddScoped<IServerMetricsPruner, EfServerMetricsPruner>();
         services.TryAddSingleton<IGitClient, GitProcessClient>();
         services.TryAddSingleton<ISshClient, SshProcessClient>();
         services.AddOptions<SshOptions>().Bind(configuration.GetSection(SshOptions.SectionName));
@@ -166,6 +176,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ITraefikAcmeStore, TraefikAcmeStore>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddVesselNotificationInfrastructure(configuration);
+        services.AddVesselGitSourceInfrastructure();
         services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));
         services.AddSingleton<IBackupStorageProvider, BackupStorageProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);

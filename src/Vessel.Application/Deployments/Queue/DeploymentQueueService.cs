@@ -7,6 +7,7 @@ using Vessel.Domain;
 using Vessel.Domain.Common;
 using Vessel.Domain.Deployments;
 using Vessel.Domain.Servers;
+using Vessel.Domain.ValueObjects;
 using AppEntity = Vessel.Domain.Applications.Application;
 
 namespace Vessel.Application.Deployments.Queue;
@@ -105,6 +106,12 @@ public sealed class DeploymentQueueService(
         // OPS-02: while the control plane drains for an upgrade, no new deployment is admitted (any trigger).
         ControlPlaneDrainGate.ThrowIfDraining(dbContext);
         AppEntity application = request.Application;
+        // SEC-10: every trigger (UI, API, webhook, rollback) passes the same queue-time ref validation; the runner
+        // validates again at start.
+        application.GitSource.EnsureSafeForGit();
+        foreach (var requested in new[] { request.CommitSha, request.Rollback?.CommitSha })
+            if (!string.IsNullOrWhiteSpace(requested) && requested != "HEAD")
+                GitRef.Parse(requested, "commit or ref");
         ServerId serverId = application.ServerId;
         var dispatch = new List<Deployment>();
         var supersededBuilding = new List<Deployment>();
