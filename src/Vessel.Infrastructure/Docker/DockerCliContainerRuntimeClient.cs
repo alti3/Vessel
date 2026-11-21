@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Vessel.Application.Docker;
@@ -264,6 +265,164 @@ public sealed class DockerCliContainerRuntimeClient(
             throw new ArgumentException("Image reference must not start with '-'.", nameof(imageReference));
         ProcessResult result = await RunDockerAsync(target, ["image", "rm", imageReference], cancellationToken);
         return result.Succeeded;
+    }
+
+    /// <summary>Lists every container id, then inspects them with a template that never reads env or commands.</summary>
+    public const string InspectAllScript =
+        "ids=$(\"$1\" ps -aq --no-trunc) || exit 1; [ -z \"$ids\" ] && exit 0; \"$1\" inspect --format \"$2\" $ids";
+
+    public const string ImageDetailsFormat =
+        "{\"id\":{{json .Id}},\"tags\":{{json .RepoTags}},\"size\":{{.Size}},\"created\":{{json .Created}}," +
+        "\"labels\":{{json .Config.Labels}}}";
+
+    public const string InspectAllImagesScript =
+        "ids=$(\"$1\" images -aq --no-trunc | sort -u) || exit 1; [ -z \"$ids\" ] && exit 0; " +
+        "\"$1\" image inspect --format \"$2\" $ids";
+
+    public async Task<IReadOnlyList<ContainerStateReading>> ListContainerStatesAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await RunShellAsync(target, InspectAllScript,
+            [target.ResolveCliExecutable(), Monitoring.AgentlessTelemetryCollector.InspectFormat], cancellationToken);
+        // A container removed between listing and inspecting makes inspect exit 1 with the others still printed.
+        if (!result.Succeeded && string.IsNullOrWhiteSpace(result.StandardOutput)) ThrowIfFailed(result);
+        return Monitoring.TelemetryParsers.ParseContainers(result.StandardOutput);
+    }
+
+    public async Task<IReadOnlyList<ImageDetails>> ListImageDetailsAsync(ContainerRuntimeTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        ProcessResult result = await RunShellAsync(target, InspectAllImagesScript,
+            [target.ResolveCliExecutable(), ImageDetailsFormat], cancellationToken);
+        if (!result.Succeeded && string.IsNullOrWhiteSpace(result.StandardOutput)) ThrowIfFailed(result);
+        return ParseImageDetails(result.StandardOutput);
+    }
+
+    public static IReadOnlyList<ImageDetails> ParseImageDetails(string output)
+    {
+        var images = new Dictionary<string, ImageDetails>(StringComparer.Ordinal);
+        foreach (var line in (output ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries |
+                                                                    StringSplitOptions.TrimEntries))
+        {
+            if (!line.StartsWith('{')) continue;
+            try
+            {
+                using var document = JsonDocument.Parse(line);
+                JsonElement root = document.RootElement;
+                var id = Text(root, "id");
+                if (id.Length == 0) continue;
+                var tags = root.TryGetProperty("tags", out JsonElement tagElement) &&
+                           tagElement.ValueKind == JsonValueKind.Array
+                    ? tagElement.EnumerateArray().Where(tag => tag.ValueKind == JsonValueKind.String)
+                        .Select(tag => tag.GetString() ?? string.Empty).Where(tag => tag.Length > 0).ToArray()
+                    : [];
+                var labels = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (root.TryGetProperty("labels", out JsonElement labelElement) &&
+                    labelElement.ValueKind == JsonValueKind.Object)
+                    foreach (JsonProperty label in labelElement.EnumerateObject())
+                        if (label.Value.ValueKind == JsonValueKind.String)
+                            labels[label.Name] = label.Value.GetString() ?? string.Empty;
+                var size = root.TryGetProperty("size", out JsonElement sizeElement) &&
+                           sizeElement.ValueKind == JsonValueKind.Number && sizeElement.TryGetInt64(out var bytes)
+                    ? bytes
+                    : 0;
+                images[id] = new ImageDetails(id, tags, size,
+                    Monitoring.TelemetryParsers.Timestamp(Text(root, "created")), labels);
+            }
+            catch (JsonException)
+            {
+                // Skipped: an image removed while it was being inspected.
+            }
+        }
+
+        return images.Values.ToArray();
+    }
+
+    public async IAsyncEnumerable<ProcessOutputLine> StreamContainerLogsAsync(ContainerRuntimeTarget target,
+        string containerId, ContainerLogOptions options,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        RequireIdentifier(containerId, nameof(containerId));
+        var args = new List<string> { "logs", "--timestamps" };
+        if (options.Tail is { } tail) args.AddRange(["--tail", Math.Max(0, tail).ToString(CultureInfo.InvariantCulture)]);
+        if (options.Since is { } since)
+            args.AddRange(["--since", since.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'",
+                CultureInfo.InvariantCulture)]);
+        if (options.Follow) args.Add("--follow");
+        args.Add(containerId);
+        await foreach (ProcessOutputLine line in StreamDockerAsync(target, target.ResolveCliExecutable(), args, null,
+                           options.Follow ? TimeSpan.FromHours(8) : TimeSpan.FromMinutes(2), null, cancellationToken))
+            yield return line;
+    }
+
+    public async Task<bool> StopContainersAsync(ContainerRuntimeTarget target, IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (containerIds.Count == 0) return true;
+        foreach (var id in containerIds) RequireIdentifier(id, nameof(containerIds));
+        ProcessResult result = await RunDockerAsync(target, ["stop", "--time", "30", .. containerIds],
+            cancellationToken, TimeSpan.FromMinutes(3));
+        return result.Succeeded;
+    }
+
+    public async Task<int> RemoveContainersAsync(ContainerRuntimeTarget target, IReadOnlyList<string> containerIds,
+        CancellationToken cancellationToken = default)
+    {
+        var removed = 0;
+        foreach (var id in containerIds)
+        {
+            RequireIdentifier(id, nameof(containerIds));
+            // Never forced (a running container stays) and never with -v (volumes stay).
+            ProcessResult result = await RunDockerAsync(target, ["rm", id], cancellationToken);
+            if (result.Succeeded) removed++;
+        }
+
+        return removed;
+    }
+
+    public async Task<RuntimePruneResult> PruneAsync(ContainerRuntimeTarget target, RuntimePruneKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        var podman = target.Provider == ContainerRuntimeProvider.Podman;
+        string[]? args = kind switch
+        {
+            RuntimePruneKind.DanglingImages => ["image", "prune", "--force"],
+            RuntimePruneKind.BuildCache => podman ? null : ["builder", "prune", "--all", "--force"],
+            RuntimePruneKind.Networks => ["network", "prune", "--force"],
+            // Docker 23+ prunes only anonymous volumes without --all; Podman would prune named volumes too.
+            RuntimePruneKind.AnonymousVolumes => podman ? null : ["volume", "prune", "--force"],
+            _ => null
+        };
+        if (args is null) return new RuntimePruneResult(true, 0, false);
+        ProcessResult result = await RunDockerAsync(target, args, cancellationToken, TimeSpan.FromMinutes(9));
+        return new RuntimePruneResult(result.Succeeded,
+            Monitoring.TelemetryParsers.ParseReclaimedSpace(result.StandardOutput));
+    }
+
+    private static void RequireIdentifier(string value, string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value, name);
+        if (value.StartsWith('-') || value.Any(character => !(char.IsAsciiLetterOrDigit(character) ||
+                                                              character is '_' or '.' or '-')))
+            throw new ArgumentException("Container identifier contains unsupported characters.", name);
+    }
+
+    private async Task<ProcessResult> RunShellAsync(ContainerRuntimeTarget target, string script,
+        IReadOnlyList<string> positional, CancellationToken cancellationToken)
+    {
+        var timeout = TimeSpan.FromMinutes(2);
+        string[] arguments = ["-c", script, "vessel", .. positional];
+        if (target.Remote is not { } remote)
+            return await processRunner.RunTextAsync(new ProcessCommand("sh", arguments, Timeout: timeout),
+                cancellationToken);
+
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        ServerCommandResult result = await RemoteRunner().RunAsync(remote, ["sh", .. arguments], timeout, null,
+            cancellationToken);
+        var command = new ProcessCommand("ssh", ["sh", .. arguments], Timeout: timeout);
+        return new ProcessResult(command, new ProcessExitInfo(result.ExitCode, false, false, null), 0, started,
+            DateTimeOffset.UtcNow, result.StandardOutput, result.StandardError);
     }
 
     private async Task<ProcessResult> RunDockerAsync(ContainerRuntimeTarget target, IReadOnlyList<string> args,

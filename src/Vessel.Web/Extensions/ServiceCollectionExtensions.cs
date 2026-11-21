@@ -1,3 +1,8 @@
+using Vessel.Application.Monitoring.HostMetrics;
+using Vessel.Application.Resources.RuntimeLogs;
+using Vessel.Application.Resources.Status;
+using Vessel.Application.Servers.Alerts;
+using Vessel.Application.Servers.DockerCleanup;
 using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
@@ -151,6 +156,23 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ValidateServerJob>();
         services.AddScoped<ServerHealthPollingService>();
         services.AddScoped<ServerHealthPollingJob>();
+        // SRV-03/04/05/07/08: metrics, runtime status, runtime logs, Docker cleanup and server alerts.
+        services.AddScoped<ServerMetricsCollectionService>();
+        services.AddScoped<ServerMetricsQueryService>();
+        services.AddScoped<ServerMetricsRetentionService>();
+        services.AddScoped<ServerMonitoringSettingsService>();
+        services.TryAddScoped<IServerMetricsPruner, QueryableServerMetricsPruner>();
+        services.AddScoped<ServerMetricsDispatchJob>();
+        services.AddScoped<CollectServerMetricsJob>();
+        services.AddScoped<ServerMetricsRetentionJob>();
+        services.AddScoped<ServerAlertEvaluator>();
+        services.AddScoped<ResourceStatusReconciler>();
+        services.AddScoped<ResourceRuntimeStatusService>();
+        services.AddScoped<NotifyResourceStoppedJob>();
+        services.AddScoped<RuntimeLogQueryService>();
+        services.AddScoped<DockerCleanupService>();
+        services.AddScoped<RunDockerCleanupJob>();
+        services.AddScoped<DockerCleanupScheduleSyncJob>();
         services.AddScoped<ManagedDatabaseService>();
         services.AddScoped<DatabaseRestoreService>();
         services.AddScoped<DatabaseHealthProbe>();

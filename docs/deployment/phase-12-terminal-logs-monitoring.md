@@ -29,7 +29,11 @@ Coolify behavior was used as the product reference for deployment log viewing, s
 - `ServerHealthPollingJob` is registered as `servers.health.poll` every five minutes.
 - Manual polling requires `servers.write`, team membership, and access to the target server.
 - Polling records runtime reachability, running container count, proxy status, certificate status, and server status snapshots.
-- CPU, memory, and disk fields are modeled and currently reported as unknown until a host metrics adapter is added.
+- CPU, memory, disk, load and network metrics come from the agentless collector (ADR-0009). See
+  [server-monitoring-runtime-status-cleanup.md](./server-monitoring-runtime-status-cleanup.md). The health snapshot
+  fields stay reachability-only.
+- The server-unreachable notification fires after two consecutive failed checks. The reachable notification follows
+  only an announced outage.
 - Dashboard metrics include active deployments, failures, queue length placeholder, unhealthy servers, active terminal sessions, and latest server health.
 
 ## Realtime Events
