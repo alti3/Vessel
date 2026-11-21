@@ -242,7 +242,7 @@ public sealed class AccessResolver(IVesselDbContext dbContext, IApiTokenAccessCo
                 ? project
                 : null,
             AccessScope.Environment => LocateEnvironment(new EnvironmentId(grant.TargetId!.Value), null) is
-                                           { } environment && environment.TeamId == teamId
+            { } environment && environment.TeamId == teamId
                 ? environment
                 : null,
             AccessScope.Resource => LocateAnyResource(grant.TargetId!.Value) is { } resource

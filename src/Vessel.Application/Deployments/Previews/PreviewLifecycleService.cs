@@ -82,7 +82,7 @@ public sealed class PreviewLifecycleService(
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.PreviewStopped,
             new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
             new Dictionary<string, object?>
-                { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
+            { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
             cancellationToken);
         return ToSummary(preview);
     }
@@ -105,7 +105,7 @@ public sealed class PreviewLifecycleService(
             await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.PreviewArchived,
                 new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
                 new Dictionary<string, object?>
-                    { ["applicationId"] = applicationId.Value, ["pullRequest"] = preview.PullRequestNumber },
+                { ["applicationId"] = applicationId.Value, ["pullRequest"] = preview.PullRequestNumber },
                 cancellationToken);
         }
 
@@ -153,7 +153,7 @@ public sealed class PreviewLifecycleService(
         await auditWriter.RecordAsync(teamId, actorUserId, AuditActions.PreviewCleanedUp,
             new AuditTarget("preview", preview.Id.Value.ToString("D")), null,
             new Dictionary<string, object?>
-                { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
+            { ["applicationId"] = application.Id.Value, ["pullRequest"] = preview.PullRequestNumber },
             cancellationToken);
     }
 

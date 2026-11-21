@@ -89,7 +89,7 @@ public sealed class SecretRedactor : ISecretRedactor
     ];
 
     private static readonly JsonSerializerOptions RelaxedJson = new()
-        { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public string Redact(string value, RedactionContext? context = null)
     {

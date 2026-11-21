@@ -14,7 +14,7 @@ namespace Vessel.Infrastructure.Ssh;
 ///     <see cref="SshRuntimeFiles" /> that lives only while leases use it (plus a short idle window, so a burst of
 ///     commands does not decrypt the key for every command) and is removed afterwards and on shutdown.
 /// </summary>
-public sealed class ServerSshConnectionFactory : IServerSshConnectionFactory, IDisposable
+public sealed partial class ServerSshConnectionFactory : IServerSshConnectionFactory, IDisposable
 {
     private static readonly TimeSpan IdleKeyLifetime = TimeSpan.FromMinutes(2);
 
@@ -45,7 +45,7 @@ public sealed class ServerSshConnectionFactory : IServerSshConnectionFactory, ID
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            _logger.LogWarning(ex, "Could not purge stale SSH key files.");
+            LogKeyPurgeFailed(_logger, ex);
         }
 
         _sweeper = timeProvider.CreateTimer(_ => Sweep(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
@@ -132,7 +132,7 @@ public sealed class ServerSshConnectionFactory : IServerSshConnectionFactory, ID
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Could not record the changed SSH host key of server {ServerId}.", target.ServerId);
+            LogHostKeyRecordFailed(_logger, ex, target.ServerId.Value);
         }
     }
 
@@ -212,4 +212,10 @@ public sealed class ServerSshConnectionFactory : IServerSshConnectionFactory, ID
 
         public DateTimeOffset LastUsed { get; set; }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not purge stale SSH key files.")]
+    private static partial void LogKeyPurgeFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not record the changed SSH host key of server {ServerId}.")]
+    private static partial void LogHostKeyRecordFailed(ILogger logger, Exception exception, Guid serverId);
 }

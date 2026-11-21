@@ -1,10 +1,9 @@
+using Microsoft.Extensions.Options;
 using Vessel.Application.Auditing;
-using Vessel.Application.ManagedServices;
 using Vessel.Application.Authorization;
+using Vessel.Application.ManagedServices;
 using Vessel.Application.Monitoring;
 using Vessel.Application.Persistence;
-using Microsoft.Extensions.Options;
-
 using Vessel.Application.Proxy;
 using Vessel.Application.Proxy.Domains;
 using Vessel.Application.Security;

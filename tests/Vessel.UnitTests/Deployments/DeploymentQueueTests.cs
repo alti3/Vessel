@@ -160,7 +160,7 @@ public sealed class DeploymentQueueTests
     public async Task Queued_auto_cancel_can_be_turned_off()
     {
         (_, AppEntity app) = AddApplication(settings: DeploymentSettings.Default with
-            { AutoCancelQueuedDeployments = false });
+        { AutoCancelQueuedDeployments = false });
         await Admit(app, CommitA, DeploymentTrigger.Webhook);
         DeploymentAdmission queued = await Admit(app, CommitB, DeploymentTrigger.Webhook);
 
@@ -173,9 +173,9 @@ public sealed class DeploymentQueueTests
     public async Task Building_auto_cancel_stops_older_builds_but_never_one_in_its_deploy_phase()
     {
         (_, AppEntity app) = AddApplication(settings: DeploymentSettings.Default with
-            { AutoCancelBuildingDeployments = true });
+        { AutoCancelBuildingDeployments = true });
         (_, AppEntity other) = AddApplication(settings: DeploymentSettings.Default with
-            { AutoCancelBuildingDeployments = true });
+        { AutoCancelBuildingDeployments = true });
         DeploymentAdmission building = await Admit(app, CommitA, DeploymentTrigger.Webhook);
         await Queue().ClaimRunAsync(building.Deployment, TestContext.Current.CancellationToken);
         DeploymentAdmission deploying = await Admit(other, CommitA, DeploymentTrigger.Webhook);

@@ -208,7 +208,8 @@ public sealed class TraefikProxyProvider : IProxyProvider
                     {
                         ["redirectScheme"] = new Dictionary<string, object>
                         {
-                            ["scheme"] = "https", ["permanent"] = policy.PermanentRedirect
+                            ["scheme"] = "https",
+                            ["permanent"] = policy.PermanentRedirect
                         }
                     };
                     routers[$"{key}-http"] = Router(rule, key, "web", [redirect], null);

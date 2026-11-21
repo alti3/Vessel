@@ -1,4 +1,3 @@
-using Vessel.Domain.Secrets;
 using Vessel.Application.Authorization;
 using Vessel.Application.Backups;
 using Vessel.Application.Deployments;
@@ -9,6 +8,7 @@ using Vessel.Domain;
 using Vessel.Domain.Backups;
 using Vessel.Domain.Databases;
 using Vessel.Domain.Projects;
+using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Users;

@@ -1,7 +1,7 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
-using Vessel.Application.Jobs;
 using Vessel.Application.Email;
+using Vessel.Application.Jobs;
 using Vessel.Application.Persistence;
 using Vessel.Application.Proxy;
 using Vessel.Application.Redis;

@@ -534,7 +534,8 @@ public sealed class ProxyConfigurationService(
                 ["rejectedRoutes"] = rejections
                     .Select(rejection => new
                     {
-                        host = rejection.Route.Identity, reason = redactor.Redact(rejection.Reason)
+                        host = rejection.Route.Identity,
+                        reason = redactor.Redact(rejection.Reason)
                     })
                     .ToArray()
             }, cancellationToken);

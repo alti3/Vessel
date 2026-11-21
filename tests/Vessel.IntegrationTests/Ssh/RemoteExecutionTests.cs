@@ -332,6 +332,7 @@ public sealed class RemoteExecutionTests
     }
 
     [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     public async Task PtyBridge_RefusesSshSessionsWithoutTheConnectionFactory()
     {
         if (!OperatingSystem.IsLinux()) return;

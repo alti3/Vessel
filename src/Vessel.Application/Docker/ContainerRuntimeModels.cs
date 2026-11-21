@@ -1,7 +1,6 @@
+using Vessel.Application.Processes;
 using Vessel.Application.Servers;
 using Vessel.Domain.Servers;
-
-using Vessel.Application.Processes;
 
 namespace Vessel.Application.Docker;
 
@@ -11,6 +10,10 @@ public enum ContainerRuntimeProvider
     Podman
 }
 
+/// <summary>Where and how container runtime commands run for one server.</summary>
+/// <param name="Provider">The runtime family (Docker or Podman).</param>
+/// <param name="ApiEndpoint">Optional runtime API endpoint for local runtimes.</param>
+/// <param name="CliExecutable">Optional runtime CLI override; defaults to the provider's CLI name.</param>
 /// <param name="Remote">
 ///     Set for SSH servers: the runtime CLI runs on the remote host over SSH (through <c>IServerCommandRunner</c>), never
 ///     against the control-plane host's runtime.

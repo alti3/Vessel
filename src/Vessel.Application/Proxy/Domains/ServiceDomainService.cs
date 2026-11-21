@@ -1,12 +1,12 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
 using Vessel.Application.Persistence;
+using Vessel.Application.Security;
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Certificates;
 using Vessel.Domain.Common;
 using Vessel.Domain.Proxy;
-using Vessel.Application.Security;
 using Vessel.Domain.Secrets;
 using Vessel.Domain.Services;
 using Vessel.Domain.ValueObjects;

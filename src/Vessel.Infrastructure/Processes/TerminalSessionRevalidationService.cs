@@ -9,7 +9,7 @@ namespace Vessel.Infrastructure.Processes;
 ///     Periodically re-authorizes live terminal sessions (<see cref="TerminalSessionManager.RevalidateAsync" />), so a
 ///     session ends shortly after its user loses access, the server disables terminals, or the session goes idle.
 /// </summary>
-public sealed class TerminalSessionRevalidationService(
+public sealed partial class TerminalSessionRevalidationService(
     IServiceScopeFactory scopes,
     TimeProvider timeProvider,
     ILogger<TerminalSessionRevalidationService> logger) : BackgroundService
@@ -32,7 +32,10 @@ public sealed class TerminalSessionRevalidationService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Terminal session re-authorization failed.");
+                LogRevalidationFailed(logger, ex);
             }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Terminal session re-authorization failed.")]
+    private static partial void LogRevalidationFailed(ILogger logger, Exception exception);
 }

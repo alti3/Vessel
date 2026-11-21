@@ -336,35 +336,35 @@ public sealed partial class TerminalSessionManager(
         switch (kind.Value)
         {
             case TerminalResourceKind.Application:
-            {
-                var applicationId = new ApplicationId(resourceId.Value);
-                if (!authorization.IsAuthorized(userId, teamId, ResourceRef.Application(applicationId),
-                        VesselPermissions.TerminalsOpen))
-                    return "Application is outside the active team.";
-                return dbContext.Applications.Any(application =>
-                    application.Id == applicationId && application.ServerId == serverId)
-                    ? null
-                    : "The application does not run on this server.";
-            }
+                {
+                    var applicationId = new ApplicationId(resourceId.Value);
+                    if (!authorization.IsAuthorized(userId, teamId, ResourceRef.Application(applicationId),
+                            VesselPermissions.TerminalsOpen))
+                        return "Application is outside the active team.";
+                    return dbContext.Applications.Any(application =>
+                        application.Id == applicationId && application.ServerId == serverId)
+                        ? null
+                        : "The application does not run on this server.";
+                }
             case TerminalResourceKind.Database:
-            {
-                var databaseId = new DatabaseResourceId(resourceId.Value);
-                if (!authorization.IsAuthorized(userId, teamId, ResourceRef.Database(databaseId),
-                        VesselPermissions.TerminalsOpen))
-                    return "Database is outside the active team.";
-                return dbContext.DatabaseResources.Any(database =>
-                    database.Id == databaseId && database.ServerId == serverId)
-                    ? null
-                    : "The database does not run on this server.";
-            }
+                {
+                    var databaseId = new DatabaseResourceId(resourceId.Value);
+                    if (!authorization.IsAuthorized(userId, teamId, ResourceRef.Database(databaseId),
+                            VesselPermissions.TerminalsOpen))
+                        return "Database is outside the active team.";
+                    return dbContext.DatabaseResources.Any(database =>
+                        database.Id == databaseId && database.ServerId == serverId)
+                        ? null
+                        : "The database does not run on this server.";
+                }
             case TerminalResourceKind.Service:
-            {
-                var serviceId = new ServiceResourceId(resourceId.Value);
-                return dbContext.ServiceResources.Any(service =>
-                    service.Id == serviceId && service.TeamId == teamId && service.ServerId == serverId)
-                    ? null
-                    : "Service is outside the active team.";
-            }
+                {
+                    var serviceId = new ServiceResourceId(resourceId.Value);
+                    return dbContext.ServiceResources.Any(service =>
+                        service.Id == serviceId && service.TeamId == teamId && service.ServerId == serverId)
+                        ? null
+                        : "Service is outside the active team.";
+                }
             default:
                 return "Unknown terminal resource.";
         }

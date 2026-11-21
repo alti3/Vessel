@@ -214,13 +214,13 @@ Work proceeds in priority waves. Every change follows the AGENTS.md rules: Domai
 | SEC-09 | Deployment and command log redaction lacks the secret context; redactor pattern parity | P1 | S | 15.07, 15.16. | Done |
 | SEC-10 | Boundary validation for values passed to git, docker, ssh and generated YAML (git refs, branches, container names, host and user, Dockerfile path) | P1 | M | 15.05, Phase 8/9 follow-up. | Open |
 | SEC-11 | Git-based Docker Compose validation and host-path policy | P1 | M | 15.05/15.10, Phase 8 follow-up. | Open |
-| SEC-12 | SSH connection hardening foundation (host key pinning, fixed options, key lifecycle) | P1 | L | New items under Phase 15 (and the SSH runtime phase), 15.12. | Open |
+| SEC-12 | SSH connection hardening foundation (host key pinning, fixed options, key lifecycle) | P1 | L | New items under Phase 15 (and the SSH runtime phase), 15.12. | Done |
 | SEC-13 | API abuse controls: failed-request throttle and rate-limit coverage | P1 | S | 15.04, Phase 13. | Done |
-| SRV-02 | Remote server execution foundation: private keys, real validation and install, server lifecycle API | P1 | L. | 7.04/7.05 (extend), new Phase 12b "Remote servers"; Security agent… | Open |
+| SRV-02 | Remote server execution foundation: private keys, real validation and install, server lifecycle API | P1 | L. | 7.04/7.05 (extend), new Phase 12b "Remote servers"; Security agent… | Done |
 | SRV-03 | Host and container metrics, fleet Metrics page, and the host-agent decision (Sentinel equivalent) | P1 | L | 12.11/12.12 (re-open), 16.08; new ADR; Phase B is a new phase item. | Open |
 | SRV-04 | Resource runtime status reconciliation, restart limits, and stop notifications | P1 | M. | 12.13 (extend); new item under Phase 12b. | Open |
 | SRV-05 | Runtime (container) logs for applications, databases and services: API, UI, merging, safe export | P1 | M. | 12.01/12.04 (extend to runtime logs). | Open |
-| SRV-06 | Container terminal (PTY exec/attach), short-lived session tokens, and continuous re-authorization | P1 | M. | 12.07–12.10 (re-open the container PTY). | Open |
+| SRV-06 | Container terminal (PTY exec/attach), short-lived session tokens, and continuous re-authorization | P1 | M. | 12.07–12.10 (re-open the container PTY). | Done |
 | SRV-07 | Docker cleanup (scheduled, threshold-based, safe) and the server Images page | P1 | M. | New Phase 12b item; 16.04. | Open |
 | SRV-08 | Disk-usage and reachability alerts (event producers for server notifications) | P1 | S–M. | 13.x follow-up; 12.11. | Open |
 | TPL-01 | Service template format compatibility with the Coolify catalog | P1 | XL | 11.05–11.07 (reopen), 17.08, 17.12. | Open |

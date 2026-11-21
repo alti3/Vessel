@@ -46,23 +46,23 @@ public sealed class InstanceEmailSender(
             switch (settings.Provider)
             {
                 case EmailProvider.Smtp when settings.ActiveSmtpServer is { } server:
-                {
-                    var password = server.ProtectedPassword is null
-                        ? null
-                        : cipher.Unprotect(server.ProtectedPassword, SmtpPasswordPurpose);
-                    var transport = new SmtpTransportSettings(server.Host, server.Port, server.Encryption,
-                        server.Username, password, server.EhloDomain, TimeSpan.FromSeconds(server.TimeoutSeconds));
-                    var from = SenderFor(settings, purpose, new EmailSender(server.FromAddress, server.FromName));
-                    return await smtpTransport.SendAsync(transport, from, message, cancellationToken);
-                }
+                    {
+                        var password = server.ProtectedPassword is null
+                            ? null
+                            : cipher.Unprotect(server.ProtectedPassword, SmtpPasswordPurpose);
+                        var transport = new SmtpTransportSettings(server.Host, server.Port, server.Encryption,
+                            server.Username, password, server.EhloDomain, TimeSpan.FromSeconds(server.TimeoutSeconds));
+                        var from = SenderFor(settings, purpose, new EmailSender(server.FromAddress, server.FromName));
+                        return await smtpTransport.SendAsync(transport, from, message, cancellationToken);
+                    }
                 case EmailProvider.Resend when settings.ProtectedResendApiKey is not null
                                                && settings.ResendFromAddress is not null:
-                {
-                    var apiKey = cipher.Unprotect(settings.ProtectedResendApiKey, ResendApiKeyPurpose);
-                    var from = SenderFor(settings, purpose,
-                        new EmailSender(settings.ResendFromAddress, settings.ResendFromName));
-                    return await resendTransport.SendAsync(apiKey, from, message, cancellationToken);
-                }
+                    {
+                        var apiKey = cipher.Unprotect(settings.ProtectedResendApiKey, ResendApiKeyPurpose);
+                        var from = SenderFor(settings, purpose,
+                            new EmailSender(settings.ResendFromAddress, settings.ResendFromName));
+                        return await resendTransport.SendAsync(apiKey, from, message, cancellationToken);
+                    }
                 default:
                     return EmailSendResult.Failed("Instance email is not configured.",
                         NotificationFailureKind.Configuration);

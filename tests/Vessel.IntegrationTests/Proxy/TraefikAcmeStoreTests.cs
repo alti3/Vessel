@@ -173,7 +173,8 @@ public sealed class TraefikAcmeStoreTests
                 {
                     ["domain"] = new JsonObject
                     {
-                        ["main"] = main, ["sans"] = new JsonArray(sans.Select(san => (JsonNode)san).ToArray())
+                        ["main"] = main,
+                        ["sans"] = new JsonArray(sans.Select(san => (JsonNode)san).ToArray())
                     },
                     ["certificate"] = Convert.ToBase64String(Encoding.ASCII.GetBytes(SelfSignedPem(main, notAfter))),
                     ["key"] = Convert.ToBase64String(Encoding.ASCII.GetBytes(PrivateKeyMarker)),
