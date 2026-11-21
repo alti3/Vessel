@@ -51,6 +51,20 @@ public sealed class Application : Entity<ApplicationId>
 
     public IReadOnlyCollection<ApplicationDomain> Domains => _domains.AsReadOnly();
 
+    /// <summary>
+    ///     Private Git source (GitHub App, GitLab/Gitea app, deploy key or HTTPS credentials) used to clone
+    ///     <see cref="GitSource" />, or <c>null</c> for a public repository (DEP-08).
+    /// </summary>
+    public GitSourceConnectionId? SourceId { get; private set; }
+
+    /// <summary>Selects the Git source used for clones; <c>null</c> clones the repository anonymously.</summary>
+    public void AssignSource(GitSourceConnectionId? sourceId, DateTimeOffset now)
+    {
+        if (SourceId == sourceId) return;
+        SourceId = sourceId;
+        Touch(now);
+    }
+
     public static Application Create(
         EnvironmentId environmentId,
         ServerId serverId,

@@ -104,6 +104,10 @@ public sealed class SshKeyService(
         if (servers > 0)
             throw new SshKeyInUseException(
                 $"The SSH key is used by {servers} server(s). Assign another key to those servers first.");
+        var sources = dbContext.GitSourceConnections.Count(source => source.SshKeyId == keyId);
+        if (sources > 0)
+            throw new SshKeyInUseException(
+                $"The SSH key is used by {sources} Git deploy key source(s). Change or delete those sources first.");
 
         dbContext.SshKeyRepository.Remove(key);
         // The encrypted private key goes with the key; nothing else references it.

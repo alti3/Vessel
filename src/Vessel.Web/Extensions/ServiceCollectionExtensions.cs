@@ -45,6 +45,7 @@ using Vessel.Application.Ssh.Keys;
 using Vessel.Application.Storage;
 using Vessel.Application.Terminals;
 using Vessel.Application.Webhooks;
+using Vessel.Application.Sources;
 using Vessel.Infrastructure.HealthChecks;
 using Vessel.Shared.Configuration;
 using Vessel.Web.Configuration;
@@ -140,6 +141,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<SshHostKeyScanThrottle>();
         services.AddScoped<ServerSshConnectionService>();
         services.AddScoped<SshKeyService>();
+        services.AddScoped<IGitCredentialProvider, GitCredentialResolver>();
+        services.AddScoped<GitSourceService>();
         services.AddScoped<SshKeyRotationService>();
         services.AddScoped<RotateSshKeyJob>();
         services.AddScoped<ServerManagementService>();

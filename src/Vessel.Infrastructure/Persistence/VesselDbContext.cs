@@ -314,6 +314,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         ConfigureServers(modelBuilder);
         ConfigureSshKeys(modelBuilder);
         ConfigureApplications(modelBuilder);
+        ConfigureSources(modelBuilder);
         ConfigureDatabases(modelBuilder);
         ConfigureManagedServices(modelBuilder);
         ConfigureBackups(modelBuilder);

@@ -3,6 +3,7 @@ using Vessel.Application.Authorization;
 using Vessel.Application.Git;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
+using Vessel.Application.Sources;
 using Vessel.Domain;
 using Vessel.Domain.Auditing;
 using Vessel.Domain.Common;
@@ -19,7 +20,8 @@ public sealed class ApplicationWebhookConfigurationService(
     ISecretVault secretVault,
     IGitClient git,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IGitCredentialProvider? gitCredentials = null)
 {
     public IReadOnlyList<ApplicationWebhookConfigurationSummary> List(
         UserId actorUserId,
@@ -105,9 +107,24 @@ public sealed class ApplicationWebhookConfigurationService(
         RequireApplication(actorUserId, teamId, applicationId, VesselPermissions.ApplicationsRead);
         Domain.Applications.Application application =
             dbContext.Applications.Single(application => application.Id == applicationId);
-        IReadOnlyList<GitRepositoryRef> refs =
-            await git.ListRefsAsync(new Uri(application.GitSource.RepositoryUrl.Value), cancellationToken);
-        return refs.Select(item => new GitRepositoryRefSummary(item.Name, item.Sha, item.IsTag)).ToArray();
+        IReadOnlyList<GitRepositoryRef> refs;
+        if (gitCredentials is null)
+        {
+            if (application.SourceId is not null)
+                throw new DomainException("Private Git sources are not configured on this Vessel instance.");
+            refs = await git.ListRefsAsync(application.GitSource.RepositoryUrl.ToTransportUri(), cancellationToken);
+        }
+        else
+        {
+            // DEP-08: private repositories are listed with the application's Git source credentials.
+            GitCloneAccess access =
+                await gitCredentials.ForApplicationAsync(application, teamId, cancellationToken);
+            refs = await git.ListRefsAsync(access.RepositoryUri, access.Authentication, cancellationToken);
+        }
+
+        // SEC-10: refs that are not valid git refs are never offered for selection.
+        return refs.Where(item => Domain.ValueObjects.GitRef.TryParse(item.Name, out _))
+            .Select(item => new GitRepositoryRefSummary(item.Name, item.Sha, item.IsTag)).ToArray();
     }
 
     private void RequireApplication(UserId actorUserId, TeamId teamId, AppId applicationId, string permission)

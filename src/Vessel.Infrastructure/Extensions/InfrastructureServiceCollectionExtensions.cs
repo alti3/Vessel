@@ -46,6 +46,7 @@ using Vessel.Infrastructure.Security;
 using Vessel.Infrastructure.Servers;
 using Vessel.Infrastructure.Ssh;
 using Vessel.Infrastructure.Storage;
+using Vessel.Infrastructure.Sources;
 
 namespace Vessel.Infrastructure.Extensions;
 
@@ -165,6 +166,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<ITraefikAcmeStore, TraefikAcmeStore>();
         services.AddSingleton<IDatabaseBackupProvider, ProcessDatabaseBackupProvider>();
         services.AddVesselNotificationInfrastructure(configuration);
+        services.AddVesselGitSourceInfrastructure();
         services.AddOptions<BackupStorageOptions>().Bind(configuration.GetSection(BackupStorageOptions.SectionName));
         services.AddSingleton<IBackupStorageProvider, BackupStorageProvider>();
         services.AddHttpClient(ObjectStorageHealthCheck.HttpClientName);
