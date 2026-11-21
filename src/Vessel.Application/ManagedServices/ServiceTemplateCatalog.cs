@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
 using Vessel.Application.Common;
+using Vessel.Application.ManagedServices.Templates;
 using Vessel.Domain.Common;
+using Vessel.Domain.Services;
 
 namespace Vessel.Application.ManagedServices;
 
@@ -1899,24 +1901,86 @@ public sealed partial class ServiceTemplateCatalog
                         """)
     ];
 
+    private readonly ServiceTemplateDefinition[] _templates;
+
+    /// <summary>The built-in Vessel templates only.</summary>
+    public ServiceTemplateCatalog()
+        : this([])
+    {
+    }
+
+    /// <summary>Built-in Vessel templates plus imported (Coolify-format) templates (TPL-01).</summary>
+    public ServiceTemplateCatalog(IEnumerable<ServiceTemplateDefinition> imported,
+        IReadOnlyList<ServiceTemplateImportError>? importErrors = null)
+    {
+        ArgumentNullException.ThrowIfNull(imported);
+        _templates = [.. Templates, .. imported];
+        IGrouping<string, ServiceTemplateDefinition>? duplicate = _templates
+            .GroupBy(template => template.Key, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+            throw new InvalidOperationException($"Service template key '{duplicate.Key}' is defined twice.");
+        ImportErrors = importErrors ?? [];
+    }
+
+    /// <summary>
+    ///     Builds the catalog: built-in templates plus every document of <paramref name="source" /> that imports cleanly.
+    ///     Without a processor or source only the built-in templates are available.
+    /// </summary>
+    public static ServiceTemplateCatalog Create(IServiceTemplateComposeProcessor? processor,
+        IServiceTemplateSource? source)
+    {
+        if (processor is null || source is null) return new ServiceTemplateCatalog();
+        ServiceTemplateImportResult result = new CoolifyServiceTemplateImporter(processor).ImportAll(source);
+        return new ServiceTemplateCatalog(result.Templates, result.Errors);
+    }
+
+    /// <summary>Imported template documents that were rejected (unsupported or unsafe constructs, unpinned images).</summary>
+    public IReadOnlyList<ServiceTemplateImportError> ImportErrors { get; }
+
     public IReadOnlyList<ServiceTemplateSummary> List()
     {
-        return Templates
-            .Select(template => new ServiceTemplateSummary(template.Key, template.Name, template.Description,
-                template.Version, template.Inputs))
-            .ToArray();
+        return _templates.Select(ToSummary).ToArray();
+    }
+
+    public ServiceTemplateSummary Describe(string key)
+    {
+        return ToSummary(Get(key));
     }
 
     public ServiceTemplateDefinition Get(string key)
     {
-        return Templates.SingleOrDefault(template => string.Equals(template.Key, key, StringComparison.Ordinal))
+        return _templates.SingleOrDefault(template => string.Equals(template.Key, key, StringComparison.Ordinal))
                ?? throw new DomainException("Service template was not found.");
+    }
+
+    /// <summary>The default routed endpoint (Compose service and port) of an imported template, when it has one.</summary>
+    public ServiceTemplateEndpoint? DefaultEndpoint(string key)
+    {
+        ServiceTemplateDefinition? template =
+            _templates.SingleOrDefault(candidate => string.Equals(candidate.Key, key, StringComparison.Ordinal));
+        return template?.Metadata?.Endpoints is { Count: > 0 } endpoints ? endpoints[0] : null;
     }
 
     public ServiceProvisioningPlan CreatePlan(string templateKey, Guid serviceId, string serviceName,
         IReadOnlyDictionary<string, string> inputs)
     {
+        return CreatePlan(templateKey, serviceId, serviceName, inputs, null);
+    }
+
+    /// <summary>
+    ///     Builds the Compose project for a service. Imported (Coolify-format) templates need
+    ///     <paramref name="runtime" />: the generated magic-variable values of this service instance and the values of its
+    ///     route variables; all values reach Compose through the <c>.env</c> file, never the Compose file.
+    /// </summary>
+    public ServiceProvisioningPlan CreatePlan(string templateKey, Guid serviceId, string serviceName,
+        IReadOnlyDictionary<string, string> inputs, ServiceTemplateRuntimeValues? runtime)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
         ServiceTemplateDefinition template = Get(templateKey);
+        if (template.Coolify is not null)
+            return CreateImportedPlan(template, template.Coolify, serviceId, serviceName, inputs, runtime);
+
         var resolved = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (ServiceTemplateInput input in template.Inputs)
         {
@@ -1934,11 +1998,104 @@ public sealed partial class ServiceTemplateCatalog
             compose = compose.Replace(resolved[input.Key], $"${{{EnvironmentKey(input.Key)}}}",
                 StringComparison.Ordinal);
         return new ServiceProvisioningPlan(
-            $"vessel-svc-{serviceId:N}"[..39],
+            ProjectName(serviceId),
             Slug(serviceName),
             compose,
             template.Inputs.Where(input => input.Secret && resolved.ContainsKey(input.Key))
                 .ToDictionary(input => input.Key, input => resolved[input.Key], StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    ///     Validates request inputs for a template: imported templates accept only their declared variables (never
+    ///     <c>SERVICE_*</c> magic variables, which Vessel generates) and require the <c>${VAR:?}</c> ones.
+    /// </summary>
+    public void ValidateInputs(string templateKey, IReadOnlyDictionary<string, string> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        ServiceTemplateDefinition template = Get(templateKey);
+        if (template.Coolify is null) return;
+        ImportedInputs(template, inputs);
+    }
+
+    /// <summary>
+    ///     Splits the request inputs of an imported template into plain inputs (kept in the service configuration) and
+    ///     secret inputs (stored in the vault). Built-in templates keep every input as before.
+    /// </summary>
+    public (Dictionary<string, string> Plain, Dictionary<string, string> Secret) SplitInputs(string templateKey,
+        IReadOnlyDictionary<string, string> inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        ServiceTemplateDefinition template = Get(templateKey);
+        var plain = new Dictionary<string, string>(StringComparer.Ordinal);
+        var secret = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach ((var key, var value) in inputs)
+        {
+            var isSecret = template.Coolify is not null && template.Inputs.Any(input =>
+                input.Secret && string.Equals(input.Key, key, StringComparison.Ordinal));
+            if (isSecret && !string.IsNullOrEmpty(value)) secret[key] = value;
+            else if (!isSecret) plain[key] = value;
+        }
+
+        return (plain, secret);
+    }
+
+    private static ServiceProvisioningPlan CreateImportedPlan(ServiceTemplateDefinition template,
+        CoolifyComposeTemplate coolify, Guid serviceId, string serviceName, IReadOnlyDictionary<string, string> inputs,
+        ServiceTemplateRuntimeValues? runtime)
+    {
+        if (runtime is null)
+            throw new DomainException("Generated values are required to provision an imported service template.");
+        var merged = new Dictionary<string, string>(inputs, StringComparer.Ordinal);
+        foreach ((var key, var value) in runtime.SecretInputs ?? new Dictionary<string, string>())
+            merged[key] = value;
+        Dictionary<string, string> values = ImportedInputs(template, merged);
+        foreach (ServiceMagicVariable variable in coolify.GeneratedVariables)
+            values[variable.Name] = runtime.GeneratedValues.TryGetValue(variable.Name, out var generated)
+                ? generated
+                : throw new DomainException($"No value was generated for {variable.Name}.");
+        foreach (ServiceTemplateRouteVariable route in coolify.RouteVariables)
+            values[route.Variable.Name] = runtime.RouteValues.TryGetValue(route.Variable.Name, out var value)
+                ? value
+                : string.Empty;
+        return new ServiceProvisioningPlan(ProjectName(serviceId), Slug(serviceName), coolify.ComposeYaml, values);
+    }
+
+    private static Dictionary<string, string> ImportedInputs(ServiceTemplateDefinition template,
+        IReadOnlyDictionary<string, string> inputs)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var key in inputs.Keys)
+            if (template.Inputs.All(input => !string.Equals(input.Key, key, StringComparison.Ordinal)))
+                throw new DomainException(ServiceMagicVariable.IsReserved(key)
+                    ? $"'{key}' is generated by Vessel and cannot be set."
+                    : $"Template '{template.Key}' has no input '{key}'.");
+        foreach (ServiceTemplateInput input in template.Inputs)
+        {
+            inputs.TryGetValue(input.Key, out var value);
+            value = string.IsNullOrEmpty(value) ? input.DefaultValue : value;
+            if (input.Required && string.IsNullOrEmpty(value))
+                throw new DomainException($"Template input '{input.Key}' is required.");
+            if (value is null) continue;
+            if (value.Contains('\0', StringComparison.Ordinal) || value.Length > 4096 || value.EndsWith('\\'))
+                throw new DomainException($"Template input '{input.Key}' is invalid.");
+            values[input.Key] = value;
+        }
+
+        return values;
+    }
+
+    private static string ProjectName(Guid serviceId)
+    {
+        return $"vessel-svc-{serviceId:N}"[..39];
+    }
+
+    private static ServiceTemplateSummary ToSummary(ServiceTemplateDefinition template)
+    {
+        ServiceTemplateMetadata? metadata = template.Metadata;
+        return new ServiceTemplateSummary(template.Key, template.Name, template.Description, template.Version,
+            template.Inputs, metadata?.Source ?? ServiceTemplateSources.Vessel, metadata?.Documentation,
+            metadata?.Slogan, metadata?.Category, metadata?.Tags ?? [], metadata?.Logo, metadata?.Port,
+            metadata?.Warnings ?? [], metadata?.Endpoints ?? []);
     }
 
     private static string Escape(string value)
@@ -2525,10 +2682,16 @@ public sealed partial class ServiceTemplateCatalog
     private static partial Regex ServiceNameRegex();
 }
 
+/// <summary>
+///     A catalog template. <c>Metadata</c> (header metadata and endpoints) and <c>Coolify</c> (the processed Compose of
+///     an imported Coolify-format template) are null for built-in Vessel templates.
+/// </summary>
 public sealed record ServiceTemplateDefinition(
     string Key,
     string Name,
     string Description,
     string Version,
     IReadOnlyList<ServiceTemplateInput> Inputs,
-    Func<IReadOnlyDictionary<string, string>, string> ComposeFactory);
+    Func<IReadOnlyDictionary<string, string>, string> ComposeFactory,
+    ServiceTemplateMetadata? Metadata = null,
+    CoolifyComposeTemplate? Coolify = null);

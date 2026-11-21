@@ -314,6 +314,7 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
         ConfigureServers(modelBuilder);
         ConfigureSshKeys(modelBuilder);
         ConfigureApplications(modelBuilder);
+        ConfigureSources(modelBuilder);
         ConfigureDatabases(modelBuilder);
         ConfigureManagedServices(modelBuilder);
         ConfigureBackups(modelBuilder);
@@ -707,6 +708,9 @@ public sealed partial class VesselDbContext : DbContext, IVesselDbContext
             builder.Property(service => service.ConfigurationJson).HasColumnType("jsonb").IsRequired();
             builder.Property(service => service.State).HasConversion<string>().HasMaxLength(32).IsRequired();
             builder.Property(service => service.ComposeSnapshotReference).HasMaxLength(512);
+            builder.Property(service => service.GeneratedSecretsReferenceId)
+                .HasConversion(id => id.HasValue ? id.Value.Value : (Guid?)null,
+                    value => value.HasValue ? new SecretReferenceId(value.Value) : null);
             builder.Property(service => service.ConcurrencyStamp).IsConcurrencyToken();
             builder.Ignore(service => service.DomainEvents);
             builder.HasIndex(service => new { service.TeamId, service.Name });

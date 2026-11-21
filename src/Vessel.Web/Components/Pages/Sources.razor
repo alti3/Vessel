@@ -1,9 +1,62 @@
 @page "/sources"
 @attribute [Authorize]
+@inject Vessel.Application.Sources.GitSourceService GitSources
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Sources | Vessel</PageTitle>
 <PageHeader Kicker="Integrations" Title="Sources"
-            Description="Git providers and deploy keys used by project resources."/>
+            Description="GitHub Apps, GitLab and Gitea apps, deploy keys and HTTPS credentials used to clone private repositories."/>
 
-<EmptyState Title="No sources found"
-            Description="GitHub apps, deploy keys, and public repository sources will appear here when source management is implemented."/>
+@if (Error is not null)
+{
+    <EmptyState Title="Sources are unavailable" Description="@Error"/>
+}
+else if (Items.Count == 0)
+{
+    <EmptyState Title="No sources found"
+                Description="Public repositories need no source. Create a source with the API (POST /api/v1/sources) to deploy private repositories."/>
+}
+else
+{
+    <div class="resource-grid">
+        @foreach (var item in Items)
+        {
+            <ResourceCard Href="@($"/sources#{item.Id}")" IconName="key" Title="@item.Name"
+                          Description="@Describe(item)"
+                          Meta="@(item.IsSystemWide ? "System-wide" : item.IsConnected ? "Connected" : "Not connected")"/>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<Vessel.Application.Sources.GitSourceSummary> Items { get; set; } = [];
+
+    private string? Error { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User;
+        try
+        {
+            Items = GitSources.List(user.GetUserId(), user.GetTeamId());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Error = "You do not have access to this team's sources.";
+        }
+    }
+
+    private static string Describe(Vessel.Application.Sources.GitSourceSummary item)
+    {
+        var kind = item.Kind switch
+        {
+            Vessel.Domain.Sources.GitSourceKind.GitHubApp => "GitHub App",
+            Vessel.Domain.Sources.GitSourceKind.GitLabApp => "GitLab app",
+            Vessel.Domain.Sources.GitSourceKind.GiteaApp => "Gitea / Forgejo app",
+            Vessel.Domain.Sources.GitSourceKind.DeployKey => "Deploy key",
+            _ => "HTTPS credentials"
+        };
+        return item.HtmlUrl is null ? kind : $"{kind} · {item.HtmlUrl} · {item.ApplicationCount} application(s)";
+    }
+
+}

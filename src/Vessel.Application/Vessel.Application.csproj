@@ -3,4 +3,9 @@
         <ProjectReference Include="..\Vessel.Domain\Vessel.Domain.csproj"/>
         <ProjectReference Include="..\Vessel.Shared\Vessel.Shared.csproj"/>
     </ItemGroup>
+    <ItemGroup>
+        <!-- TPL-01: curated Coolify service templates (Apache-2.0, see LICENSE-coolify.txt and NOTICE.md). -->
+        <EmbeddedResource Include="ManagedServices\Templates\Coolify\*.yaml"
+                          LogicalName="Vessel.Templates.Coolify.%(Filename)%(Extension)"/>
+    </ItemGroup>
 </Project>

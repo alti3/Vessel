@@ -14,6 +14,7 @@ using Vessel.Domain.Secrets;
 using Vessel.Domain.Servers;
 using Vessel.Domain.Services;
 using Vessel.Domain.Settings;
+using Vessel.Domain.Sources;
 using Vessel.Domain.Ssh;
 using Vessel.Domain.Teams;
 using Vessel.Domain.Terminals;
@@ -112,6 +113,17 @@ public interface IVesselDbContext : IUnitOfWork
     IQueryable<ServerProxySettings> ServerProxySettings { get; }
 
     IQueryable<SshKey> SshKeys => Enumerable.Empty<SshKey>().AsQueryable();
+
+    IQueryable<GitSourceConnection> GitSourceConnections =>
+        Enumerable.Empty<GitSourceConnection>().AsQueryable();
+
+    IQueryable<GitKnownHost> GitKnownHosts => Enumerable.Empty<GitKnownHost>().AsQueryable();
+
+    IRepository<GitSourceConnection, GitSourceConnectionId> GitSourceConnectionRepository =>
+        throw new InvalidOperationException("Git source persistence is not available.");
+
+    IRepository<GitKnownHost, GitKnownHostId> GitKnownHostRepository =>
+        throw new InvalidOperationException("Git known host persistence is not available.");
 
     IQueryable<ProxyDynamicConfiguration> ProxyDynamicConfigurations =>
         Enumerable.Empty<ProxyDynamicConfiguration>().AsQueryable();

@@ -1,5 +1,6 @@
 using Vessel.Application.Auditing;
 using Vessel.Application.Authorization;
+using Vessel.Application.ManagedServices;
 using Vessel.Application.Persistence;
 using Vessel.Application.Security;
 using Vessel.Domain;
@@ -47,7 +48,8 @@ public sealed class ServiceDomainService(
     VesselAuthorizationService authorization,
     IAuditWriter auditWriter,
     TimeProvider timeProvider,
-    RoutePolicyWriter policyWriter)
+    RoutePolicyWriter policyWriter,
+    ServiceTemplateCatalog? templates = null)
 {
     public IReadOnlyList<ServiceDomainSummary> List(UserId actorUserId, TeamId teamId, ServiceResourceId serviceId)
     {
@@ -80,6 +82,9 @@ public sealed class ServiceDomainService(
         if (request.TargetPort is not null && address.Port is not null && request.TargetPort != address.Port)
             throw new DomainException("The port in the domain URL does not match the target port.");
         (var defaultService, int? defaultPort) = ServiceRoutingDefaults.For(service.TemplateKey);
+        // TPL-01: imported templates declare their endpoint through SERVICE_URL_<NAME>_<PORT> / '# port:'.
+        if (defaultService is null && templates?.DefaultEndpoint(service.TemplateKey) is { } endpoint)
+            (defaultService, defaultPort) = (endpoint.ComposeService, endpoint.Port);
         var composeService = string.IsNullOrWhiteSpace(request.ComposeService)
             ? defaultService ?? throw new DomainException("Compose service is required for this template.")
             : request.ComposeService.Trim();

@@ -62,7 +62,8 @@ public sealed record ApplicationSummary(
     string RepositoryUrl,
     string Branch,
     ApplicationBuildPack BuildPack,
-    IReadOnlyList<string> Domains);
+    IReadOnlyList<string> Domains,
+    Guid? SourceId = null);
 
 public sealed record DatabaseSummary(
     Guid Id,
@@ -141,7 +142,8 @@ public sealed record CreateApplicationRequest(
     string BaseDirectory,
     string? DockerfilePath,
     int? ExposedPort,
-    string[] Domains);
+    string[] Domains,
+    Guid? SourceId = null);
 
 public sealed record UpdateApplicationRequest(
     string Name,
